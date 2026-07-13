@@ -1,3 +1,4 @@
+import gc
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from fastembed import TextEmbedding
@@ -58,19 +59,35 @@ def index_pdf(pdf_path: str):
 
     collection = client.get_or_create_collection(name=COLLECTION_NAME)
 
-    # ------------------------
-    # Embeddings (FastEmbed)
-    # ------------------------
-    embeddings = list(model.embed(chunks))
+# ------------------------
+# Embeddings + Store in batches
+# ------------------------
 
-    # ------------------------
-    # Store in Chroma
-    # ------------------------
+batch_size = 50
+
+for start in range(0, len(chunks), batch_size):
+
+    end = start + batch_size
+
+    batch_chunks = chunks[start:end]
+
+    print(f"Embedding chunks {start} to {end}")
+
+    batch_embeddings = list(model.embed(batch_chunks))
+
     collection.add(
-        ids=[str(i) for i in range(len(chunks))],
-        documents=chunks,
-        embeddings=embeddings,
-        metadatas=[{"chunk_index": i} for i in range(len(chunks))]
+        ids=[
+            str(i)
+            for i in range(start, min(end, len(chunks)))
+        ],
+        documents=batch_chunks,
+        embeddings=batch_embeddings,
+        metadatas=[
+            {"chunk_index": i}
+            for i in range(start, min(end, len(chunks)))
+        ]
     )
+    del batch_embeddings
+    gc.collect()
 
-    print("✅ PDF indexed successfully!")
+print("✅ PDF indexed successfully!")
