@@ -16,12 +16,15 @@ providers = {
 def generate_response(prompt: str) -> str:
 
     try:
-
         print("\n" + "=" * 50)
         print(f"Using provider: {PRIMARY_LLM}")
         print("=" * 50)
 
-        return providers[PRIMARY_LLM](prompt)
+        response = providers[PRIMARY_LLM](prompt)
+
+        print("Response generated successfully.")
+
+        return response
 
     except Exception as e:
 
@@ -32,5 +35,9 @@ def generate_response(prompt: str) -> str:
 
         print("\nTrying fallback provider...")
         print(f"Fallback Provider: {FALLBACK_LLM}")
-        print("Response generated successfully.\n")
-        return providers[FALLBACK_LLM](prompt)
+
+        response = providers[FALLBACK_LLM](prompt)
+
+        print("Fallback response generated successfully.")
+
+        return response
