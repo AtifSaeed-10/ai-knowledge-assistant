@@ -1,37 +1,55 @@
-# AI Knowledge Assistant
+# 🤖 AI Knowledge Assistant
 
-A local-first Retrieval-Augmented Generation (RAG) application that allows users to query their own documents using semantic search and Large Language Models.
+A production-style **Retrieval-Augmented Generation (RAG)** application that allows users to upload PDF documents and ask questions about their content using semantic search and Large Language Models.
 
-The system combines document processing, vector databases, FastAPI backend services, and configurable LLM providers with automatic failover between local and cloud inference.
+The system combines document processing, vector databases, FastAPI backend services, Streamlit frontend, Docker containerization, and configurable LLM providers with automatic failover between local and cloud inference.
 
 ---
 
-# 🚀 Overview
+# 🚀 Live Demo
 
-Large Language Models are powerful, but they do not automatically have access to private documents.
+Try the application here:
 
-This project explores how **Retrieval-Augmented Generation (RAG)** solves this problem by combining:
+🔗 **Streamlit App:**
+https://ai-knowledge-assistant-6969.streamlit.app/
 
-* Document retrieval
+Backend API:
+
+https://ai-knowledge-assistant-voy8.onrender.com
+
+---
+
+# 📌 Overview
+
+Large Language Models are powerful, but they do not automatically have access to private or user-specific documents.
+
+This project demonstrates how **Retrieval-Augmented Generation (RAG)** solves this limitation by combining:
+
+* Document ingestion
+* Text chunking
 * Vector embeddings
-* Semantic search
-* Context-based LLM generation
+* Semantic retrieval
+* Context augmentation
+* LLM-based answer generation
 
-Instead of relying only on model knowledge, answers are generated using information retrieved from user-provided documents.
+Instead of relying only on the model's existing knowledge, responses are generated using information retrieved directly from user-provided documents.
 
 ---
 
 # ✨ Features
 
-## Intelligent Document Question Answering
+## 📄 Intelligent Document Question Answering
+
+Users can:
 
 * Upload PDF documents
-* Extract and process document content
+* Automatically extract document text
 * Split documents into meaningful chunks
-* Generate vector embeddings
+* Generate semantic embeddings
 * Store embeddings in ChromaDB
-* Retrieve relevant information using semantic search
-* Generate grounded answers using LLMs
+* Retrieve relevant document sections
+* Ask questions using natural language
+* Receive context-grounded answers
 
 ---
 
@@ -58,33 +76,77 @@ ChromaDB Vector Storage
 Semantic Retrieval
       |
       v
-Context Augmentation
+Context Injection
       |
       v
-LLM Response Generation
+LLM Generation
+      |
+      v
+Final Answer
+```
+
+---
+
+# 🏗️ System Architecture
+
+```
+                    User
+                     |
+                     v
+              Streamlit UI
+                     |
+                     v
+              FastAPI Backend
+                     |
+                     v
+              RAG Pipeline
+                     |
+        --------------------------
+        |                        |
+        v                        v
+    ChromaDB              LLM Service
+   Vector Database              |
+                                |
+                 ---------------------------
+                 |                         |
+                 v                         v
+              Ollama                   Groq API
+          Local Inference          Cloud Inference
 ```
 
 ---
 
 # 🤖 LLM Provider Architecture
 
-The system supports multiple LLM providers.
+The application supports multiple LLM providers through an abstraction layer.
 
-## Primary Provider
+## Local Development
+
+Primary:
 
 ```
 Ollama
-(Local LLM Inference)
+(Local LLM inference)
 ```
 
-## Fallback Provider
+Fallback:
 
 ```
 Groq API
-(Cloud LLM Inference)
+(Cloud inference)
 ```
 
-If the primary provider is unavailable, the application automatically switches to the fallback provider.
+## Cloud Deployment
+
+The deployed version uses:
+
+```
+Groq API
+```
+
+because cloud environments do not run the local Ollama server.
+
+The provider architecture allows switching models/providers without changing the RAG pipeline.
 
 Example:
 
@@ -94,48 +156,19 @@ User Question
         |
         v
 
-LLM Service Router
+   LLM Service Router
 
         |
         |
-        +---------- Ollama
+        +------------ Ollama
         |
         |
-        +---------- Groq
+        +------------ Groq API
 
         |
         v
 
-Generated Response
-```
-
----
-
-# 🏗️ System Architecture
-
-```
-                 User
-                  |
-                  v
-            Streamlit UI
-                  |
-                  v
-             FastAPI API
-                  |
-                  v
-            RAG Pipeline
-                  |
-        ---------------------
-        |                   |
-        v                   v
-    ChromaDB          LLM Service
-    Vector DB              |
-                           |
-              -------------------------
-              |                       |
-              v                       v
-           Ollama                  Groq API
-        (Local Model)          (Cloud Model)
+ Generated Response
 ```
 
 ---
@@ -155,8 +188,8 @@ Generated Response
 ## AI / Machine Learning
 
 * Retrieval-Augmented Generation (RAG)
-* Vector Embeddings
 * Semantic Search
+* Vector Embeddings
 * Large Language Models
 
 ## Vector Database
@@ -175,6 +208,8 @@ Generated Response
 ## Infrastructure
 
 * Docker
+* Render
+* Streamlit Cloud
 * Environment Variables
 
 ---
@@ -183,29 +218,29 @@ Generated Response
 
 ## Why RAG?
 
-RAG allows LLMs to answer questions using external knowledge sources without retraining the model.
+RAG allows Large Language Models to answer questions using external knowledge sources without retraining the model.
 
-The system retrieves relevant document sections and provides them as context before generating a response.
+The system retrieves relevant document chunks and provides them as context before generating a response.
 
 ---
 
 ## Why ChromaDB?
 
-ChromaDB provides persistent vector storage and efficient similarity search for document embeddings.
+ChromaDB provides persistent vector storage and efficient similarity search for embedding-based retrieval.
 
 ---
 
 ## Why FastAPI?
 
-FastAPI separates the AI pipeline from the user interface and provides a clean API layer similar to production AI systems.
+FastAPI separates the AI pipeline from the frontend and creates a clean API layer similar to production AI applications.
 
 ---
 
 ## Why Ollama + Groq?
 
-Ollama enables private local inference.
+Ollama enables private local inference during development.
 
-Groq provides fast cloud inference when local resources are unavailable.
+Groq provides fast cloud inference for deployment environments.
 
 The fallback architecture improves reliability.
 
@@ -213,14 +248,15 @@ The fallback architecture improves reliability.
 
 ## Why Environment Variables?
 
-Configuration such as:
+Sensitive and configurable values are separated from application code:
 
 * API keys
-* Models
-* Providers
+* Model selection
+* LLM providers
 * Database paths
+* Runtime configuration
 
-are separated from application code, making the system easier to configure and deploy securely.
+This improves security and deployment flexibility.
 
 ---
 
@@ -231,10 +267,10 @@ ai-knowledge-assistant/
 
 │
 ├── backend.py              # FastAPI API endpoints
-├── streamlit_app.py        # User interface
+├── streamlit_app.py        # Streamlit user interface
 │
-├── rag.py                  # RAG pipeline
-├── indexer.py              # Document processing and indexing
+├── rag.py                  # Retrieval-Augmented Generation pipeline
+├── indexer.py              # PDF processing and indexing
 │
 ├── llm_service.py          # LLM routing and fallback logic
 ├── ollama_service.py       # Ollama integration
@@ -248,21 +284,22 @@ ai-knowledge-assistant/
 │
 ├── Dockerfile
 ├── requirements.txt
+├── render.yaml
 ├── .env.example
 └── README.md
 ```
 
 ---
 
-# ⚙️ Installation
+# ⚙️ Local Installation
 
-Clone the repository:
+Clone repository:
 
 ```bash
 git clone https://github.com/yourusername/ai-knowledge-assistant.git
 ```
 
-Move into the project:
+Move into project:
 
 ```bash
 cd ai-knowledge-assistant
@@ -274,7 +311,7 @@ Create virtual environment:
 python -m venv venv
 ```
 
-Activate environment:
+Activate:
 
 Windows:
 
@@ -320,13 +357,11 @@ SIMILARITY_THRESHOLD=1.3
 
 ## Start Ollama
 
-Install Ollama and make sure it is running:
-
 ```bash
 ollama serve
 ```
 
-Check available models:
+Check models:
 
 ```bash
 ollama list
@@ -334,7 +369,7 @@ ollama list
 
 ---
 
-## Start FastAPI Backend
+## Start Backend
 
 ```bash
 uvicorn backend:app --reload
@@ -354,7 +389,7 @@ http://127.0.0.1:8000/docs
 
 ---
 
-## Start Streamlit Frontend
+## Start Frontend
 
 Open another terminal:
 
@@ -370,7 +405,7 @@ http://localhost:8501
 
 ---
 
-# 🐳 Running With Docker
+# 🐳 Docker Support
 
 Build image:
 
@@ -378,7 +413,7 @@ Build image:
 docker build -t ai-knowledge-assistant .
 ```
 
-Run container:
+Run:
 
 ```bash
 docker run \
@@ -387,7 +422,7 @@ docker run \
 ai-knowledge-assistant
 ```
 
-The `OLLAMA_HOST` variable allows the container to communicate with Ollama running on the host machine.
+Docker allows the backend to run inside a container while communicating with external LLM services.
 
 ---
 
@@ -401,13 +436,13 @@ GET /health
 
 ---
 
-## Upload Document
+## Upload PDF
 
 ```
 POST /upload
 ```
 
-Uploads and indexes PDF documents.
+Uploads and indexes documents into the vector database.
 
 ---
 
@@ -421,7 +456,7 @@ Example:
 
 ```json
 {
-  "question": "What is supervised learning?"
+  "question": "Explain supervised learning"
 }
 ```
 
@@ -430,78 +465,60 @@ Example:
 # 🔍 How It Works
 
 1. User uploads a PDF.
-2. Text is extracted from the document.
-3. Text is divided into smaller chunks.
+2. Text is extracted.
+3. Content is split into chunks.
 4. Chunks are converted into embeddings.
 5. Embeddings are stored in ChromaDB.
-6. User asks a question.
+6. User submits a question.
 7. Relevant chunks are retrieved.
 8. Retrieved context is sent to the LLM.
-9. The LLM generates the final answer.
+9. The model generates a grounded response.
 
 ---
 
-# 📌 Engineering Concepts Demonstrated
+# 📊 Engineering Concepts Demonstrated
 
-This project demonstrates practical experience with:
+This project demonstrates practical AI engineering skills:
 
 * RAG system design
-* Vector databases
-* Embedding models
-* Semantic retrieval
+* Vector database implementation
+* Embedding-based retrieval
+* Semantic search
 * FastAPI backend development
+* Streamlit application development
 * LLM provider abstraction
-* Failure handling
+* Environment-based configuration
+* Error handling and fallback systems
 * Docker containerization
-* AI application architecture
+* Cloud deployment
 
 ---
 
-# 📊 Project Status
+# ✅ Project Status
 
-Version: 1.0
+## Version: 1.0.0
 
 Completed:
 
-✅ Document ingestion pipeline
-✅ Vector database integration
-✅ Semantic retrieval system
+✅ PDF ingestion pipeline
+✅ Text chunking system
+✅ Embedding generation
+✅ ChromaDB vector storage
+✅ Semantic retrieval
 ✅ FastAPI backend
-✅ Streamlit interface
+✅ Streamlit frontend
 ✅ Docker containerization
-✅ Multi-provider LLM routing
-✅ Ollama → Groq automatic fallback
-
-Planned improvements:
-
-* Streaming responses
-* Authentication
-* Multiple document collections
-* Conversation memory
-* LangSmith monitoring
-* Cloud deployment
-* Agent workflows
-
----
-
-# 📸 Screenshots
-
-(Add screenshots after deployment)
-
-Example:
-
-```
-screenshots/
-├── chat-interface.png
-└── api-docs.png
-```
+✅ Multi-provider LLM architecture
+✅ Ollama → Groq fallback
+✅ Render backend deployment
+✅ Streamlit Cloud deployment
 
 ---
 
 # 👨‍💻 Author
 
-Atif Saeed
+**Atif Saeed**
 
-Computer Science Student focused on AI Engineering and LLM applications.
+Computer Science student focused on AI Engineering and Large Language Model applications.
 
-Building practical AI systems with modern machine learning and generative AI technologies.
+Building practical AI systems using modern machine learning, retrieval systems, and generative AI technologies.
