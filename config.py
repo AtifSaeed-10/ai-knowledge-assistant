@@ -23,13 +23,24 @@ COLLECTION_NAME = os.getenv(
     "COLLECTION_NAME",
     "ml_notes"
 )
+SQLITE_DB_PATH = os.getenv(
+    "SQLITE_DB_PATH",
+    "./data/documents.db"
+)
 
 TOP_K = int(
-    os.getenv("TOP_K", 3)
+    os.getenv("TOP_K", 5)
 )
 
 SIMILARITY_THRESHOLD = float(
-    os.getenv("SIMILARITY_THRESHOLD", 1.7)
+    os.getenv("SIMILARITY_THRESHOLD", 0.7)
+)
+# ========================
+# Memory Configuration
+# ========================
+
+MEMORY_WINDOW = int(
+    os.getenv("MEMORY_WINDOW", 6)
 )
 # ========================
 # LLM Configuration
