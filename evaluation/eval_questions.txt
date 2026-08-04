@@ -1,0 +1,15 @@
+What is the definition of machine learning according to Arthur Samuel?
+Who coined the term "Machine Learning" in 1959?
+What are the four basic components of the learning process?
+What is the process of fitting a model to a dataset known as?
+What term describes the process of turning knowledge about stored data into a form that can be utilized for future action?
+What is the application of machine learning methods to large databases called?
+Into which three categories is the basic idea of learning models divided?
+Which two kinds of logical models use a logical expression to divide the instance space into segments?
+What type of parametric models are represented as a linear combination of their inputs and have low variance and high bias?
+Which four distance metrics are commonly used in distance-based geometric models?
+What are the two types of probabilistic models that see features and target variables as random variables?
+What type of models form one global model over the instance space, such as linear classifiers or neural networks?
+What three elements must be known for any learning system?
+What training rule adjusts weights a small amount in the direction that reduces the error by minimizing the squared error?
+What four distinct program modules describe the final design of the checkers learning system?

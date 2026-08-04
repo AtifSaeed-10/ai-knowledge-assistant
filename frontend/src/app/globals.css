@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+@layer base {
+
+  :root {
+
+    /* Brand Tokens */
+    --bg-app: 246 247 244;
+    --bg-surface: 255 255 255;
+
+    --accent-olive-deep: 74 93 35;
+    --accent-sage: 135 171 114;
+
+    --text-primary: 28 36 31;
+    --text-muted: 111 123 107;
+
+    --border-subtle: 235 239 234;
+
+
+    /* shadcn mappings */
+
+    --background: 246 247 244;
+    --foreground: 28 36 31;
+
+
+    --card: 255 255 255;
+    --card-foreground: 28 36 31;
+
+
+    --popover: 255 255 255;
+    --popover-foreground: 28 36 31;
+
+
+    --primary: 74 93 35;
+    --primary-foreground: 255 255 255;
+
+
+    --secondary: 246 247 244;
+    --secondary-foreground: 28 36 31;
+
+
+    --muted: 246 247 244;
+    --muted-foreground: 111 123 107;
+
+
+    --accent: 235 239 234;
+    --accent-foreground: 28 36 31;
+
+
+    --border: 235 239 234;
+    --input: 235 239 234;
+
+    --ring: 74 93 35;
+  }
+
+
+
+  .dark {
+
+    --background: 12 16 13;
+    --foreground: 241 244 240;
+
+  }
+
+
+}
+
+
+
+@layer base {
+
+  * {
+    @apply border-border;
+  }
+
+
+  body {
+
+    @apply 
+    bg-background
+    text-foreground
+    antialiased
+    selection:bg-[#87AB72]
+    selection:text-white;
+
+  }
+
+}
+
+
+
+/*
+ Premium ambient breathing glow
+ Used only for background lights,
+ NOT for logos/components.
+*/
+
+@keyframes ambient-glow {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.95);
+  }
+
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+}
+
+.animate-ambient-glow {
+  animation: ambient-glow 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%,100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
