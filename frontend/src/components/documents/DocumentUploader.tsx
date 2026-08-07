@@ -1,6 +1,6 @@
 "use client";
 import React, { useCallback, useRef, useState } from 'react';
-import { UploadCloud } from 'lucide-react';
+import { FileUp } from 'lucide-react';
 import { useDocumentStore } from '@/store/useDocumentStore';
 import { useChatStore } from '@/store/useChatStore';
 
@@ -22,7 +22,7 @@ export const DocumentUploader = () => {
 
   const processFiles = useCallback((files: FileList | null) => {
     if (!files) return;
-    
+
     // Auto-close citation drawer when interacting with new documents
     setActiveCitation(null);
 
@@ -63,21 +63,35 @@ export const DocumentUploader = () => {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        className={`w-full p-8 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-colors ${
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            fileInputRef.current?.click();
+          }
+        }}
+        className={`group flex w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-6 py-10 text-center transition-all duration-200 ${
           isDragging
-            ? 'border-[#4A5D23] bg-[#4A5D23]/5'
-            : 'border-gray-200 hover:border-[#4A5D23]/50 hover:bg-gray-50'
+            ? 'border-[#4A5D23] bg-[#4A5D23]/[0.04] shadow-[inset_0_0_0_1px_rgba(74,93,35,0.12)]'
+            : 'border-[#D8DED5] bg-[#FBFBFA] hover:border-[#87AB72] hover:bg-white'
         }`}
       >
-        <UploadCloud 
-          size={32} 
-          className={`mb-3 ${isDragging ? 'text-[#4A5D23]' : 'text-gray-400'}`} 
-        />
-        <p className="text-sm font-medium text-gray-700 mb-1">
-          Click or drag PDF to upload
+        <span
+          className={`mb-3.5 flex h-11 w-11 items-center justify-center rounded-xl border transition-colors duration-200 ${
+            isDragging
+              ? 'border-[#4A5D23]/20 bg-white text-[#4A5D23]'
+              : 'border-[#EBEFEA] bg-white text-[#98A395] group-hover:border-[#D8DED5] group-hover:text-[#4A5D23]'
+          }`}
+        >
+          <FileUp size={20} strokeWidth={1.75} />
+        </span>
+
+        <p className="text-[14px] font-semibold tracking-[-0.01em] text-[#1C241F]">
+          {isDragging ? 'Drop PDFs to upload' : 'Drop PDFs here, or click to browse'}
         </p>
-        <p className="text-xs text-gray-500">
-          Multiple files supported
+        <p className="mt-1.5 max-w-[240px] text-[13px] leading-relaxed text-[#6F7B6B]">
+          Multiple files supported. Documents are indexed automatically after upload.
         </p>
       </div>
     </div>
