@@ -12,7 +12,51 @@ interface DocumentState {
   updateDocumentStatus: (id: string, status: DocumentStatus) => void;
 }
 
-export const useDocumentStore = create<DocumentState>((set, get) => ({
+const pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
+
+export const useDocumentStore = create<DocumentState>((set, get) => {
+  const startStatusPolling = (documentId: string) => {
+    if (pollIntervals.has(documentId)) {
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const updatedDoc = await documentsApi.getDocument(documentId);
+
+        console.log(
+          "DOCUMENT STATUS:",
+          updatedDoc.status
+        );
+
+        get().updateDocumentStatus(
+          documentId,
+          updatedDoc.status
+        );
+
+        if (updatedDoc.status === "ready") {
+          clearInterval(interval);
+          pollIntervals.delete(documentId);
+
+          console.log(
+            "DOCUMENT READY"
+          );
+        }
+      } catch (error) {
+        console.error(
+          "STATUS POLLING FAILED:",
+          error
+        );
+
+        clearInterval(interval);
+        pollIntervals.delete(documentId);
+      }
+    }, 1000);
+
+    pollIntervals.set(documentId, interval);
+  };
+
+  return {
   documents: [],
   isLoading: false,
   hasInitialized: false,
@@ -26,6 +70,12 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     try {
       const docs = await documentsApi.getDocuments();
       set({ documents: docs });
+
+      docs.forEach((doc) => {
+        if (doc.status !== "ready") {
+          startStatusPolling(doc.id);
+        }
+      });
     } catch (error) {
       console.error('Failed to load documents:', error);
     } finally {
@@ -53,50 +103,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
 
       // 3. Poll backend for real processing status
-      const interval = setInterval(async () => {
-
-        try {
-
-          const updatedDoc =
-            await documentsApi.getDocument(newDoc.id);
-
-
-          console.log(
-            "DOCUMENT STATUS:",
-            updatedDoc.status
-          );
-
-
-          // Update UI status from backend
-          get().updateDocumentStatus(
-            newDoc.id,
-            updatedDoc.status
-          );
-
-
-          // Stop polling when indexing finishes
-          if (updatedDoc.status === "ready") {
-
-            clearInterval(interval);
-
-            console.log(
-              "DOCUMENT READY"
-            );
-          }
-
-
-        } catch (error) {
-
-          console.error(
-            "STATUS POLLING FAILED:",
-            error
-          );
-
-          clearInterval(interval);
-        }
-
-
-      }, 1000);
+      startStatusPolling(newDoc.id);
 
 
     } catch (error) {
@@ -165,4 +172,5 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   },
 
-}));
+};
+});

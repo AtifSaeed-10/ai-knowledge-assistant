@@ -1,6 +1,30 @@
 import { Message, Citation } from "@/types";
 import { API_CONFIG, delay } from "./client";
 
+interface ApiSource {
+  document_id?: string;
+  filename?: string;
+  page?: number;
+  page_number?: number;
+  chunk_id?: string;
+  relevance?: number;
+}
+
+interface ChatApiResponse {
+  answer?: string;
+  response?: string;
+  sources?: ApiSource[];
+}
+
+function mapSourceToCitation(src: ApiSource, idx: number): Citation {
+  return {
+    id: src.chunk_id || `cit-${Date.now()}-${idx}`,
+    documentName: src.filename || "Unknown Document",
+    pageNumber: src.page ?? src.page_number ?? 1,
+    relevance: src.relevance ?? null,
+    chunk_id: src.chunk_id ?? null,
+  };
+}
 
 export const chatApi = {
 
@@ -56,37 +80,12 @@ export const chatApi = {
 
 
 
-    const data = await response.json();
+    const data = (await response.json()) as ChatApiResponse;
 
 
 
     const mappedCitations: Citation[] =
-      (data.sources || []).map(
-        (src: any, idx: number) => ({
-
-          id:
-            src.chunk_id ||
-            `cit-${Date.now()}-${idx}`,
-
-          documentName:
-            src.filename ||
-            "Unknown Document",
-
-          pageNumber:
-            src.page ||
-            src.page_number ||
-            1,
-
-          relevance:
-            src.relevance ||
-            null,
-
-          chunk_id:
-            src.chunk_id ||
-            null,
-
-        })
-      );
+      (data.sources || []).map(mapSourceToCitation);
 
 
 
@@ -229,39 +228,9 @@ async streamMessage(
 
         try {
 
-          const raw =
-            JSON.parse(
-              citationText
-            );
+          const raw = JSON.parse(citationText) as ApiSource[];
 
-
-          const mapped =
-            raw.map(
-              (src:any, idx:number)=>({
-
-                id:
-                  src.chunk_id ||
-                  `cit-${Date.now()}-${idx}`,
-
-                documentName:
-                  src.filename ||
-                  "Unknown Document",
-
-                pageNumber:
-                  src.page ||
-                  src.page_number ||
-                  1,
-
-                relevance:
-                  src.relevance ||
-                  null,
-
-                chunk_id:
-                  src.chunk_id ||
-                  null,
-
-              })
-            );
+          const mapped = raw.map(mapSourceToCitation);
 
 
           onComplete(mapped);

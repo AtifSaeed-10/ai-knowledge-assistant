@@ -1,6 +1,30 @@
 import { Document, DocumentStatus } from '@/types';
 import { API_CONFIG, delay } from './client';
 
+interface ApiDocument {
+  document_id: string;
+  filename: string;
+  upload_time: string;
+  status: DocumentStatus;
+  total_pages?: number;
+  total_chunks?: number;
+}
+
+interface UploadApiResponse {
+  document_id: string;
+  status: DocumentStatus;
+}
+
+function mapApiDocumentToDocument(doc: ApiDocument): Document {
+  return {
+    id: doc.document_id,
+    name: doc.filename,
+    size: 0,
+    status: doc.status,
+    uploadedAt: new Date(doc.upload_time),
+  };
+}
+
 export const documentsApi = {
 
   /**
@@ -50,7 +74,7 @@ export const documentsApi = {
     }
 
 
-    const data = await response.json();
+    const data = (await response.json()) as UploadApiResponse;
 
 
     console.log(
@@ -67,7 +91,7 @@ export const documentsApi = {
 
       size: file.size,
 
-      status: data.status as DocumentStatus,
+      status: data.status,
 
       uploadedAt: new Date(),
 
@@ -103,26 +127,10 @@ export const documentsApi = {
     }
 
 
-    const data = await response.json();
+    const data = (await response.json()) as ApiDocument[];
 
 
-    return data.map(
-      (doc: any) => ({
-
-        id: doc.document_id,
-
-        name: doc.filename,
-
-        size: 0,
-
-        status: doc.status as DocumentStatus,
-
-        uploadedAt: new Date(
-          doc.upload_time
-        ),
-
-      })
-    );
+    return data.map(mapApiDocumentToDocument);
 
   },
 
@@ -168,7 +176,7 @@ export const documentsApi = {
     }
 
 
-    const data = await response.json();
+    const data = (await response.json()) as ApiDocument;
 
 
     console.log(
@@ -177,21 +185,7 @@ export const documentsApi = {
     );
 
 
-    return {
-
-      id: data.document_id,
-
-      name: data.filename,
-
-      size: 0,
-
-      status: data.status as DocumentStatus,
-
-      uploadedAt: new Date(
-        data.upload_time
-      ),
-
-    };
+    return mapApiDocumentToDocument(data);
 
   },
 
