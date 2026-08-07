@@ -20,16 +20,16 @@ export function ChatContainer() {
   };
 
   return (
-    <div className="relative flex h-[calc(100vh-7.5rem)] flex-col overflow-hidden rounded-xl border border-[#EBEFEA] bg-white shadow-[0_1px_2px_rgba(28,36,31,0.04)]">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#EBEFEA] bg-white shadow-[0_1px_2px_rgba(28,36,31,0.04)]">
       {/* Header */}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#EBEFEA] bg-white px-5 py-3.5 sm:px-6">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#EBEFEA] bg-white px-4 py-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#EBEFEA] bg-[#F6F7F4] text-[#4A5D23]">
-            <BookOpen className="h-4 w-4" strokeWidth={1.75} />
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#EBEFEA] bg-[#F6F7F4] text-[#4A5D23]">
+            <BookOpen className="h-3.5 w-3.5" strokeWidth={1.75} />
           </span>
 
           <div className="min-w-0">
-            <h3 className="truncate text-[14px] font-semibold tracking-[-0.01em] text-[#1C241F]">
+            <h3 className="truncate text-[13px] font-semibold tracking-[-0.01em] text-[#1C241F]">
               Research assistant
             </h3>
             <p className="truncate text-[12px] text-[#6F7B6B]">
@@ -54,8 +54,8 @@ export function ChatContainer() {
         )}
       </div>
 
-      {/* Messages */}
-      <div className="flex flex-1 flex-col overflow-hidden bg-[#FBFBFA]">
+      {/* Messages — fills remaining height */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#FBFBFA]">
         <MessageList
           messages={messages}
           isLoading={isLoading}
@@ -64,7 +64,7 @@ export function ChatContainer() {
       </div>
 
       {/* Composer */}
-      <div className="shrink-0 border-t border-[#EBEFEA] bg-white px-4 py-3.5 sm:px-5">
+      <div className="shrink-0 border-t border-[#EBEFEA] bg-white px-3 py-3 sm:px-4">
         <ChatInput
           onSend={handleSend}
           isLoading={isLoading}

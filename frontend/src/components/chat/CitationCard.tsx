@@ -9,7 +9,9 @@ export const CitationCard = ({
   citation: Citation;
   index?: number;
 }) => {
-  const { setActiveCitation } = useChatStore();
+  const { setActiveCitation, activeCitation } = useChatStore();
+
+  const isActive = activeCitation?.id === citation.id;
 
   const relScore = citation.relevance
     ? citation.relevance > 1
@@ -22,7 +24,11 @@ export const CitationCard = ({
       type="button"
       data-citation-chip="true"
       onClick={() => setActiveCitation(citation)}
-      className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-[#D8DED5] bg-[#F6F7F4] px-2 py-1 text-left text-[12px] font-medium text-[#4A5D23] transition-colors hover:border-[#87AB72] hover:bg-white"
+      className={`group inline-flex max-w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-all duration-150 sm:max-w-[280px] ${
+        isActive
+          ? "border-[#87AB72] bg-white shadow-[0_0_0_3px_rgba(135,171,114,0.15)]"
+          : "border-[#EBEFEA] bg-[#F6F7F4] hover:border-[#D8DED5] hover:bg-white"
+      }`}
       title={
         relScore
           ? `${citation.documentName} · page ${citation.pageNumber} · ${relScore}% match`
@@ -30,12 +36,36 @@ export const CitationCard = ({
       }
     >
       {typeof index === "number" && (
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-[#4A5D23] text-[10px] font-semibold text-white">
+        <span
+          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold ${
+            isActive
+              ? "bg-[#4A5D23] text-white"
+              : "bg-white text-[#4A5D23] ring-1 ring-[#D8DED5]"
+          }`}
+        >
           {index}
         </span>
       )}
-      <span className="truncate max-w-[132px]">{citation.documentName}</span>
-      <span className="shrink-0 text-[#98A395]">p.{citation.pageNumber}</span>
+
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[12px] font-semibold tracking-[-0.01em] text-[#1C241F]">
+          {citation.documentName}
+        </span>
+        <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[#6F7B6B]">
+          <span>Page {citation.pageNumber}</span>
+          {relScore !== null && (
+            <>
+              <span className="text-[#D5DBD3]">·</span>
+              <span>{relScore}% match</span>
+            </>
+          )}
+        </span>
+        {citation.snippet && (
+          <span className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-[#98A395]">
+            {citation.snippet}
+          </span>
+        )}
+      </span>
     </button>
   );
 };

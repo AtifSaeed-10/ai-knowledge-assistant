@@ -20,7 +20,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <div className="flex h-screen min-w-0 flex-1 flex-col">
         <TopBar onOpenSidebar={() => setIsSidebarOpen(true)} />
 
-        <main className="mx-auto w-full max-w-6xl flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-8">
+        <main className="mx-auto flex w-full max-w-6xl min-h-0 flex-1 flex-col overflow-hidden px-4 py-3 sm:px-6 sm:py-4">
           {children}
         </main>
       </div>
