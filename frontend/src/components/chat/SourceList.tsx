@@ -1,6 +1,6 @@
-import React from 'react';
-import { Citation } from '@/types';
-import { CitationCard } from './CitationCard';
+import React from "react";
+import { Citation } from "@/types";
+import { CitationCard } from "./CitationCard";
 
 export const SourceList = ({ citations }: { citations?: Citation[] }) => {
   if (!citations || citations.length === 0) return null;
@@ -9,16 +9,20 @@ export const SourceList = ({ citations }: { citations?: Citation[] }) => {
   const remainingCount = citations.length - 3;
 
   return (
-    <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-2 items-center">
-      <span className="text-xs text-gray-400 font-medium mr-1 uppercase tracking-wider">Sources</span>
-      {topCitations.map((cit) => (
-        <CitationCard key={cit.id} citation={cit} />
-      ))}
-      {remainingCount > 0 && (
-        <span className="text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded-md border border-gray-100">
-          +{remainingCount} more
-        </span>
-      )}
+    <div className="mt-4 border-t border-[#EBEFEA] pt-3.5">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
+        Sources
+      </p>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {topCitations.map((cit, index) => (
+          <CitationCard key={cit.id} citation={cit} index={index + 1} />
+        ))}
+        {remainingCount > 0 && (
+          <span className="rounded-md border border-[#EBEFEA] bg-[#F6F7F4] px-2 py-1 text-[11px] font-medium text-[#6F7B6B]">
+            +{remainingCount} more
+          </span>
+        )}
+      </div>
     </div>
   );
 };

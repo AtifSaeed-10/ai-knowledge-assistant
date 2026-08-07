@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
-import { useChatStore } from '@/store/useChatStore';
-import { X, FileText, Fingerprint, Activity } from 'lucide-react';
+import React, { useEffect, useRef } from "react";
+import { useChatStore } from "@/store/useChatStore";
+import { X, FileText, Quote } from "lucide-react";
 
 export const CitationDrawer = () => {
   const { activeCitation, setActiveCitation } = useChatStore();
@@ -9,13 +9,11 @@ export const CitationDrawer = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setActiveCitation(null);
+      if (e.key === "Escape") setActiveCitation(null);
     };
 
     const handleClickOutside = (e: MouseEvent) => {
-      // If the click is outside the drawer element
       if (drawerRef.current && !drawerRef.current.contains(e.target as Node)) {
-        // Ensure we aren't clicking a citation chip (which is meant to open the drawer)
         const target = e.target as HTMLElement;
         if (!target.closest('[data-citation-chip="true"]')) {
           setActiveCitation(null);
@@ -24,86 +22,112 @@ export const CitationDrawer = () => {
     };
 
     if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener("keydown", handleKeyDown);
+      document.addEventListener("mousedown", handleClickOutside);
     }
 
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isOpen, setActiveCitation]);
 
-  const relScore = activeCitation?.relevance 
-    ? activeCitation.relevance > 1 ? Math.round(activeCitation.relevance) : Math.round(activeCitation.relevance * 100)
+  const relScore = activeCitation?.relevance
+    ? activeCitation.relevance > 1
+      ? Math.round(activeCitation.relevance)
+      : Math.round(activeCitation.relevance * 100)
     : null;
 
   return (
     <>
-      {/* Mobile Backdrop */}
       {isOpen && (
-        <div 
-          className="fixed inset-0 bg-black/20 z-40 lg:hidden transition-opacity"
+        <div
+          className="fixed inset-0 z-40 bg-[#1C241F]/20 backdrop-blur-[1px] transition-opacity lg:hidden"
           onClick={() => setActiveCitation(null)}
         />
       )}
 
-      {/* Drawer Panel */}
       <div
         ref={drawerRef}
-        className={`fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white shadow-2xl border-l border-gray-200 z-50 transform transition-transform duration-300 ease-in-out flex flex-col ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
+        className={`fixed right-0 top-0 z-50 flex h-full w-full flex-col border-l border-[#EBEFEA] bg-white shadow-2xl transition-transform duration-300 ease-out sm:w-[400px] ${
+          isOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-[#F6F7F4]/50">
-          <div className="flex items-center gap-2 text-[#4A5D23]">
-            <FileText size={18} />
-            <h3 className="font-semibold text-sm">Source Document</h3>
+        <div className="flex items-center justify-between border-b border-[#EBEFEA] px-5 py-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
+              Source
+            </p>
+            <h3 className="mt-0.5 text-[14px] font-semibold tracking-[-0.01em] text-[#1C241F]">
+              Cited passage
+            </h3>
           </div>
-          <button 
+          <button
             onClick={() => setActiveCitation(null)}
-            className="p-1.5 rounded-md hover:bg-gray-200/50 text-gray-500 transition-colors"
+            className="rounded-lg p-1.5 text-[#98A395] transition-colors hover:bg-[#F1F3EF] hover:text-[#1C241F]"
+            aria-label="Close source panel"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* Metadata Details */}
         {activeCitation && (
-          <div className="p-6 flex-1 overflow-y-auto">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">{activeCitation.documentName}</h2>
-            
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                <span className="text-xs text-gray-500 block mb-1 font-medium">Page Number</span>
-                <span className="text-lg font-semibold text-gray-800">Page {activeCitation.pageNumber}</span>
+          <div className="flex-1 overflow-y-auto px-5 py-5">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#EBEFEA] bg-[#F6F7F4] text-[#4A5D23]">
+                <FileText className="h-4 w-4" strokeWidth={1.75} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-[16px] font-semibold leading-snug tracking-[-0.01em] text-[#1C241F]">
+                  {activeCitation.documentName}
+                </h2>
+                <p className="mt-1 text-[13px] text-[#6F7B6B]">
+                  Page {activeCitation.pageNumber}
+                  {relScore !== null ? ` · ${relScore}% match` : ""}
+                </p>
               </div>
-              
-              <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1 font-medium">
-                  <Activity size={12} /> Match Relevance
+            </div>
+
+            <div className="mt-6 grid grid-cols-2 gap-2.5">
+              <div className="rounded-xl border border-[#EBEFEA] bg-[#FBFBFA] px-3.5 py-3">
+                <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#98A395]">
+                  Page
+                </p>
+                <p className="mt-1 text-[18px] font-semibold tabular-nums tracking-[-0.02em] text-[#1C241F]">
+                  {activeCitation.pageNumber}
+                </p>
+              </div>
+              <div className="rounded-xl border border-[#EBEFEA] bg-[#FBFBFA] px-3.5 py-3">
+                <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#98A395]">
+                  Relevance
+                </p>
+                <p className="mt-1 text-[18px] font-semibold tabular-nums tracking-[-0.02em] text-[#1C241F]">
+                  {relScore !== null ? `${relScore}%` : "—"}
+                </p>
+              </div>
+            </div>
+
+            {activeCitation.snippet ? (
+              <div className="mt-6">
+                <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
+                  <Quote className="h-3 w-3" />
+                  Excerpt
                 </div>
-                <span className="text-lg font-semibold text-gray-800">
-                  {relScore ? `${relScore}%` : 'N/A'}
-                </span>
+                <blockquote className="rounded-xl border border-[#EBEFEA] bg-[#F6F7F4] px-4 py-3.5 text-[14px] leading-relaxed text-[#2A322E]">
+                  {activeCitation.snippet}
+                </blockquote>
               </div>
-            </div>
-
-            {/* Developer / Chunk ID hidden from main view but available */}
-            <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 px-3 py-2 rounded border border-gray-100">
-              <Fingerprint size={12} />
-              <span className="truncate">Chunk: {activeCitation.chunk_id || activeCitation.id}</span>
-            </div>
-
-            {/* PDF Preview Placeholder */}
-            <div className="mt-8 border-t border-gray-100 pt-6">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">Document Preview</h4>
-              <div className="w-full h-[300px] bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400 gap-2">
-                <FileText size={32} className="opacity-50" />
-                <span className="text-sm font-medium">PDF rendering coming soon</span>
+            ) : (
+              <div className="mt-6 rounded-xl border border-[#EBEFEA] bg-[#FBFBFA] px-4 py-4">
+                <p className="text-[13px] leading-relaxed text-[#6F7B6B]">
+                  This answer cited page {activeCitation.pageNumber} of{" "}
+                  <span className="font-medium text-[#1C241F]">
+                    {activeCitation.documentName}
+                  </span>
+                  . Open that page in the original PDF to review the full context.
+                </p>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>
