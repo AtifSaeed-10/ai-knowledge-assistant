@@ -42,7 +42,7 @@ export const CitationDrawer = () => {
     <>
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-[#1C241F]/20 backdrop-blur-[1px] transition-opacity lg:hidden"
+          className="fixed inset-0 z-40 bg-[#1C241F]/20 backdrop-blur-[1px] transition-opacity animate-in fade-in duration-200 lg:hidden"
           onClick={() => setActiveCitation(null)}
         />
       )}
@@ -72,7 +72,10 @@ export const CitationDrawer = () => {
         </div>
 
         {activeCitation && (
-          <div className="flex-1 overflow-y-auto px-5 py-5">
+          <div
+            key={activeCitation.id}
+            className="flex-1 overflow-y-auto px-5 py-5 animate-in fade-in slide-in-from-right-2 duration-300"
+          >
             <div className="flex items-start gap-3">
               <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#EBEFEA] bg-[#F6F7F4] text-[#4A5D23]">
                 <FileText className="h-4 w-4" strokeWidth={1.75} />

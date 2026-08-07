@@ -170,16 +170,25 @@ export function MessageBubble({
 
         <div className="rounded-2xl rounded-tl-md border border-[#EBEFEA] bg-white px-4 py-3.5 shadow-[0_1px_2px_rgba(28,36,31,0.03)] sm:px-5 sm:py-4">
           {showThinking ? (
-            <div className="flex items-center gap-2 py-1 text-[13px] text-[#6F7B6B]">
-              <span className="flex gap-1">
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#87AB72] [animation-delay:-0.28s]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#87AB72] [animation-delay:-0.14s]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#87AB72]" />
-              </span>
-              Retrieving relevant passages…
+            <div className="space-y-3 py-1 animate-in fade-in duration-300">
+              <div className="flex items-center gap-2 text-[13px] text-[#6F7B6B]">
+                <span className="flex gap-1">
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#87AB72] [animation-delay:-0.28s]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#87AB72] [animation-delay:-0.14s]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#87AB72]" />
+                </span>
+                Retrieving relevant passages…
+              </div>
+              <div className="space-y-2">
+                <div className="h-2.5 w-[92%] animate-pulse rounded bg-[#EFF1EC]" />
+                <div className="h-2.5 w-[78%] animate-pulse rounded bg-[#EFF1EC]" />
+                <div className="h-2.5 w-[64%] animate-pulse rounded bg-[#EFF1EC]" />
+              </div>
             </div>
           ) : (
-            <AnswerContent content={message.content} />
+            <div className="animate-in fade-in duration-200">
+              <AnswerContent content={message.content} />
+            </div>
           )}
 
           {!isUser &&
