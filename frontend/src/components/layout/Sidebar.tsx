@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useCallback } from 'react';
-import { Settings, X, PanelLeftClose, PanelLeft, Plus } from 'lucide-react';
+import { X, PanelLeftClose, PanelLeft, Plus } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { DocumentLibrary } from '@/components/documents/DocumentLibrary';
 import { DocumentUploader } from '@/components/documents/DocumentUploader';

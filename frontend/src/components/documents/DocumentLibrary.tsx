@@ -131,7 +131,7 @@ export function DocumentLibrary({ isCollapsed = false }: DocumentLibraryProps) {
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 animate-in fade-in zoom-in duration-200">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Document</h3>
             <p className="text-sm text-gray-600 mb-6">
-              Are you sure you want to remove <span className="font-medium text-gray-900">"{docToDelete.name}"</span>? This action will remove it from the search index and cannot be undone.
+              Are you sure you want to remove <span className="font-medium text-gray-900">&quot;{docToDelete.name}&quot;</span>? This action will remove it from the search index and cannot be undone.
             </p>
             <div className="flex items-center justify-end gap-3">
               <button 
