@@ -14,22 +14,17 @@ export const ChatInput = ({
   disabled,
 }: ChatInputProps) => {
   const [input, setInput] = useState("");
-
   const { activeCitation, setActiveCitation } = useChatStore();
-
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
-
     setInput(val);
 
-    // Close citation drawer when starting a new question
     if (activeCitation && val.length > 0) {
       setActiveCitation(null);
     }
 
-    // Auto resize textarea
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${Math.min(
@@ -41,11 +36,8 @@ export const ChatInput = ({
 
   const handleSend = () => {
     if (!input.trim() || isLoading || disabled) return;
-
     onSend(input.trim());
-
     setInput("");
-
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
@@ -63,10 +55,10 @@ export const ChatInput = ({
   return (
     <div>
       <div
-        className={`flex items-end gap-2 rounded-xl border bg-[#FBFBFA] p-2 pl-3.5 transition-colors ${
+        className={`flex items-end gap-2 rounded-2xl border bg-white p-1.5 pl-3.5 shadow-[0_1px_2px_rgba(28,36,31,0.04)] transition-shadow ${
           disabled
             ? "border-[#EBEFEA] opacity-70"
-            : "border-[#EBEFEA] focus-within:border-[#87AB72] focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(135,171,114,0.12)]"
+            : "border-[#EBEFEA] focus-within:border-[#87AB72] focus-within:shadow-[0_0_0_3px_rgba(135,171,114,0.14)]"
         }`}
       >
         <textarea
@@ -77,23 +69,23 @@ export const ChatInput = ({
           disabled={disabled || isLoading}
           placeholder={
             disabled
-              ? "Upload and wait for a document to become ready…"
+              ? "Waiting for a ready document…"
               : isLoading
-                ? "Waiting for the current answer…"
-                : "Ask a question about your documents…"
+                ? "Generating answer…"
+                : "Ask about your documents…"
           }
           rows={1}
-          className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent py-2.5 text-[14px] leading-relaxed tracking-[-0.01em] text-[#1C241F] outline-none placeholder:text-[#98A395] disabled:cursor-not-allowed"
+          className="max-h-40 min-h-[42px] flex-1 resize-none bg-transparent py-2.5 text-[14px] leading-relaxed tracking-[-0.01em] text-[#1C241F] outline-none placeholder:text-[#98A395] disabled:cursor-not-allowed"
         />
 
         <button
           onClick={handleSend}
           disabled={!canSend}
           aria-label="Send message"
-          className={`mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${
+          className={`mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors ${
             canSend
               ? "bg-[#4A5D23] text-white hover:bg-[#3E4E1D]"
-              : "bg-[#EFF1EC] text-[#98A395]"
+              : "bg-[#F1F3EF] text-[#B0B8AB]"
           } disabled:cursor-not-allowed`}
         >
           {isLoading ? (
@@ -104,9 +96,11 @@ export const ChatInput = ({
         </button>
       </div>
 
-      <p className="mt-2 px-1 text-[11px] text-[#98A395]">
-        Enter to send · Shift + Enter for a new line
-      </p>
+      {!disabled && (
+        <p className="mt-2 px-1 text-[11px] text-[#98A395]">
+          Enter to send · Shift+Enter for a new line
+        </p>
+      )}
     </div>
   );
 };

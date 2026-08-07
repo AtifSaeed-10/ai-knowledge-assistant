@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { useChatStore } from "@/store/useChatStore";
-import { X, FileText, Quote } from "lucide-react";
+import { X, FileText, Quote, ShieldCheck } from "lucide-react";
 
 export const CitationDrawer = () => {
   const { activeCitation, setActiveCitation } = useChatStore();
@@ -42,7 +42,7 @@ export const CitationDrawer = () => {
     <>
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-[#1C241F]/20 backdrop-blur-[1px] transition-opacity animate-in fade-in duration-200 lg:hidden"
+          className="fixed inset-0 z-40 bg-[#1C241F]/20 backdrop-blur-[1px] animate-in fade-in duration-200 lg:hidden"
           onClick={() => setActiveCitation(null)}
         />
       )}
@@ -53,14 +53,17 @@ export const CitationDrawer = () => {
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between border-b border-[#EBEFEA] px-5 py-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
-              Source
-            </p>
-            <h3 className="mt-0.5 text-[14px] font-semibold tracking-[-0.01em] text-[#1C241F]">
-              Cited passage
-            </h3>
+        <div className="flex items-center justify-between border-b border-[#EBEFEA] px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-[#4A5D23]" strokeWidth={1.75} />
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
+                Evidence
+              </p>
+              <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-[#1C241F]">
+                Source used in this answer
+              </h3>
+            </div>
           </div>
           <button
             onClick={() => setActiveCitation(null)}
@@ -77,7 +80,7 @@ export const CitationDrawer = () => {
             className="flex-1 overflow-y-auto px-5 py-5 animate-in fade-in slide-in-from-right-2 duration-300"
           >
             <div className="flex items-start gap-3">
-              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#EBEFEA] bg-[#F6F7F4] text-[#4A5D23]">
+              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#F6F7F4] text-[#4A5D23]">
                 <FileText className="h-4 w-4" strokeWidth={1.75} />
               </span>
               <div className="min-w-0">
@@ -85,52 +88,47 @@ export const CitationDrawer = () => {
                   {activeCitation.documentName}
                 </h2>
                 <p className="mt-1 text-[13px] text-[#6F7B6B]">
-                  Page {activeCitation.pageNumber}
-                  {relScore !== null ? ` · ${relScore}% match` : ""}
+                  Cited from page {activeCitation.pageNumber}
                 </p>
               </div>
             </div>
 
-            <div className="mt-6 grid grid-cols-2 gap-2.5">
-              <div className="rounded-xl border border-[#EBEFEA] bg-[#FBFBFA] px-3.5 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#98A395]">
-                  Page
-                </p>
-                <p className="mt-1 text-[18px] font-semibold tabular-nums tracking-[-0.02em] text-[#1C241F]">
-                  {activeCitation.pageNumber}
-                </p>
-              </div>
-              <div className="rounded-xl border border-[#EBEFEA] bg-[#FBFBFA] px-3.5 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#98A395]">
-                  Relevance
-                </p>
-                <p className="mt-1 text-[18px] font-semibold tabular-nums tracking-[-0.02em] text-[#1C241F]">
-                  {relScore !== null ? `${relScore}%` : "—"}
-                </p>
-              </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <span className="inline-flex items-center rounded-lg bg-[#F6F7F4] px-2.5 py-1.5 text-[12px] font-medium text-[#5B6858]">
+                Page {activeCitation.pageNumber}
+              </span>
+              {relScore !== null && (
+                <span className="inline-flex items-center rounded-lg bg-[#F6F7F4] px-2.5 py-1.5 text-[12px] font-medium text-[#5B6858]">
+                  {relScore}% relevance
+                </span>
+              )}
             </div>
 
             {activeCitation.snippet ? (
               <div className="mt-6">
                 <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
                   <Quote className="h-3 w-3" />
-                  Excerpt
+                  Supporting excerpt
                 </div>
-                <blockquote className="rounded-xl border border-[#EBEFEA] bg-[#F6F7F4] px-4 py-3.5 text-[14px] leading-relaxed text-[#2A322E]">
-                  {activeCitation.snippet}
+                <blockquote className="rounded-xl bg-[#F6F7F4] px-4 py-3.5 text-[14px] leading-relaxed text-[#2A322E]">
+                  “{activeCitation.snippet}”
                 </blockquote>
               </div>
             ) : (
-              <div className="mt-6 rounded-xl border border-[#EBEFEA] bg-[#FBFBFA] px-4 py-4">
+              <div className="mt-6 rounded-xl bg-[#F6F7F4] px-4 py-4">
                 <p className="text-[13px] leading-relaxed text-[#6F7B6B]">
-                  This answer cited page {activeCitation.pageNumber} of{" "}
+                  This answer drew on page {activeCitation.pageNumber} of{" "}
                   <span className="font-medium text-[#1C241F]">
                     {activeCitation.documentName}
                   </span>
-                  . Open that page in the original PDF to review the full context.
+                  . Open that page in the original PDF for full context.
                 </p>
               </div>
             )}
+
+            <p className="mt-8 text-[12px] leading-relaxed text-[#98A395]">
+              Citations show where the answer came from — not every page in the document.
+            </p>
           </div>
         )}
       </div>

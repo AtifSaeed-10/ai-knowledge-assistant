@@ -93,37 +93,73 @@
 
 
 /*
- Premium ambient breathing glow
- Used only for background lights,
- NOT for logos/components.
+ Soft ambient motion for empty/onboarding surfaces.
+ Keep subtle — professional SaaS, not flashy AI chrome.
 */
 
-@keyframes ambient-glow {
+@keyframes ambient-drift {
   0%, 100% {
-    opacity: 0.35;
-    transform: scale(0.95);
+    opacity: 0.45;
+    transform: translate3d(0, 0, 0) scale(1);
   }
 
   50% {
-    opacity: 0.8;
-    transform: scale(1.05);
+    opacity: 0.7;
+    transform: translate3d(12px, -8px, 0) scale(1.04);
   }
 }
 
-.animate-ambient-glow {
-  animation: ambient-glow 6s ease-in-out infinite;
-}
-
-@keyframes float {
-  0%,100% {
-    transform: translateY(0);
+@keyframes ambient-drift-slow {
+  0%, 100% {
+    opacity: 0.3;
+    transform: translate3d(0, 0, 0) scale(1);
   }
 
   50% {
-    transform: translateY(-6px);
+    opacity: 0.5;
+    transform: translate3d(-16px, 10px, 0) scale(1.06);
   }
 }
 
-.animate-float {
-  animation: float 4s ease-in-out infinite;
+.animate-ambient-drift {
+  animation: ambient-drift 14s ease-in-out infinite;
+}
+
+.animate-ambient-drift-slow {
+  animation: ambient-drift-slow 18s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+.animate-progress-slide {
+  animation: progress-slide 1.6s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    #eff1ec 0%,
+    #f6f7f4 45%,
+    #eff1ec 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
 }
