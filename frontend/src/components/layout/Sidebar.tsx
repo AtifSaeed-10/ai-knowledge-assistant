@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, PanelLeftClose, PanelLeft, Plus } from 'lucide-react';
+import { X, PanelLeftClose, PanelLeft, Plus, FileText, CheckCircle2 } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { DocumentLibrary } from '@/components/documents/DocumentLibrary';
 import { DocumentUploader } from '@/components/documents/DocumentUploader';
@@ -13,7 +13,7 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const documents = useDocumentStore((state) => state.documents);
-  
+
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [width, setWidth] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
@@ -44,10 +44,10 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       let newWidth = e.clientX;
       if (newWidth < 240) newWidth = 240;
       if (newWidth > 380) newWidth = 380;
-      
+
       setWidth(newWidth);
       sessionStorage.setItem('docusage_sidebar_width', String(newWidth));
-      
+
       if (isCollapsed && newWidth > 240) {
         setIsCollapsed(false);
         sessionStorage.setItem('docusage_sidebar_collapsed', 'false');
@@ -75,13 +75,14 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   }, [documents.length, isUploadModalOpen]);
 
   const currentWidth = isCollapsed ? 80 : width;
+  const readyCount = documents.filter((doc) => doc.status === 'ready').length;
 
   return (
     <>
       {/* Mobile overlay */}
       {isOpen && (
-        <div 
-          className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-30 lg:hidden"
+        <div
+          className="fixed inset-0 z-30 bg-[#1C241F]/25 backdrop-blur-[2px] lg:hidden"
           onClick={onClose}
         />
       )}
@@ -89,88 +90,129 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       {/* Sidebar panel */}
       <aside
         style={{ width: isOpen ? 280 : currentWidth }} // Mobile is fixed, desktop is dynamic
-        className={`fixed lg:relative top-0 left-0 h-full bg-white border-r border-gray-200 z-40 transform transition-all duration-300 ease-in-out ${
+        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#EBEFEA] bg-[#FBFBFA] transition-all duration-300 ease-out lg:relative ${
           isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        } flex flex-col ${isResizing ? 'transition-none cursor-col-resize select-none' : ''}`}
+        } ${isResizing ? 'cursor-col-resize select-none transition-none' : ''}`}
       >
-        {/* Header */}
-        <div className={`h-16 flex items-center px-4 border-b border-gray-100 shrink-0 ${isCollapsed ? 'justify-center lg:px-2' : 'justify-between'}`}>
-          {!isCollapsed && (
-            <div className="flex items-center gap-3 text-[#4A5D23] overflow-hidden">
-              <Logo className="w-8 h-8 shrink-0" />
-              <span className="text-xl font-bold tracking-tight text-gray-900 truncate">DocuSage</span>
-            </div>
+        {/* Brand header */}
+        <div
+          className={`flex h-16 shrink-0 items-center gap-2 border-b border-[#EBEFEA] px-3 ${
+            isCollapsed ? 'justify-center' : 'justify-between'
+          }`}
+        >
+          {isCollapsed ? (
+            <span
+              className="flex h-8 w-8 items-center overflow-hidden"
+              aria-label="DocuSage"
+            >
+              <Logo className="w-[128px] shrink-0 [&>svg]:h-auto [&>svg]:w-full" />
+            </span>
+          ) : (
+            <Logo className="w-[126px] shrink-0 pl-1 [&>svg]:h-auto [&>svg]:w-full" />
           )}
-          
-          <button 
-            onClick={handleCollapseToggle}
-            className="hidden lg:flex p-1.5 text-gray-400 hover:bg-gray-100 rounded-md transition-colors shrink-0"
-            title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-          >
-            {isCollapsed ? <PanelLeft size={20} /> : <PanelLeftClose size={20} />}
-          </button>
-          
-          <button 
+
+          {!isCollapsed && (
+            <button
+              onClick={handleCollapseToggle}
+              className="hidden shrink-0 rounded-md p-1.5 text-[#98A395] transition-colors hover:bg-[#EFF1EC] hover:text-[#4A5D23] lg:flex"
+              title="Collapse sidebar"
+            >
+              <PanelLeftClose size={18} />
+            </button>
+          )}
+
+          <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:bg-gray-100 rounded-md lg:hidden shrink-0"
+            className="shrink-0 rounded-md p-1.5 text-[#98A395] transition-colors hover:bg-[#EFF1EC] hover:text-[#1C241F] lg:hidden"
+            aria-label="Close sidebar"
           >
-            <X className="w-5 h-5" />
+            <X size={18} />
           </button>
         </div>
 
-        {/* Content Region */}
-        <div className="flex-1 overflow-y-auto flex flex-col py-4">
+        {/* Primary action */}
+        <div className="shrink-0 space-y-1.5 px-3 py-3">
+          {isCollapsed && (
+            <button
+              onClick={handleCollapseToggle}
+              className="hidden h-9 w-full items-center justify-center rounded-lg text-[#6F7B6B] transition-colors hover:bg-[#EFF1EC] hover:text-[#4A5D23] lg:flex"
+              title="Expand sidebar"
+            >
+              <PanelLeft size={18} />
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsUploadModalOpen(true)}
+            title="Upload PDF"
+            className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#4A5D23] text-white shadow-sm transition-colors hover:bg-[#3E4E1D]"
+          >
+            <Plus size={16} strokeWidth={2.5} />
+            {!isCollapsed && (
+              <span className="text-[13px] font-medium tracking-[-0.01em]">
+                New document
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Document library */}
+        <div className="flex-1 overflow-y-auto pb-4">
           <DocumentLibrary isCollapsed={isCollapsed} />
         </div>
 
-        {/* Footer Area */}
-        {documents.length > 0 && (
-          <div className="p-4 border-t border-gray-100 shrink-0 flex flex-col gap-4">
-            {!isCollapsed && (
-              <div className="bg-[#F6F7F4] p-4 rounded-xl">
-                <h4 className="text-sm font-semibold text-gray-900">Storage Usage</h4>
-                <div className="w-full h-2 bg-gray-200 rounded-full mt-2">
-                  <div className="h-2 bg-[#4A5D23] rounded-full" style={{ width: '45%' }}></div>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">450 MB / 1 GB used</p>
-              </div>
-            )}
-            
-            <button
-              onClick={() => setIsUploadModalOpen(true)}
-              className={`flex items-center justify-center gap-2 w-full bg-white border shadow-sm border-gray-200 hover:border-[#4A5D23] hover:text-[#4A5D23] text-gray-700 transition-colors rounded-xl ${
-                isCollapsed ? 'p-3' : 'py-2.5 px-4'
-              }`}
-            >
-              <Plus size={20} className={isCollapsed ? '' : 'text-[#4A5D23]'} />
-              {!isCollapsed && <span className="font-medium text-sm whitespace-nowrap">Upload PDF</span>}
-            </button>
+        {/* Workspace summary */}
+        {!isCollapsed && documents.length > 0 && (
+          <div className="shrink-0 border-t border-[#EBEFEA] px-4 py-3.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
+              Workspace
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#5B6858]">
+              <span className="inline-flex items-center gap-1.5">
+                <FileText size={13} className="text-[#98A395]" />
+                {documents.length} {documents.length === 1 ? 'document' : 'documents'}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2 size={13} className="text-[#87AB72]" />
+                {readyCount} ready
+              </span>
+            </div>
           </div>
         )}
 
         {/* Resizer Edge Handler */}
         {!isCollapsed && (
-          <div 
+          <div
             onMouseDown={startResizing}
-            className="hidden lg:block absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[#4A5D23]/30 active:bg-[#4A5D23]/50 transition-colors z-50"
-          />
+            className="group absolute bottom-0 right-0 top-0 z-50 hidden w-1.5 cursor-col-resize lg:block"
+          >
+            <div className="ml-auto h-full w-px bg-transparent transition-colors group-hover:bg-[#87AB72] group-active:bg-[#4A5D23]" />
+          </div>
         )}
       </aside>
 
       {/* Upload Modal Overlay */}
       {isUploadModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl relative flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-gray-50/50">
-              <h2 className="text-lg font-semibold text-gray-900">Upload Documents</h2>
-              <button 
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#1C241F]/40 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative flex w-full max-w-xl flex-col overflow-hidden rounded-xl border border-[#EBEFEA] bg-white shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-start justify-between gap-4 border-b border-[#EBEFEA] px-5 py-4">
+              <div>
+                <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-[#1C241F]">
+                  Upload documents
+                </h2>
+                <p className="mt-0.5 text-xs text-[#6F7B6B]">
+                  PDFs are extracted, chunked and indexed automatically.
+                </p>
+              </div>
+              <button
                 onClick={() => setIsUploadModalOpen(false)}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                className="shrink-0 rounded-md p-1.5 text-[#98A395] transition-colors hover:bg-[#F1F3EF] hover:text-[#1C241F]"
+                aria-label="Close upload dialog"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
-            <div className="p-6">
+            <div className="p-5">
               <DocumentUploader />
             </div>
           </div>
