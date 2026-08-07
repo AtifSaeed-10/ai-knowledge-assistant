@@ -23,7 +23,6 @@ export const DocumentUploader = () => {
   const processFiles = useCallback((files: FileList | null) => {
     if (!files) return;
 
-    // Auto-close citation drawer when interacting with new documents
     setActiveCitation(null);
 
     Array.from(files).forEach((file) => {
@@ -44,7 +43,7 @@ export const DocumentUploader = () => {
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     processFiles(e.target.files);
     if (fileInputRef.current) {
-      fileInputRef.current.value = ''; // Reset input
+      fileInputRef.current.value = '';
     }
   }, [processFiles]);
 
@@ -71,27 +70,27 @@ export const DocumentUploader = () => {
             fileInputRef.current?.click();
           }
         }}
-        className={`group flex w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-6 py-10 text-center transition-all duration-200 ${
+        className={`group flex w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-6 py-9 text-center transition-all duration-200 ${
           isDragging
-            ? 'border-[#4A5D23] bg-[#4A5D23]/[0.04] shadow-[inset_0_0_0_1px_rgba(74,93,35,0.12)]'
-            : 'border-[#D8DED5] bg-[#FBFBFA] hover:border-[#87AB72] hover:bg-white'
+            ? 'border-[#4A5D23] bg-[#4A5D23]/[0.04] shadow-[inset_0_0_0_1px_rgba(74,93,35,0.1)]'
+            : 'border-[#D0D7CB] bg-white hover:border-[#87AB72] hover:bg-[#FBFBFA]'
         }`}
       >
         <span
-          className={`mb-3.5 flex h-11 w-11 items-center justify-center rounded-xl border transition-colors duration-200 ${
+          className={`mb-3 flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200 ${
             isDragging
-              ? 'border-[#4A5D23]/20 bg-white text-[#4A5D23]'
-              : 'border-[#EBEFEA] bg-white text-[#98A395] group-hover:border-[#D8DED5] group-hover:text-[#4A5D23]'
+              ? 'bg-[#4A5D23] text-white'
+              : 'bg-[#F6F7F4] text-[#4A5D23] group-hover:bg-[#EFF1EC]'
           }`}
         >
-          <FileUp size={20} strokeWidth={1.75} />
+          <FileUp size={18} strokeWidth={1.75} />
         </span>
 
         <p className="text-[14px] font-semibold tracking-[-0.01em] text-[#1C241F]">
-          {isDragging ? 'Drop PDFs to upload' : 'Drop PDFs here, or click to browse'}
+          {isDragging ? 'Drop to upload' : 'Drop PDFs here or browse'}
         </p>
-        <p className="mt-1.5 max-w-[240px] text-[13px] leading-relaxed text-[#6F7B6B]">
-          Multiple files supported. Documents are indexed automatically after upload.
+        <p className="mt-1 text-[12px] text-[#6F7B6B]">
+          PDF only · multiple files supported
         </p>
       </div>
     </div>

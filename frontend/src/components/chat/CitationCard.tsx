@@ -10,7 +10,6 @@ export const CitationCard = ({
   index?: number;
 }) => {
   const { setActiveCitation, activeCitation } = useChatStore();
-
   const isActive = activeCitation?.id === citation.id;
 
   const relScore = citation.relevance
@@ -24,48 +23,49 @@ export const CitationCard = ({
       type="button"
       data-citation-chip="true"
       onClick={() => setActiveCitation(citation)}
-      className={`group inline-flex max-w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-all duration-150 sm:max-w-[280px] ${
+      className={`group w-full rounded-xl border px-3 py-2.5 text-left transition-all duration-150 ${
         isActive
-          ? "border-[#87AB72] bg-white shadow-[0_0_0_3px_rgba(135,171,114,0.15)]"
-          : "border-[#EBEFEA] bg-[#F6F7F4] hover:border-[#D8DED5] hover:bg-white"
+          ? "border-[#87AB72] bg-white shadow-[0_0_0_3px_rgba(135,171,114,0.14)]"
+          : "border-[#EBEFEA] bg-white hover:border-[#D0D7CB] hover:bg-[#FBFBFA]"
       }`}
-      title={
-        relScore
-          ? `${citation.documentName} · page ${citation.pageNumber} · ${relScore}% match`
-          : `${citation.documentName} · page ${citation.pageNumber}`
-      }
+      title={`${citation.documentName} · page ${citation.pageNumber}`}
     >
-      {typeof index === "number" && (
-        <span
-          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold ${
-            isActive
-              ? "bg-[#4A5D23] text-white"
-              : "bg-white text-[#4A5D23] ring-1 ring-[#D8DED5]"
-          }`}
-        >
-          {index}
-        </span>
-      )}
-
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12px] font-semibold tracking-[-0.01em] text-[#1C241F]">
-          {citation.documentName}
-        </span>
-        <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[#6F7B6B]">
-          <span>Page {citation.pageNumber}</span>
-          {relScore !== null && (
-            <>
-              <span className="text-[#D5DBD3]">·</span>
-              <span>{relScore}% match</span>
-            </>
-          )}
-        </span>
-        {citation.snippet && (
-          <span className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-[#98A395]">
-            {citation.snippet}
+      <div className="flex items-start gap-2.5">
+        {typeof index === "number" && (
+          <span
+            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold ${
+              isActive
+                ? "bg-[#4A5D23] text-white"
+                : "bg-[#F1F3EF] text-[#4A5D23]"
+            }`}
+          >
+            {index}
           </span>
         )}
-      </span>
+
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[12.5px] font-semibold tracking-[-0.01em] text-[#1C241F]">
+            {citation.documentName}
+          </span>
+
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-[#6F7B6B]">
+            <span className="rounded bg-[#F6F7F4] px-1.5 py-0.5 font-medium text-[#5B6858]">
+              p. {citation.pageNumber}
+            </span>
+            {relScore !== null && <span>{relScore}% match</span>}
+          </span>
+
+          {citation.snippet && (
+            <span className="mt-1.5 line-clamp-2 block text-[12px] leading-relaxed text-[#6F7B6B]">
+              “{citation.snippet}”
+            </span>
+          )}
+
+          <span className="mt-1.5 block text-[11px] font-medium text-[#4A5D23] opacity-0 transition-opacity group-hover:opacity-100">
+            View source →
+          </span>
+        </span>
+      </div>
     </button>
   );
 };
