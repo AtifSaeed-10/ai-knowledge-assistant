@@ -4,6 +4,9 @@ import { documentsApi } from '@/lib/api/documents';
 
 interface DocumentState {
   documents: Document[];
+  isLoading: boolean;
+  hasInitialized: boolean;
+  initialize: () => Promise<void>;
   uploadDocument: (file: File) => Promise<void>;
   deleteDocument: (id: string) => Promise<void>;
   updateDocumentStatus: (id: string, status: DocumentStatus) => void;
@@ -11,6 +14,24 @@ interface DocumentState {
 
 export const useDocumentStore = create<DocumentState>((set, get) => ({
   documents: [],
+  isLoading: false,
+  hasInitialized: false,
+
+  initialize: async () => {
+    const { hasInitialized, isLoading } = get();
+    if (hasInitialized || isLoading) return;
+
+    set({ isLoading: true });
+
+    try {
+      const docs = await documentsApi.getDocuments();
+      set({ documents: docs });
+    } catch (error) {
+      console.error('Failed to load documents:', error);
+    } finally {
+      set({ isLoading: false, hasInitialized: true });
+    }
+  },
 
   uploadDocument: async (file: File) => {
     try {

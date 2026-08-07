@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { DocumentUploader } from "@/components/documents/DocumentUploader";
 import { ChatContainer } from "@/components/chat/ChatContainer";
@@ -9,15 +9,48 @@ import { Logo } from "@/components/ui/Logo";
 
 export default function WorkspacePage() {
   const documents = useDocumentStore((state) => state.documents);
+  const isLoading = useDocumentStore((state) => state.isLoading);
+  const hasInitialized = useDocumentStore((state) => state.hasInitialized);
 
+  useEffect(() => {
+    useDocumentStore.getState().initialize();
+  }, []);
+
+  const isBooting = !hasInitialized || isLoading;
   const hasDocuments = documents.length > 0;
   const hasReady = documents.some((doc) => doc.status === "ready");
 
   return (
     <AppLayout>
 
+      {/* BOOT: loading existing documents */}
+      {isBooting && (
+        <div
+          className="
+            flex
+            flex-col
+            items-center
+            justify-center
+            h-full
+            min-h-[60vh]
+          "
+        >
+          <div
+            className="
+              w-12
+              h-12
+              border-4
+              border-[#4A5D23]
+              border-t-transparent
+              rounded-full
+              animate-spin
+            "
+          />
+        </div>
+      )}
+
       {/* STATE 1: EMPTY */}
-      {!hasDocuments && (
+      {!isBooting && !hasDocuments && (
         <div
           className="
             relative
@@ -166,7 +199,7 @@ export default function WorkspacePage() {
 
 
       {/* STATE 2: PROCESSING */}
-      {hasDocuments && !hasReady && (
+      {!isBooting && hasDocuments && !hasReady && (
         <div
           className="
             flex
@@ -248,7 +281,7 @@ export default function WorkspacePage() {
 
 
       {/* STATE 3: READY */}
-      {hasDocuments && hasReady && (
+      {!isBooting && hasDocuments && hasReady && (
         <div
           className="
             h-full
