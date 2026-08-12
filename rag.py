@@ -8,7 +8,18 @@ from config import (
     CHROMA_DB_PATH,
     COLLECTION_NAME,
     TOP_K,
-    SIMILARITY_THRESHOLD,
+    CANDIDATE_K,
+    RERANK_CANDIDATE_K,
+    RERANK_TOP_K,
+    RRF_K,
+)
+from bm25_index import bm25_index
+from reranker import reranker
+from hybrid_retrieval import (
+    retrieve_dense,
+    retrieve_bm25,
+    fuse_results,
+    retrieve_candidates as hybrid_retrieve_candidates,
 )
 
 
@@ -38,80 +49,66 @@ model = TextEmbedding(
 
 
 # ========================
-# Retrieval
+# Hybrid + Rerank Retrieval (Phase 2 + 3)
 # ========================
+# Dense + BM25 → RRF pool → BGE reranker → TOP_K evidence.
+
+
+def retrieve_candidates(
+    question,
+    document_ids=None,
+    candidate_k=None,
+    rerank_candidate_k=None,
+    top_k=None,
+):
+    """
+    Hybrid + rerank candidate retrieval.
+
+    Returns legacy keys plus separated score lists.
+    """
+    return hybrid_retrieve_candidates(
+        question,
+        collection=get_collection(),
+        embedding_model=model,
+        document_ids=document_ids,
+        candidate_k=candidate_k if candidate_k is not None else CANDIDATE_K,
+        rerank_candidate_k=(
+            rerank_candidate_k
+            if rerank_candidate_k is not None
+            else RERANK_CANDIDATE_K
+        ),
+        top_k=top_k if top_k is not None else RERANK_TOP_K,
+        rrf_k=RRF_K,
+    )
+
+
 def retrieve_chunks(
     question,
     document_ids=None
 ):
+    """
+    Public retrieval API (unchanged contract).
 
-    collection = get_collection()
-
-    question_embedding = list(
-        model.embed([question])
-    )[0]
-
-    if document_ids:
-
-        if len(document_ids) == 1:
-
-            results = collection.query(
-                query_embeddings=[question_embedding],
-                n_results=TOP_K,
-                where={
-                    "document_id": document_ids[0]
-                }
-            )
-
-        else:
-
-            results = collection.query(
-                query_embeddings=[question_embedding],
-                n_results=TOP_K,
-                where={
-                    "$or": [
-                        {"document_id": id}
-                        for id in document_ids
-                    ]
-                }
-            )
-
-    else:
-
-        results = collection.query(
-            query_embeddings=[question_embedding],
-            n_results=TOP_K
-        )
-
-
-    print("\n========== RETRIEVAL DEBUG ==========")
-    print("Question:", question)
-    print("Document IDs:", document_ids)
-
-    print(
-        "Chunks found:",
-        len(results["documents"][0])
+    Phase 3: hybrid fusion + cross-encoder reranking.
+    """
+    return retrieve_candidates(
+        question,
+        document_ids=document_ids,
     )
 
-    print(
-        "Distances:",
-        results["distances"][0]
-    )
 
-    print(
-        "Metadata:"
-    )
-
-    for meta in results["metadatas"][0]:
-        print(meta)
-
-
-    return {
-        "chunks": results["documents"][0],
-        "distances": results["distances"][0],
-        "metadata": results["metadatas"][0],
-        "ids": results["ids"][0]
-    }
+# Re-export building blocks for tests / later phases.
+__all__ = [
+    "ask_question",
+    "get_collection",
+    "retrieve_chunks",
+    "retrieve_candidates",
+    "retrieve_dense",
+    "retrieve_bm25",
+    "fuse_results",
+    "bm25_index",
+    "reranker",
+]
 
 
 # ========================
@@ -142,7 +139,7 @@ def ask_question(
     print(search_query)
 
 
-    retrieval_result = retrieve_chunks(
+    retrieval_result = retrieve_candidates(
         search_query,
         document_ids
         )
@@ -152,12 +149,14 @@ def ask_question(
     distances = retrieval_result["distances"]
     metadata = retrieval_result["metadata"]
     ids = retrieval_result["ids"]
+    relevances = retrieval_result.get("relevances") or []
+    reranker_scores = retrieval_result.get("reranker_scores") or []
+    rerank_fallback = bool(retrieval_result.get("rerank_fallback"))
 
 
     # ------------------------
     # Log Retrieval
     # ------------------------
-    #
 
     log_retrieval(
         search_query,
@@ -176,49 +175,8 @@ def ask_question(
         }
 
 
-
-    # ------------------------
-    # Similarity Filtering
-    # ------------------------
-
-    filtered_chunks = []
-    filtered_distances = []
-    filtered_metadata = []
-    filtered_ids = []
-
-
-    for chunk, distance, meta, chunk_id in zip(
-        chunks,
-        distances,
-        metadata,
-        ids
-    ):
-
-        if distance <= SIMILARITY_THRESHOLD:
-
-            filtered_chunks.append(chunk)
-            filtered_distances.append(distance)
-            filtered_metadata.append(meta)
-            filtered_ids.append(chunk_id)
-
-
-
-    if not filtered_chunks:
-
-        return {
-            "answer": "I don't have enough information in the provided context.",
-            "sources": []
-        }
-
-
-
-    # Replace original retrieval with filtered retrieval
-
-    chunks = filtered_chunks
-    distances = filtered_distances
-    metadata = filtered_metadata
-    ids = filtered_ids
-
+    # Final evidence is already rerank-selected (or explicit RRF fallback).
+    # Do NOT apply SIMILARITY_THRESHOLD to reranker scores / pseudo-distances.
 
 
     # ------------------------
@@ -226,15 +184,18 @@ def ask_question(
     # ------------------------
 
     print("\n========== RETRIEVED CHUNKS ==========\n")
+    if rerank_fallback:
+        print("(reranker unavailable — using RRF fallback order)\n")
 
 
-    for i, (chunk, distance) in enumerate(
-        zip(chunks, distances),
-        start=1
-    ):
-
+    for i, chunk in enumerate(chunks, start=1):
+        dense = distances[i - 1] if i - 1 < len(distances) else None
+        rr = reranker_scores[i - 1] if i - 1 < len(reranker_scores) else None
+        rel = relevances[i - 1] if i - 1 < len(relevances) else None
         print(f"Chunk {i}")
-        print(f"Distance: {distance:.4f}")
+        print(f"Dense distance: {dense}")
+        print(f"Reranker score: {rr}")
+        print(f"Relevance: {rel}")
         print("-" * 50)
         print(chunk[:500])
         print()
@@ -319,23 +280,15 @@ Answer:
     sources = []
 
 
-    for chunk_id, distance, meta in zip(
-        ids,
-        distances,
-        metadata
-    ):
+    for idx, (chunk_id, meta) in enumerate(zip(ids, metadata)):
 
-        relevance = round(
-            (1 - distance) * 100
-        )
+        if idx < len(relevances) and relevances[idx] is not None:
+            relevance = int(relevances[idx])
+        else:
+            # Fallback citation relevance if lists are misaligned.
+            relevance = 0
 
-        relevance = max(
-            0,
-            min(
-                100,
-                relevance
-            )
-        )
+        relevance = max(0, min(100, relevance))
 
 
         sources.append(

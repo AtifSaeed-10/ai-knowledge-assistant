@@ -10,6 +10,7 @@ from database.document_store import (
     get_document,
     delete_document
 )
+from bm25_index import bm25_index
 
 client = chromadb.PersistentClient(
     path=CHROMA_DB_PATH
@@ -32,6 +33,8 @@ def remove_document(document_id):
         }
     )
 
+    # Keep BM25 aligned with Chroma after deletes.
+    bm25_index.invalidate()
 
     deleted = delete_document(
         document_id

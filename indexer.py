@@ -2,7 +2,6 @@ import os
 import gc
 
 from pypdf import PdfReader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from fastembed import TextEmbedding
 import chromadb
 from database.document_store import (
@@ -13,6 +12,11 @@ from config import (
     CHROMA_DB_PATH,
     COLLECTION_NAME,
 )
+from chunking import (
+    build_chunks_from_pages,
+    chroma_metadata_for_chunk,
+)
+from bm25_index import bm25_index
 
 
 # ========================
@@ -29,9 +33,9 @@ model = TextEmbedding(
 def index_pdf(pdf_path: str, document_id: str):
 
     update_document_status(
-    document_id,
-    "extracting"
-        )
+        document_id,
+        "extracting"
+    )
 
     # ------------------------
     # Load PDF
@@ -44,44 +48,24 @@ def index_pdf(pdf_path: str, document_id: str):
 
         page_text = page.extract_text()
 
-        if page_text:
+        if page_text and page_text.strip():
             pages.append(
                 {
                     "page_number": page_number,
                     "text": page_text
                 }
-                )
-
+            )
 
     update_document_status(
         document_id,
         "chunking"
-        )
+    )
+
     # ------------------------
-    # Chunking
+    # Chunking (RAG V2 Phase 1)
+    # Document-level, structure-aware; page spans kept as metadata.
     # ------------------------
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
-        chunk_overlap=100
-                                                )
-    ########
-    chunks = []
-
-    for page in pages:
-
-        page_chunks = splitter.split_text(
-            page["text"]
-        )
-
-        for chunk in page_chunks:
-
-            chunks.append(
-                {
-                    "text": chunk,
-                    "page_number": page["page_number"]
-                }
-            )
-    ########
+    chunks = build_chunks_from_pages(pages, document_id)
 
     print(f"Chunks created: {len(chunks)}")
 
@@ -89,7 +73,7 @@ def index_pdf(pdf_path: str, document_id: str):
         document_id,
         len(pages),
         len(chunks)
-        )
+    )
 
     if not chunks:
         print("⚠️ No text extracted from PDF.")
@@ -101,19 +85,18 @@ def index_pdf(pdf_path: str, document_id: str):
 
     print(
         f"Using document ID: {document_id}"
-        )
-
+    )
 
     print(
         f"Document registered: {document_id}"
     )
+
     # ------------------------
     # Chroma DB setup
     # ------------------------
     client = chromadb.PersistentClient(
         path=CHROMA_DB_PATH
     )
-
 
     collection = client.get_or_create_collection(
         name=COLLECTION_NAME
@@ -123,12 +106,13 @@ def index_pdf(pdf_path: str, document_id: str):
         document_id,
         "embedding"
     )
+
     # ------------------------
     # Embeddings + Store in batches
     # ------------------------
 
     batch_size = 50
-   
+    filename = os.path.basename(pdf_path)
 
     for start in range(0, len(chunks), batch_size):
 
@@ -137,13 +121,11 @@ def index_pdf(pdf_path: str, document_id: str):
         batch_chunks = [
             chunk["text"]
             for chunk in chunks[start:end]
-            ]
-
+        ]
 
         print(
             f"Embedding chunks {start} to {end}"
         )
-
 
         batch_embeddings = list(
             model.embed(batch_chunks)
@@ -151,41 +133,41 @@ def index_pdf(pdf_path: str, document_id: str):
         update_document_status(
             document_id,
             "indexing"
-            ) 
+        )
         collection.add(
             ids=[
                 f"{document_id}_{i}"
                 for i in range(
                     start,
                     min(end, len(chunks))
-                    )
-                ],
+                )
+            ],
 
             documents=batch_chunks,
 
             embeddings=batch_embeddings,
 
             metadatas=[
-             {
-                "document_id": document_id,
-                "filename": os.path.basename(pdf_path),
-                "chunk_index": start + i,
-                "page_number": chunk["page_number"]
-            }
-                for i, chunk in enumerate(chunks[start:end])
-                ]
+                chroma_metadata_for_chunk(
+                    chunk,
+                    document_id,
+                    filename,
+                )
+                for chunk in chunks[start:end]
+            ]
         )
-
 
         # Free memory after each batch
         del batch_embeddings
         gc.collect()
 
-
     update_document_status(
         document_id,
         "ready"
     )
+
+    # Chroma corpus changed — rebuild BM25 on next retrieval.
+    bm25_index.invalidate()
 
     print("✅ PDF indexed successfully!")
 
