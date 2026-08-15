@@ -113,10 +113,20 @@ def chat_stream(request: ChatRequest):
         )
 
 
+        # Retrieve/rerank once; do not fully generate here (stream generates once).
         response = ask_question(
             request.question,
             history,
-            request.document_ids
+            request.document_ids,
+            generate=False,
+        )
+
+
+        # Match /chat: persist user message after successful retrieval prep.
+        save_message(
+            request.conversation_id,
+            "user",
+            request.question,
         )
 
 
@@ -137,15 +147,47 @@ def chat_stream(request: ChatRequest):
 
         if not prompt:
 
-            yield response["answer"]
+            answer = response.get("answer") or (
+                "No relevant information found in the document."
+            )
+
+            if is_valid_response(answer):
+
+                save_message(
+                    request.conversation_id,
+                    "assistant",
+                    answer,
+                )
+
+            yield answer
 
             return
 
 
 
-        for chunk in generate_response_stream(prompt):
+        answer_parts: list[str] = []
 
-            yield chunk
+        try:
+
+            for chunk in generate_response_stream(prompt):
+
+                answer_parts.append(chunk)
+                yield chunk
+
+            answer = "".join(answer_parts)
+
+            if is_valid_response(answer):
+
+                save_message(
+                    request.conversation_id,
+                    "assistant",
+                    answer,
+                )
+
+        except Exception:
+
+            # Do not save a partial assistant response on stream failure.
+            raise
 
 
 

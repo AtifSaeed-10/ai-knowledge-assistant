@@ -12,6 +12,7 @@ from config import (
     RERANK_CANDIDATE_K,
     RERANK_TOP_K,
     RRF_K,
+    CITATION_MIN_RELEVANCE,
 )
 from bm25_index import bm25_index
 from reranker import reranker
@@ -118,8 +119,16 @@ __all__ = [
 def ask_question(
     question: str,
     history=None,
-    document_ids=None
+    document_ids=None,
+    *,
+    generate: bool = True,
 ):
+    """
+    Run retrieval/rerank, build prompt + citations, optionally generate.
+
+    generate=True  → non-streaming /chat (default; full answer)
+    generate=False → /chat/stream prepares prompt once; caller streams LLM
+    """
 
 
     # ------------------------
@@ -171,7 +180,8 @@ def ask_question(
 
         return {
             "answer": "No relevant information found in the document.",
-            "sources": []
+            "sources": [],
+            "prompt": None,
         }
 
 
@@ -265,14 +275,6 @@ Answer:
     print(prompt)
 
 
-
-    # ------------------------
-    # Generate Answer
-    # ------------------------
-
-    answer = generate_response(prompt)
-
-
     # ------------------------
     # Build Citations
     # ------------------------
@@ -290,6 +292,9 @@ Answer:
 
         relevance = max(0, min(100, relevance))
 
+        if relevance < CITATION_MIN_RELEVANCE:
+            continue
+
 
         sources.append(
             {
@@ -301,6 +306,20 @@ Answer:
             }
         )
 
+
+    # ------------------------
+    # Generate Answer (optional)
+    # ------------------------
+
+    if not generate:
+        # Streaming callers generate once via generate_response_stream(prompt).
+        return {
+            "answer": "",
+            "sources": sources,
+            "prompt": prompt,
+        }
+
+    answer = generate_response(prompt)
 
     return {
         "answer": answer,
