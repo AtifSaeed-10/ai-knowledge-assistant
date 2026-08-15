@@ -281,13 +281,24 @@ def retrieve_candidates(
     print(f"Fused pool (<={pool_k}): {len(fused)}")
 
     fallback = False
+    rerank_stats: dict[str, Any] = {
+        "input_count": len(fused),
+        "unique_count": len(fused),
+        "deduped_count": 0,
+    }
     try:
         selected = rerank_candidates(
             question,
             fused,
             top_k=final_k,
+            stats_out=rerank_stats,
         )
         print("\n========== RERANK ==========")
+        print(
+            f"Entering BGE: {rerank_stats.get('unique_count')} "
+            f"(from {rerank_stats.get('input_count')}, "
+            f"exact-text deduped {rerank_stats.get('deduped_count')})"
+        )
         print(f"Model pool → top {final_k}: {len(selected)}")
         for item in selected:
             print(
@@ -321,4 +332,7 @@ def retrieve_candidates(
         "reranker_scores": [item.get("reranker_score") for item in selected],
         "relevances": [item.get("relevance") for item in selected],
         "rerank_fallback": fallback,
+        "rerank_input_count": rerank_stats.get("input_count"),
+        "rerank_unique_count": rerank_stats.get("unique_count"),
+        "rerank_deduped_count": rerank_stats.get("deduped_count"),
     }

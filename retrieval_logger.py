@@ -51,9 +51,15 @@ def log_retrieval(
                 f"ID: {ids[i]}\n"
             )
 
-            file.write(
-                f"DISTANCE: {distances[i]:.4f}\n"
-            )
+            distance = distances[i]
+            if distance is None:
+                file.write(
+                    "DISTANCE: None\n"
+                )
+            else:
+                file.write(
+                    f"DISTANCE: {distance:.4f}\n"
+                )
 
             file.write(
                 f"METADATA: {metadata[i]}\n"

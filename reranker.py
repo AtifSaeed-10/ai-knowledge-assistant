@@ -2,16 +2,23 @@
 RAG V2 Phase 3 — FastEmbed / ONNX cross-encoder reranking.
 
 Isolated so the model can be swapped later without touching hybrid retrieval.
-Uses BAAI/bge-reranker-base by default via TextCrossEncoder.
+Default: BAAI/bge-reranker-base. A/B alternative: Xenova/ms-marco-MiniLM-L-6-v2
+(config.RERANKER_MODEL_MINILM).
 """
 
 from __future__ import annotations
 
 import math
+import re
 import threading
+from difflib import SequenceMatcher
 from typing import Any
 
 from config import (
+    EVIDENCE_FALLBACK_MIN_RERANK,
+    EVIDENCE_MIN_RELEVANCE,
+    EVIDENCE_NEAR_DUP_RATIO,
+    RERANK_MAX_CHARS,
     RERANK_MIN_SCORE,
     RERANK_TOP_K,
     RERANKER_MODEL,
@@ -32,6 +39,273 @@ def sigmoid_relevance(score: float) -> int:
         z = math.exp(score)
         prob = z / (1.0 + z)
     return int(max(0, min(100, round(prob * 100))))
+
+
+def truncate_for_rerank(
+    text: str,
+    max_chars: int | None = None,
+) -> str:
+    """
+    Deterministic head+tail truncation for BGE scoring only.
+
+    Full chunk text is preserved for LLM context / citations elsewhere.
+    """
+    limit = RERANK_MAX_CHARS if max_chars is None else max_chars
+    if limit <= 0 or len(text) <= limit:
+        return text
+
+    marker = " ... "
+    # Prefer keeping more of the beginning (definitions/headings often lead).
+    head = max(1, int(limit * 0.75))
+    tail = limit - head - len(marker)
+    if tail < 1:
+        return text[:limit]
+    return text[:head] + marker + text[-tail:]
+
+
+def dedupe_by_chunk_id(
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    unique: dict[str, dict[str, Any]] = {}
+    ordered: list[dict[str, Any]] = []
+    for cand in candidates:
+        chunk_id = cand.get("id")
+        if not chunk_id or chunk_id in unique:
+            continue
+        unique[chunk_id] = cand
+        ordered.append(cand)
+    return ordered
+
+
+def page_slot_key(metadata: dict[str, Any]) -> tuple[str, int]:
+    """Stable (document, page) key for evidence-slot diversification."""
+    doc_id = str(metadata.get("document_id") or "")
+    page = metadata.get("page_number")
+    if page is None:
+        page = metadata.get("page_start")
+    try:
+        page_num = int(page)
+    except (TypeError, ValueError):
+        page_num = -1
+    return (doc_id, page_num)
+
+
+def normalize_evidence_text(text: str) -> str:
+    """Lowercase + collapse whitespace for overlap comparisons."""
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def text_overlap_ratio(text_a: str, text_b: str) -> float:
+    """
+    Estimate how much two chunk texts substantially overlap [0.0, 1.0].
+
+    Uses substring containment (common with chunk overlap) and SequenceMatcher
+    for partial overlap. Full text is compared; rerank truncation is separate.
+    """
+    a = normalize_evidence_text(text_a)
+    b = normalize_evidence_text(text_b)
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    if shorter in longer:
+        return len(shorter) / len(longer)
+
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def suppress_near_duplicates(
+    candidates: list[dict[str, Any]],
+    overlap_threshold: float | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Drop lower-scored chunks that substantially overlap a kept chunk.
+
+    Candidates are processed in reranker-score order so the stronger hit wins.
+    """
+    threshold = (
+        overlap_threshold
+        if overlap_threshold is not None
+        else EVIDENCE_NEAR_DUP_RATIO
+    )
+    if not candidates:
+        return []
+
+    def _sort_key(item: dict[str, Any]) -> tuple:
+        rerank = item.get("reranker_score")
+        rerank_sort = float(rerank) if rerank is not None else -1e9
+        return (
+            -rerank_sort,
+            -float(item.get("rrf_score") or 0.0),
+            str(item.get("id") or ""),
+        )
+
+    ranked = sorted(candidates, key=_sort_key)
+    kept: list[dict[str, Any]] = []
+
+    for cand in ranked:
+        text = cand.get("text") or ""
+        is_near_dup = False
+        for existing in kept:
+            overlap = text_overlap_ratio(text, existing.get("text") or "")
+            if overlap >= threshold:
+                is_near_dup = True
+                break
+        if not is_near_dup:
+            kept.append(cand)
+
+    return kept
+
+
+def filter_min_relevance(
+    candidates: list[dict[str, Any]],
+    min_relevance: int | None,
+) -> list[dict[str, Any]]:
+    if min_relevance is None:
+        return list(candidates)
+    floor = int(min_relevance)
+    return [
+        cand
+        for cand in candidates
+        if int(cand.get("relevance") or 0) >= floor
+    ]
+
+
+def diversify_by_page(
+    candidates: list[dict[str, Any]],
+    top_k: int,
+) -> list[dict[str, Any]]:
+    """
+    Pick up to top_k chunks with at most one slot per document page.
+
+    Keeps the highest-scoring chunk per page; does not fill spare slots
+    with additional chunks from the same page.
+    """
+    if top_k <= 0 or not candidates:
+        return []
+
+    def _sort_key(item: dict[str, Any]) -> tuple:
+        rerank = item.get("reranker_score")
+        rerank_sort = float(rerank) if rerank is not None else -1e9
+        return (
+            -rerank_sort,
+            -float(item.get("rrf_score") or 0.0),
+            str(item.get("id") or ""),
+        )
+
+    ranked = sorted(candidates, key=_sort_key)
+    selected: list[dict[str, Any]] = []
+    seen_pages: set[tuple[str, int]] = set()
+
+    for cand in ranked:
+        meta = cand.get("metadata") or {}
+        slot = page_slot_key(meta)
+        if slot in seen_pages:
+            continue
+        seen_pages.add(slot)
+        selected.append(cand)
+        if len(selected) >= top_k:
+            break
+
+    return selected
+
+
+def _evidence_sort_key(item: dict[str, Any]) -> tuple:
+    rerank = item.get("reranker_score")
+    rerank_sort = float(rerank) if rerank is not None else -1e9
+    return (
+        -rerank_sort,
+        -float(item.get("rrf_score") or 0.0),
+        str(item.get("id") or ""),
+    )
+
+
+def has_dual_retrieval_support(candidate: dict[str, Any]) -> bool:
+    """True when fused metadata shows both dense and BM25 retrieval paths."""
+    sources = candidate.get("sources") or []
+    source_set = {str(source).lower() for source in sources}
+    return "dense" in source_set and "bm25" in source_set
+
+
+def dual_source_fallback_candidates(
+    candidates: list[dict[str, Any]],
+    min_rerank_score: float | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Admit a single top reranked chunk when relevance filtering emptied the pool.
+
+    Only used for MiniLM false negatives: dual hybrid support + weakly negative
+    but not deeply irrelevant raw reranker score.
+    """
+    if not candidates:
+        return []
+
+    floor = (
+        min_rerank_score
+        if min_rerank_score is not None
+        else EVIDENCE_FALLBACK_MIN_RERANK
+    )
+    top = sorted(candidates, key=_evidence_sort_key)[0]
+    rerank = top.get("reranker_score")
+    if rerank is None:
+        return []
+    if float(rerank) <= floor:
+        return []
+    if not has_dual_retrieval_support(top):
+        return []
+    return [top]
+
+
+def select_evidence(
+    candidates: list[dict[str, Any]],
+    top_k: int,
+    min_relevance: int | None = None,
+) -> list[dict[str, Any]]:
+    """Filter weak evidence, suppress near-dupes, diversify pages, take slots."""
+    relevance_floor = (
+        min_relevance
+        if min_relevance is not None
+        else EVIDENCE_MIN_RELEVANCE
+    )
+    filtered = filter_min_relevance(candidates, relevance_floor)
+    if not filtered:
+        filtered = dual_source_fallback_candidates(candidates)
+    deduped = suppress_near_duplicates(filtered)
+    return diversify_by_page(deduped, top_k)
+
+
+def dedupe_exact_text(
+    candidates: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """
+    Keep one representative per exact chunk text.
+
+    Prefers higher rrf_score, then lexicographically smaller id.
+    Returns (unique_candidates, number_removed).
+    """
+    best_by_text: dict[str, dict[str, Any]] = {}
+    text_order: list[str] = []
+
+    for cand in candidates:
+        text = cand.get("text") or ""
+        prev = best_by_text.get(text)
+        if prev is None:
+            best_by_text[text] = cand
+            text_order.append(text)
+            continue
+
+        prev_rrf = float(prev.get("rrf_score") or 0.0)
+        cur_rrf = float(cand.get("rrf_score") or 0.0)
+        if cur_rrf > prev_rrf or (
+            cur_rrf == prev_rrf and str(cand.get("id")) < str(prev.get("id"))
+        ):
+            best_by_text[text] = cand
+
+    unique = [best_by_text[t] for t in text_order]
+    removed = len(candidates) - len(unique)
+    return unique, removed
 
 
 class CrossEncoderReranker:
@@ -107,35 +381,54 @@ def rerank_candidates(
     *,
     top_k: int | None = None,
     min_score: float | None = None,
+    max_chars: int | None = None,
     reranker_service: CrossEncoderReranker | None = None,
+    stats_out: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Rerank an already-fused, deduplicated candidate pool.
+    Rerank an already-fused candidate pool.
 
-    Preserves dense_distance / bm25_score / rrf_score separately and adds
-    reranker_score + relevance. Final order is by reranker_score descending.
+    Steps:
+      1) dedupe by chunk id
+      2) dedupe by exact text (score one copy)
+      3) score truncated text with the configured cross-encoder
+      4) return top_k with FULL original text for context/citations
     """
     limit = top_k if top_k is not None else RERANK_TOP_K
     score_floor = RERANK_MIN_SCORE if min_score is None else min_score
+    char_limit = RERANK_MAX_CHARS if max_chars is None else max_chars
     service = reranker_service or reranker
 
     if not candidates or limit <= 0:
+        if stats_out is not None:
+            stats_out.update(
+                {
+                    "input_count": 0,
+                    "unique_count": 0,
+                    "deduped_count": 0,
+                }
+            )
         return []
 
-    # Defensive dedupe by chunk id (fusion should already have done this).
-    unique: dict[str, dict[str, Any]] = {}
-    for cand in candidates:
-        chunk_id = cand.get("id")
-        if not chunk_id:
-            continue
-        if chunk_id not in unique:
-            unique[chunk_id] = cand
-    pool = list(unique.values())
+    id_deduped = dedupe_by_chunk_id(candidates)
+    pool, text_removed = dedupe_exact_text(id_deduped)
+    if stats_out is not None:
+        stats_out.update(
+            {
+                "input_count": len(id_deduped),
+                "unique_count": len(pool),
+                "deduped_count": text_removed,
+            }
+        )
+
     if not pool:
         return []
 
-    documents = [c.get("text") or "" for c in pool]
-    scores = service.score(query, documents)
+    # Truncate only the representation sent to the reranker; keep full text on candidates.
+    scored_docs = [
+        truncate_for_rerank(c.get("text") or "", char_limit) for c in pool
+    ]
+    scores = service.score(query, scored_docs)
 
     scored: list[dict[str, Any]] = []
     for cand, raw_score in zip(pool, scores):
@@ -157,7 +450,7 @@ def rerank_candidates(
     scored.sort(
         key=lambda item: (-item["reranker_score"], item["id"])
     )
-    return scored[:limit]
+    return select_evidence(scored, limit)
 
 
 def rrf_fallback_candidates(
@@ -174,20 +467,18 @@ def rrf_fallback_candidates(
     if reason:
         print(f"WARNING: RERANKER FALLBACK: {reason}")
 
-    unique: dict[str, dict[str, Any]] = {}
-    for cand in candidates:
-        chunk_id = cand.get("id")
-        if chunk_id and chunk_id not in unique:
-            unique[chunk_id] = cand
+    unique = dedupe_by_chunk_id(candidates)
+    # Exact-text dedupe for fallback too so TOP_K is not wasted on clones.
+    unique, _ = dedupe_exact_text(unique)
 
     ranked = sorted(
-        unique.values(),
+        unique,
         key=lambda item: (-float(item.get("rrf_score") or 0.0), item["id"]),
     )
 
     max_rrf = float(ranked[0].get("rrf_score") or 0.0) if ranked else 0.0
     results: list[dict[str, Any]] = []
-    for cand in ranked[:limit]:
+    for cand in ranked:
         rrf = float(cand.get("rrf_score") or 0.0)
         if max_rrf > 0:
             relevance = int(max(0, min(100, round((rrf / max_rrf) * 100))))
@@ -207,4 +498,4 @@ def rrf_fallback_candidates(
                 "rerank_fallback": True,
             }
         )
-    return results
+    return select_evidence(results, limit)
