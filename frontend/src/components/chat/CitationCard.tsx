@@ -28,7 +28,11 @@ export const CitationCard = ({
           ? "border-[#87AB72] bg-white shadow-[0_0_0_3px_rgba(135,171,114,0.14)]"
           : "border-[#EBEFEA] bg-white hover:border-[#D0D7CB] hover:bg-[#FBFBFA]"
       }`}
-      title={`${citation.documentName} · page ${citation.pageNumber}`}
+      title={
+        citation.pageNumber
+          ? `${citation.documentName} · page ${citation.pageNumber}`
+          : citation.documentName
+      }
     >
       <div className="flex items-start gap-2.5">
         {typeof index === "number" && (
@@ -50,7 +54,7 @@ export const CitationCard = ({
 
           <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-[#6F7B6B]">
             <span className="rounded bg-[#F6F7F4] px-1.5 py-0.5 font-medium text-[#5B6858]">
-              p. {citation.pageNumber}
+              {citation.pageNumber ? `p. ${citation.pageNumber}` : "page unknown"}
             </span>
             {relScore !== null && <span>{relScore}% match</span>}
           </span>
@@ -62,7 +66,7 @@ export const CitationCard = ({
           )}
 
           <span className="mt-1.5 block text-[11px] font-medium text-[#4A5D23] opacity-0 transition-opacity group-hover:opacity-100">
-            View source →
+          View {citation.pageNumber ? `page ${citation.pageNumber}` : "source"} →
           </span>
         </span>
       </div>

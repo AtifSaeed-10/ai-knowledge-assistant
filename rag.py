@@ -24,6 +24,25 @@ from hybrid_retrieval import (
 )
 
 
+def _citation_page(meta: dict) -> int | None:
+    """
+    Use stored chunk page metadata only. Never invent a page number.
+    Invalid / missing values become None so the viewer can fail gracefully.
+    """
+    if not meta:
+        return None
+    value = meta.get("page_number")
+    if value is None:
+        value = meta.get("page_start")
+    try:
+        page = int(value)
+    except (TypeError, ValueError):
+        return None
+    if page < 1:
+        return None
+    return page
+
+
 # ========================
 # Chroma Client
 # ========================
@@ -295,12 +314,14 @@ Answer:
         if relevance < CITATION_MIN_RELEVANCE:
             continue
 
+        meta = meta or {}
+        page = _citation_page(meta)
 
         sources.append(
             {
-                "document_id": meta["document_id"],
-                "filename": meta["filename"],
-                "page": meta["page_number"],
+                "document_id": meta.get("document_id") or "",
+                "filename": meta.get("filename") or "",
+                "page": page,
                 "chunk_id": chunk_id,
                 "relevance": relevance
             }

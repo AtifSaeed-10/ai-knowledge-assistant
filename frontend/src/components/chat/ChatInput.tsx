@@ -1,6 +1,7 @@
 import React, { useState, KeyboardEvent, useRef } from "react";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp, Square } from "lucide-react";
 import { useChatStore } from "@/store/useChatStore";
+import { useDocumentStore } from "@/store/useDocumentStore";
 
 interface ChatInputProps {
   onSend: (content: string) => void;
@@ -14,8 +15,19 @@ export const ChatInput = ({
   disabled,
 }: ChatInputProps) => {
   const [input, setInput] = useState("");
-  const { activeCitation, setActiveCitation } = useChatStore();
+  const { activeCitation, setActiveCitation, productMode, stopGeneration } = useChatStore();
+  const selectedDocumentId = useDocumentStore((state) => state.selectedDocumentId);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const placeholder = disabled
+    ? productMode === "super_focused" && !selectedDocumentId
+      ? "Select a document for Super Focused mode…"
+      : "Waiting for a ready document…"
+    : isLoading
+      ? "Generating answer…"
+      : productMode === "super_focused"
+        ? "Ask a question about the selected document…"
+        : "Ask about your documents…";
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -67,17 +79,22 @@ export const ChatInput = ({
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           disabled={disabled || isLoading}
-          placeholder={
-            disabled
-              ? "Waiting for a ready document…"
-              : isLoading
-                ? "Generating answer…"
-                : "Ask about your documents…"
-          }
+          placeholder={placeholder}
           rows={1}
           className="max-h-40 min-h-[42px] flex-1 resize-none bg-transparent py-2.5 text-[14px] leading-relaxed tracking-[-0.01em] text-[#1C241F] outline-none placeholder:text-[#98A395] disabled:cursor-not-allowed"
         />
 
+        {isLoading ? (
+          <button
+            type="button"
+            onClick={stopGeneration}
+            aria-label="Stop generation"
+            title="Stop generation"
+            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#1C241F] text-white transition-colors hover:bg-[#2A322E]"
+          >
+            <Square className="h-3.5 w-3.5 fill-current" />
+          </button>
+        ) : (
         <button
           onClick={handleSend}
           disabled={!canSend}
@@ -88,12 +105,9 @@ export const ChatInput = ({
               : "bg-[#F1F3EF] text-[#B0B8AB]"
           } disabled:cursor-not-allowed`}
         >
-          {isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <ArrowUp className="h-4 w-4" strokeWidth={2.25} />
-          )}
+          <ArrowUp className="h-4 w-4" strokeWidth={2.25} />
         </button>
+        )}
       </div>
 
       {!disabled && (

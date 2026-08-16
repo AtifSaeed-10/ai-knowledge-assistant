@@ -235,4 +235,20 @@ export const documentsApi = {
 
   },
 
+  /**
+   * Original PDF for page-accurate preview.
+   * GET /documents/{document_id}/file
+   */
+  fileUrl(documentId: string, page?: number | null): string {
+    const base = `${API_CONFIG.baseUrl}/documents/${encodeURIComponent(documentId)}/file`;
+    if (
+      typeof page === "number" &&
+      Number.isFinite(page) &&
+      page >= 1
+    ) {
+      return `${base}#page=${Math.floor(page)}`;
+    }
+    return base;
+  },
+
 };

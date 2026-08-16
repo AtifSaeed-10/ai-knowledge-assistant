@@ -1,11 +1,21 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useChatStore } from "@/store/useChatStore";
-import { X, FileText, Quote, ShieldCheck } from "lucide-react";
+import { documentsApi } from "@/lib/api/documents";
+import { X, FileText, AlertCircle } from "lucide-react";
+
+function isValidPage(page: number | null | undefined): page is number {
+  return typeof page === "number" && Number.isFinite(page) && page >= 1;
+}
 
 export const CitationDrawer = () => {
   const { activeCitation, setActiveCitation } = useChatStore();
   const isOpen = !!activeCitation;
   const drawerRef = useRef<HTMLDivElement>(null);
+  const [iframeFailed, setIframeFailed] = useState(false);
+
+  useEffect(() => {
+    setIframeFailed(false);
+  }, [activeCitation?.id, activeCitation?.pageNumber]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -32,6 +42,15 @@ export const CitationDrawer = () => {
     };
   }, [isOpen, setActiveCitation]);
 
+  const documentId = activeCitation?.documentId || null;
+  const pageValid = isValidPage(activeCitation?.pageNumber ?? null);
+  const pdfUrl = documentId
+    ? documentsApi.fileUrl(
+        documentId,
+        pageValid ? activeCitation?.pageNumber : null
+      )
+    : null;
+
   const relScore = activeCitation?.relevance
     ? activeCitation.relevance > 1
       ? Math.round(activeCitation.relevance)
@@ -42,28 +61,25 @@ export const CitationDrawer = () => {
     <>
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-[#1C241F]/20 backdrop-blur-[1px] animate-in fade-in duration-200 lg:hidden"
+          className="fixed inset-0 z-40 bg-[#1C241F]/25 backdrop-blur-[2px] animate-in fade-in duration-200"
           onClick={() => setActiveCitation(null)}
         />
       )}
 
       <div
         ref={drawerRef}
-        className={`fixed right-0 top-0 z-50 flex h-full w-full flex-col border-l border-[#EBEFEA] bg-white shadow-2xl transition-transform duration-300 ease-out sm:w-[400px] ${
+        className={`fixed right-0 top-0 z-50 flex h-full w-full flex-col border-l border-[#EBEFEA] bg-white shadow-2xl transition-transform duration-300 ease-out sm:w-[min(720px,92vw)] ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
         <div className="flex items-center justify-between border-b border-[#EBEFEA] px-5 py-3.5">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-[#4A5D23]" strokeWidth={1.75} />
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
-                Evidence
-              </p>
-              <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-[#1C241F]">
-                Source used in this answer
-              </h3>
-            </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
+              Source document
+            </p>
+            <h3 className="truncate text-[13px] font-semibold tracking-[-0.01em] text-[#1C241F]">
+              {activeCitation?.documentName || "Citation"}
+            </h3>
           </div>
           <button
             onClick={() => setActiveCitation(null)}
@@ -75,60 +91,51 @@ export const CitationDrawer = () => {
         </div>
 
         {activeCitation && (
-          <div
-            key={activeCitation.id}
-            className="flex-1 overflow-y-auto px-5 py-5 animate-in fade-in slide-in-from-right-2 duration-300"
-          >
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#F6F7F4] text-[#4A5D23]">
-                <FileText className="h-4 w-4" strokeWidth={1.75} />
-              </span>
-              <div className="min-w-0">
-                <h2 className="text-[16px] font-semibold leading-snug tracking-[-0.01em] text-[#1C241F]">
-                  {activeCitation.documentName}
-                </h2>
-                <p className="mt-1 text-[13px] text-[#6F7B6B]">
-                  Cited from page {activeCitation.pageNumber}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-wrap gap-2">
-              <span className="inline-flex items-center rounded-lg bg-[#F6F7F4] px-2.5 py-1.5 text-[12px] font-medium text-[#5B6858]">
-                Page {activeCitation.pageNumber}
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex flex-wrap items-center gap-2 border-b border-[#EBEFEA] px-5 py-3">
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#F6F7F4] px-2.5 py-1.5 text-[12px] font-medium text-[#5B6858]">
+                <FileText className="h-3.5 w-3.5" />
+                {pageValid
+                  ? `p. ${activeCitation.pageNumber}`
+                  : "Page unavailable"}
               </span>
               {relScore !== null && (
                 <span className="inline-flex items-center rounded-lg bg-[#F6F7F4] px-2.5 py-1.5 text-[12px] font-medium text-[#5B6858]">
                   {relScore}% relevance
                 </span>
               )}
+              {pdfUrl && (
+                <a
+                  href={pdfUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ml-auto text-[12px] font-medium text-[#4A5D23] hover:text-[#3E4E1D]"
+                >
+                  Open in new tab
+                </a>
+              )}
             </div>
 
-            {activeCitation.snippet ? (
-              <div className="mt-6">
-                <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
-                  <Quote className="h-3 w-3" />
-                  Supporting excerpt
+            <div className="min-h-0 flex-1 bg-[#F6F7F4]">
+              {pdfUrl && !iframeFailed ? (
+                <iframe
+                  key={`${documentId}-${pageValid ? activeCitation.pageNumber : "none"}`}
+                  title={`${activeCitation.documentName} page preview`}
+                  src={pdfUrl}
+                  className="h-full w-full border-0 bg-white"
+                  onError={() => setIframeFailed(true)}
+                />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center">
+                  <AlertCircle className="h-5 w-5 text-[#98A395]" />
+                  <p className="text-[13px] leading-relaxed text-[#6F7B6B]">
+                    {documentId
+                      ? "The PDF preview could not be loaded. Use Open in new tab if the file is available."
+                      : "This citation does not include a document id, so the original PDF cannot be opened."}
+                  </p>
                 </div>
-                <blockquote className="rounded-xl bg-[#F6F7F4] px-4 py-3.5 text-[14px] leading-relaxed text-[#2A322E]">
-                  “{activeCitation.snippet}”
-                </blockquote>
-              </div>
-            ) : (
-              <div className="mt-6 rounded-xl bg-[#F6F7F4] px-4 py-4">
-                <p className="text-[13px] leading-relaxed text-[#6F7B6B]">
-                  This answer drew on page {activeCitation.pageNumber} of{" "}
-                  <span className="font-medium text-[#1C241F]">
-                    {activeCitation.documentName}
-                  </span>
-                  . Open that page in the original PDF for full context.
-                </p>
-              </div>
-            )}
-
-            <p className="mt-8 text-[12px] leading-relaxed text-[#98A395]">
-              Citations show where the answer came from — not every page in the document.
-            </p>
+              )}
+            </div>
           </div>
         )}
       </div>

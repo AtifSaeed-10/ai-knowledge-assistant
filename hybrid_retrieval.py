@@ -299,7 +299,7 @@ def retrieve_candidates(
             f"(from {rerank_stats.get('input_count')}, "
             f"exact-text deduped {rerank_stats.get('deduped_count')})"
         )
-        print(f"Model pool → top {final_k}: {len(selected)}")
+        print(f"Model pool -> top {final_k}: {len(selected)}")
         for item in selected:
             print(
                 f"  {item['id']} rerank={item['reranker_score']:.4f} "

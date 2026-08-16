@@ -4,119 +4,13 @@ import React from "react";
 import { Sparkles } from "lucide-react";
 import { Message } from "@/types";
 import { SourceList } from "./SourceList";
+import { AnswerMarkdown } from "./AnswerMarkdown";
+import { MessageActions } from "./MessageActions";
+import { useChatStore } from "@/store/useChatStore";
 
 interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
-}
-
-function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-
-  return parts.map((part, index) => {
-    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
-      return (
-        <strong
-          key={`${keyPrefix}-b-${index}`}
-          className="font-semibold text-[#1C241F]"
-        >
-          {part.slice(2, -2)}
-        </strong>
-      );
-    }
-
-    return <React.Fragment key={`${keyPrefix}-t-${index}`}>{part}</React.Fragment>;
-  });
-}
-
-function AnswerContent({ content }: { content: string }) {
-  const blocks = content.split(/\n{2,}/).filter((block) => block.trim().length > 0);
-
-  if (blocks.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="space-y-3">
-      {blocks.map((block, blockIndex) => {
-        const lines = block.split("\n").map((line) => line.trimEnd());
-        const isUnordered = lines.every(
-          (line) => !line.trim() || /^[-*•]\s+/.test(line.trim())
-        );
-        const isOrdered = lines.every(
-          (line) => !line.trim() || /^\d+\.\s+/.test(line.trim())
-        );
-
-        if (isUnordered && lines.some((line) => line.trim())) {
-          return (
-            <ul
-              key={`block-${blockIndex}`}
-              className="space-y-1.5 text-[15px] leading-[1.65] text-[#2A322E]"
-            >
-              {lines
-                .filter((line) => line.trim())
-                .map((line, lineIndex) => (
-                  <li
-                    key={`ul-${blockIndex}-${lineIndex}`}
-                    className="flex gap-2.5"
-                  >
-                    <span className="mt-[0.6em] h-1 w-1 shrink-0 rounded-full bg-[#87AB72]" />
-                    <span className="min-w-0">
-                      {renderInline(
-                        line.trim().replace(/^[-*•]\s+/, ""),
-                        `ul-${blockIndex}-${lineIndex}`
-                      )}
-                    </span>
-                  </li>
-                ))}
-            </ul>
-          );
-        }
-
-        if (isOrdered && lines.some((line) => line.trim())) {
-          return (
-            <ol
-              key={`block-${blockIndex}`}
-              className="space-y-1.5 text-[15px] leading-[1.65] text-[#2A322E]"
-            >
-              {lines
-                .filter((line) => line.trim())
-                .map((line, lineIndex) => (
-                  <li
-                    key={`ol-${blockIndex}-${lineIndex}`}
-                    className="flex gap-2.5"
-                  >
-                    <span className="w-4 shrink-0 pt-[0.1em] text-[12px] font-semibold tabular-nums text-[#98A395]">
-                      {lineIndex + 1}.
-                    </span>
-                    <span className="min-w-0">
-                      {renderInline(
-                        line.trim().replace(/^\d+\.\s+/, ""),
-                        `ol-${blockIndex}-${lineIndex}`
-                      )}
-                    </span>
-                  </li>
-                ))}
-            </ol>
-          );
-        }
-
-        return (
-          <p
-            key={`block-${blockIndex}`}
-            className="whitespace-pre-wrap text-[15px] leading-[1.65] tracking-[-0.01em] text-[#2A322E]"
-          >
-            {lines.map((line, lineIndex) => (
-              <React.Fragment key={`p-${blockIndex}-${lineIndex}`}>
-                {lineIndex > 0 && <br />}
-                {renderInline(line, `p-${blockIndex}-${lineIndex}`)}
-              </React.Fragment>
-            ))}
-          </p>
-        );
-      })}
-    </div>
-  );
 }
 
 export function MessageBubble({
@@ -126,6 +20,17 @@ export function MessageBubble({
   const isUser = message.role === "user";
   const hasContent = Boolean(message.content?.trim());
   const showThinking = !isUser && !hasContent && isStreaming;
+  const isLoading = useChatStore((state) => state.isLoading);
+  const messages = useChatStore((state) => state.messages);
+  const regenerateLast = useChatStore((state) => state.regenerateLast);
+
+  const lastAssistant = [...messages].reverse().find((item) => item.role === "assistant");
+  const showRegenerate =
+    !isUser &&
+    !isStreaming &&
+    !isLoading &&
+    lastAssistant?.id === message.id &&
+    hasContent;
 
   if (isUser) {
     return (
@@ -171,7 +76,7 @@ export function MessageBubble({
           </div>
         ) : (
           <div className="animate-in fade-in duration-200">
-            <AnswerContent content={message.content} />
+            <AnswerMarkdown content={message.content} />
           </div>
         )}
 
@@ -179,6 +84,14 @@ export function MessageBubble({
           message.citations &&
           message.citations.length > 0 &&
           !isStreaming && <SourceList citations={message.citations} />}
+
+        {!isUser && hasContent && !isStreaming && (
+          <MessageActions
+            content={message.content}
+            showRegenerate={showRegenerate}
+            onRegenerate={() => void regenerateLast()}
+          />
+        )}
       </div>
     </div>
   );

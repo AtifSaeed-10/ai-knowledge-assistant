@@ -4,6 +4,7 @@ import { X, PanelLeftClose, PanelLeft, Plus, FileText, CheckCircle2 } from 'luci
 import { Logo } from '@/components/ui/Logo';
 import { DocumentLibrary } from '@/components/documents/DocumentLibrary';
 import { DocumentUploader } from '@/components/documents/DocumentUploader';
+import { ConversationList } from '@/components/chat/ConversationList';
 import { useDocumentStore } from '@/store/useDocumentStore';
 
 interface SidebarProps {
@@ -154,6 +155,11 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               </span>
             )}
           </button>
+        </div>
+
+        {/* Conversations */}
+        <div className="max-h-[38%] shrink-0 overflow-y-auto border-b border-[#EBEFEA] pt-1">
+          <ConversationList isCollapsed={isCollapsed} />
         </div>
 
         {/* Document library */}
