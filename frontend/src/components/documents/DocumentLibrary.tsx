@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from 'react';
-import { FileText, Trash2, ChevronDown, Loader2 } from 'lucide-react';
+import { FileText, Trash2, ChevronDown, Loader2, Focus } from 'lucide-react';
 import { useDocumentStore } from '@/store/useDocumentStore';
+import { useChatStore } from '@/store/useChatStore';
 import { Document, DocumentStatus } from '@/types';
 import { ProcessingTimeline, getFriendlyDocumentStatus } from './ProcessingTimeline';
 
@@ -48,6 +49,9 @@ function StatusDot({ status }: { status: DocumentStatus }) {
 export function DocumentLibrary({ isCollapsed = false }: DocumentLibraryProps) {
   const documents = useDocumentStore((state) => state.documents);
   const deleteDocument = useDocumentStore((state) => state.deleteDocument);
+  const selectedDocumentId = useDocumentStore((state) => state.selectedDocumentId);
+  const selectDocument = useDocumentStore((state) => state.selectDocument);
+  const productMode = useChatStore((state) => state.productMode);
 
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
   const [docToDelete, setDocToDelete] = useState<Document | null>(null);
@@ -99,6 +103,7 @@ export function DocumentLibrary({ isCollapsed = false }: DocumentLibraryProps) {
       <ul className="space-y-0.5">
         {documents.map((doc) => {
           const isExpanded = expandedDoc === doc.id;
+          const isSelected = selectedDocumentId === doc.id;
           const isReady = doc.status === 'ready';
           const friendlyStatus = getFriendlyDocumentStatus(doc.status);
 
@@ -113,17 +118,29 @@ export function DocumentLibrary({ isCollapsed = false }: DocumentLibraryProps) {
                     ? 'justify-center p-2'
                     : 'justify-between gap-1 px-2 py-2'
                 } ${
-                  isExpanded
-                    ? 'bg-[#EFF1EC]'
-                    : 'hover:bg-[#F1F3EF]'
+                  isSelected
+                    ? 'bg-white ring-1 ring-[#87AB72]'
+                    : isExpanded
+                      ? 'bg-[#EFF1EC]'
+                      : 'hover:bg-[#F1F3EF]'
                 }`}
               >
                 <div
                   className={`flex min-w-0 items-center gap-2.5 cursor-pointer ${
                     isCollapsed ? 'justify-center' : 'flex-1'
                   }`}
-                  onClick={() => !isCollapsed && toggleExpand(doc.id)}
-                  title={doc.name}
+                  onClick={() => {
+                    if (isCollapsed) {
+                      selectDocument(doc.id);
+                      return;
+                    }
+                    selectDocument(doc.id);
+                  }}
+                  title={
+                    isReady
+                      ? `Use ${doc.name} as the focused document`
+                      : doc.name
+                  }
                 >
                   <div
                     className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors ${
@@ -158,6 +175,15 @@ export function DocumentLibrary({ isCollapsed = false }: DocumentLibraryProps) {
                         <span className={isReady ? 'text-[#5B6858]' : 'text-[#8A7350]'}>
                           {friendlyStatus}
                         </span>
+                        {isSelected && (
+                          <>
+                            <span className="text-[#D5DBD3]">·</span>
+                            <span className="inline-flex items-center gap-0.5 font-medium text-[#4A5D23]">
+                              <Focus className="h-3 w-3" />
+                              {productMode === 'super_focused' ? 'Focused' : 'Selected'}
+                            </span>
+                          </>
+                        )}
                         <span className="text-[#D5DBD3]">·</span>
                         <span>{formatRelativeTime(doc.uploadedAt)}</span>
                       </div>

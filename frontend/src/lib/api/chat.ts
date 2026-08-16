@@ -1,11 +1,12 @@
 import { Message, Citation } from "@/types";
+import { ProductMode } from "@/types/mode";
 import { API_CONFIG, delay } from "./client";
 
 interface ApiSource {
   document_id?: string;
   filename?: string;
-  page?: number;
-  page_number?: number;
+  page?: number | null;
+  page_number?: number | null;
   chunk_id?: string;
   relevance?: number;
 }
@@ -16,13 +17,20 @@ interface ChatApiResponse {
   sources?: ApiSource[];
 }
 
-function mapSourceToCitation(src: ApiSource, idx: number): Citation {
+export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
+  const rawPage = src.page ?? src.page_number;
+  const pageNumber =
+    typeof rawPage === "number" && Number.isFinite(rawPage) && rawPage >= 1
+      ? Math.floor(rawPage)
+      : null;
+
   return {
     id: src.chunk_id || `cit-${Date.now()}-${idx}`,
     documentName: src.filename || "Unknown Document",
-    pageNumber: src.page ?? src.page_number ?? 1,
+    pageNumber,
     relevance: src.relevance ?? null,
     chunk_id: src.chunk_id ?? null,
+    documentId: src.document_id ?? null,
   };
 }
 
@@ -32,7 +40,8 @@ export const chatApi = {
   async sendMessage(
     content: string,
     documentIds: string[],
-    conversationId: string
+    conversationId: string,
+    mode: ProductMode = "normal"
   ): Promise<Message> {
 
 
@@ -64,6 +73,7 @@ export const chatApi = {
           question: content,
           conversation_id: conversationId,
           document_ids: documentIds,
+          mode,
         }),
       }
     );
@@ -121,7 +131,10 @@ async streamMessage(
   documentIds: string[],
   conversationId: string,
   onChunk: (chunk: string) => void,
-  onComplete: (citations: Citation[]) => void
+  onComplete: (citations: Citation[]) => void,
+  mode: ProductMode = "normal",
+  signal?: AbortSignal,
+  regenerate: boolean = false
 ): Promise<void> {
 
 
@@ -138,7 +151,10 @@ async streamMessage(
         question: content,
         conversation_id: conversationId,
         document_ids: documentIds,
+        mode,
+        regenerate,
       }),
+      signal,
     }
   );
 

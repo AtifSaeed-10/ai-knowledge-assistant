@@ -6,10 +6,12 @@ interface DocumentState {
   documents: Document[];
   isLoading: boolean;
   hasInitialized: boolean;
+  selectedDocumentId: string | null;
   initialize: () => Promise<void>;
   uploadDocument: (file: File) => Promise<void>;
   deleteDocument: (id: string) => Promise<void>;
   updateDocumentStatus: (id: string, status: DocumentStatus) => void;
+  selectDocument: (id: string | null) => void;
 }
 
 const pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
@@ -57,9 +59,14 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
   };
 
   return {
-  documents: [],
-  isLoading: false,
-  hasInitialized: false,
+    documents: [],
+    isLoading: false,
+    hasInitialized: false,
+    selectedDocumentId: null,
+
+    selectDocument: (id) => {
+      set({ selectedDocumentId: id });
+    },
 
   initialize: async () => {
     const { hasInitialized, isLoading } = get();
@@ -124,13 +131,15 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
       // 1. Delete from backend
       await documentsApi.deleteDocument(id);
 
-
-      // 2. Remove from UI
       set((state) => ({
         documents:
           state.documents.filter(
             (doc) => doc.id !== id
           ),
+        selectedDocumentId:
+          state.selectedDocumentId === id
+            ? null
+            : state.selectedDocumentId,
       }));
 
 

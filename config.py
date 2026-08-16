@@ -28,6 +28,17 @@ SQLITE_DB_PATH = os.getenv(
     "./data/documents.db"
 )
 
+DATA_DIR = os.getenv(
+    "DATA_DIR",
+    "./data"
+)
+
+# Agentic Mode is foundation-only until a later phase. Keep disabled.
+AGENTIC_MODE_ENABLED = os.getenv(
+    "AGENTIC_MODE_ENABLED",
+    "false"
+).strip().lower() in {"1", "true", "yes", "on"}
+
 TOP_K = int(
     os.getenv("TOP_K", 5)
 )
