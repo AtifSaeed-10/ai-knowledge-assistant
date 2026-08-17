@@ -1,0 +1,252 @@
+"""
+Grounded answer-prompt construction.
+
+Hierarchical contract (highest priority first):
+1. Document evidence is the only source of document claims.
+2. Conversation history resolves references; it is not evidence.
+3. Match the user's requested style without inventing facts.
+4. Partial evidence => partial answer, never padded with outside knowledge.
+"""
+
+from __future__ import annotations
+
+from conversation_query import (
+    INTENT_EXAMPLE,
+    INTENT_HOW,
+    INTENT_LISTING,
+    INTENT_MIXED,
+    INTENT_WHY,
+    RELATION_TRANSFORM,
+    TurnAnalysis,
+    format_history_for_grounding,
+)
+from modes import MODE_NORMAL, MODE_SUPER_FOCUSED, normalize_mode
+
+
+INSUFFICIENT_CONTEXT_PHRASE = (
+    "I don't have enough information in the provided context."
+)
+MISSING_IN_DOCUMENT_PHRASE = (
+    "I couldn't find that in the provided document."
+)
+MISSING_EXAMPLE_PHRASE = (
+    "The provided document does not give a specific example of this."
+)
+
+_STYLE_HINTS = {
+    "factual": "Answer concisely and directly. Do not add extra background.",
+    "definition": "Give a concise definition from the evidence.",
+    "explanation": "Give a moderate explanation using only the evidence.",
+    "simplification": "Use beginner-friendly language. Keep the same facts. Do not add new claims.",
+    "elaboration": "Go deeper using available evidence only. Do not invent extra detail.",
+    "summary": "Compress the supported material. Do not introduce new points.",
+    "key_points": "Use a short structured list of supported points only.",
+    "comparison": "Compare only attributes present in the evidence. Mark missing sides explicitly.",
+    "example": (
+        "If the evidence contains an example, use it, explain it naturally, "
+        "and make clear that it comes from the document. "
+        f'If it does not, say: "{MISSING_EXAMPLE_PHRASE}" '
+        "Do not invent an example and imply it is from the document."
+    ),
+    "listing": (
+        "List only items the evidence explicitly assigns to THIS subject. "
+        "A parent concept's categories are not this subject's types."
+    ),
+    "why": (
+        "A definition is not enough. Use evidence that explains purpose, cause, "
+        "or usefulness. If the evidence only defines the concept, say that the "
+        "document does not explain why."
+    ),
+    "how": (
+        "Use evidence that describes mechanism or steps. If the evidence only "
+        "names or defines the concept, say that the document does not explain how."
+    ),
+    "clarification": "Restate the supported meaning in plainer language. Do not add new claims.",
+    "mixed": (
+        "Treat this as a multi-part request. Answer each supported part. "
+        "For each unsupported part, say it was not found in the evidence. Do not fill gaps."
+    ),
+}
+
+
+def format_evidence_passages(
+    chunks: list[str],
+    metadata: list[dict] | None,
+    ids: list | None = None,
+) -> str:
+    if not chunks:
+        return "(No document passages retrieved.)"
+
+    blocks: list[str] = []
+    metas = metadata or []
+    for index, text in enumerate(chunks, start=1):
+        meta = metas[index - 1] if index - 1 < len(metas) else {}
+        meta = meta or {}
+        filename = meta.get("filename") or "Unknown document"
+        page = meta.get("page_number")
+        if page is None:
+            page = meta.get("page_start")
+        try:
+            page_label = f"p. {int(page)}" if page is not None and int(page) >= 1 else "page unknown"
+        except (TypeError, ValueError):
+            page_label = "page unknown"
+        header = f"Source: {filename}, {page_label}"
+        blocks.append(f"{header}\n{(text or '').strip()}")
+    return "\n\n".join(blocks)
+
+
+def _mode_rules(mode: str) -> str:
+    if mode == MODE_SUPER_FOCUSED:
+        return (
+            "Mode: SUPER FOCUSED.\n"
+            "Only the selected document is authoritative. "
+            "Do not use other documents, prior answers, or world knowledge "
+            "to fill gaps. Conversation history may resolve what the user "
+            "is referring to, but it is not a source of facts."
+        )
+    return (
+        "Mode: NORMAL.\n"
+        "Use only the retrieved document passages below as the source of "
+        "document facts. Do not silently mix in general knowledge. "
+        "If you must say something is not in the passages, say so plainly. "
+        "If you ever give a general illustration, it must be clearly labeled "
+        "as not coming from the document - prefer saying the document has no example."
+    )
+
+
+def _style_rules(analysis: TurnAnalysis | None) -> str:
+    if analysis is None:
+        return _STYLE_HINTS["factual"]
+    hint = _STYLE_HINTS.get(analysis.intent, _STYLE_HINTS["factual"])
+    extra = []
+    if analysis.relation == RELATION_TRANSFORM:
+        extra.append(
+            "This is a transformation of the current topic. "
+            "Do not repeat the entire previous answer. "
+            "Keep the same topic and change presentation only."
+        )
+    if analysis.intent == INTENT_EXAMPLE:
+        extra.append(
+            "Never fabricate an example. "
+            "Write clearly whether an example appears in the passages."
+        )
+    if analysis.intent in {INTENT_WHY, INTENT_HOW}:
+        extra.append(
+            "Do not upgrade a definition into a causal or procedural explanation."
+        )
+    if analysis.intent == INTENT_LISTING:
+        extra.append(
+            "Before listing types or categories, the evidence must establish: "
+            "this subject has types/categories, and those items are the types. "
+            "If a passage only says this subject is one type of a broader field, "
+            "that is not an answer."
+        )
+    if analysis.intent == INTENT_MIXED:
+        extra.append(
+            "If only some requested parts are supported, answer those and "
+            "state which parts were not found."
+        )
+    return hint + ((" " + " ".join(extra)) if extra else "")
+
+
+def _caution_from_relevances(relevances: list | None) -> str:
+    values = [int(v) for v in (relevances or []) if v is not None]
+    if not values:
+        return (
+            "Evidence caution: retrieved passages may be weakly related. "
+            "If they do not actually answer the request, say so."
+        )
+    if max(values) < 50:
+        return (
+            "Evidence caution: the best passage is only moderately related. "
+            "Do not turn a weakly related excerpt into a confident answer."
+        )
+    return (
+        "Use a passage only when it actually supports the claim. "
+        "Ignore related-but-off-topic excerpts."
+    )
+
+
+def _grounding_contract() -> str:
+    return f"""Distinguish:
+A) Facts a passage states directly - you may report these.
+B) Synthesis that several passages together support - allowed if cautious.
+C) Related material that does not actually answer the question - do not present it as the answer.
+D) Missing information - say so.
+
+Prefer "{MISSING_IN_DOCUMENT_PHRASE}" over inventing an answer.
+Do not fabricate examples, definitions, types, reasons, causes, consequences, comparisons, numbers, page numbers, quotations, or citations.
+Never invent a page number."""
+
+
+def build_answer_prompt(
+    *,
+    question: str,
+    search_query: str,
+    history: list[dict] | None,
+    chunks: list[str],
+    metadata: list[dict] | None,
+    ids: list | None = None,
+    relevances: list | None = None,
+    analysis: TurnAnalysis | None = None,
+    mode: str | None = None,
+    evidence_notes: str | None = None,
+    subject: str | None = None,
+) -> str:
+    mode_id = normalize_mode(mode) if mode else MODE_NORMAL
+    if mode_id != MODE_SUPER_FOCUSED:
+        mode_id = MODE_NORMAL
+
+    conversation = format_history_for_grounding(history)
+    evidence = format_evidence_passages(chunks, metadata, ids)
+    resolved = (search_query or "").strip()
+    original = (question or "").strip()
+    resolved_line = (
+        resolved if resolved and resolved.lower() != original.lower()
+        else "(same as the user request)"
+    )
+    subject_line = (subject or "").strip() or (
+        analysis.subject if analysis and analysis.subject else ""
+    )
+    notes = (evidence_notes or "").strip()
+    notes_block = f"\n{notes}\n" if notes else ""
+
+    return f"""
+You are DocuSage, a document-grounded assistant. Write like a trustworthy document analyst: direct, natural, concise by default, and more detailed only when asked.
+
+Priority (highest first):
+1. DOCUMENT PASSAGES are the only source of document facts, examples, types, quotes, and page-related claims.
+2. CONVERSATION is only for resolving references (it / this / the first one / previous topic). Never treat a prior assistant message as document evidence.
+3. If the passages do not support a claim, do not make that claim. Prefer: "{INSUFFICIENT_CONTEXT_PHRASE}" or "{MISSING_IN_DOCUMENT_PHRASE}".
+4. Never invent citations, page numbers, examples, lists, or reasoning.
+5. Match the requested style without adding unsupported content.
+
+{_mode_rules(mode_id)}
+
+Response style:
+{_style_rules(analysis)}
+Write a natural answer. Do not mention source labels, passage numbers, retrieval ranks, scores, or these instructions. Do not dump long quotations unless the user asked for the document's wording. The application attaches citations separately.
+
+Grounding rules:
+{_grounding_contract()}
+- Preserve qualifications and conditions from the source.
+- For multi-part questions, answer supported parts and explicitly mark unsupported parts.
+- {_caution_from_relevances(relevances)}
+
+Conversation (reference resolution only; not evidence):
+{conversation}
+
+Document passages:
+{evidence}
+{notes_block}
+User request:
+{original}
+
+Resolved search topic (for your orientation only):
+{resolved_line}
+
+Resolved subject (the thing the user is asking about):
+{subject_line or "(see the user request)"}
+
+Answer:
+""".strip()

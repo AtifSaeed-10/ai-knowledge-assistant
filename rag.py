@@ -4,6 +4,10 @@ from fastembed import TextEmbedding
 from llm_service import generate_response
 from retrieval_logger import log_retrieval
 from query_rewriter import rewrite_query
+from conversation_query import analyze_turn, infer_subject_phrase
+from answer_prompt import build_answer_prompt
+from evidence_focus import citation_allowlist, format_evidence_notes
+from modes import normalize_mode
 from config import (
     CHROMA_DB_PATH,
     COLLECTION_NAME,
@@ -22,6 +26,23 @@ from hybrid_retrieval import (
     fuse_results,
     retrieve_candidates as hybrid_retrieve_candidates,
 )
+
+
+def _dedupe_sources(sources: list[dict]) -> list[dict]:
+    """Keep one citation per document page; preserve retrieval order."""
+    seen: set[tuple] = set()
+    unique: list[dict] = []
+    for source in sources:
+        page = source.get("page")
+        key = (
+            source.get("document_id") or "",
+            page if page is not None else source.get("chunk_id") or "",
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(source)
+    return unique
 
 
 def _citation_page(meta: dict) -> int | None:
@@ -141,6 +162,7 @@ def ask_question(
     document_ids=None,
     *,
     generate: bool = True,
+    mode: str | None = None,
 ):
     """
     Run retrieval/rerank, build prompt + citations, optionally generate.
@@ -149,22 +171,30 @@ def ask_question(
     generate=False → /chat/stream prepares prompt once; caller streams LLM
     """
 
+    product_mode = normalize_mode(mode)
 
     # ------------------------
-    # Query Rewriting
+    # Conversational query understanding
     # ------------------------
 
-    if history:
-        search_query = rewrite_query(
+    analysis = analyze_turn(question, history)
+    search_query = question
+    if history and analysis.needs_rewrite:
+        rewritten = rewrite_query(
             question,
-            history
+            history,
+            analysis=analysis,
         )
-    else:
-        search_query = question
+        if rewritten and str(rewritten).strip():
+            search_query = str(rewritten).strip()
 
 
     print("\n========== SEARCH QUERY ==========")
     print(search_query)
+    print(
+        f"Turn: intent={analysis.intent} relation={analysis.relation} "
+        f"rewrite={analysis.needs_rewrite} ({analysis.reason})"
+    )
 
 
     retrieval_result = retrieve_candidates(
@@ -232,62 +262,30 @@ def ask_question(
 
 
     # ------------------------
-    # Build Context
-    # ------------------------
-
-    context = "\n\n".join(chunks)
-
-    # ------------------------
-    # Format Conversation History
-    # ------------------------
-
-    if history:
-
-        conversation = "\n".join(
-            [
-                f"{msg['role'].capitalize()}: {msg['content']}"
-                for msg in history
-            ]
-        )
-
-    else:
-        conversation = "No previous conversation."
-
-
-    # ------------------------
     # Prompt
     # ------------------------
 
-    prompt = f"""
+    subject = analysis.subject or infer_subject_phrase(search_query)
+    evidence_notes = format_evidence_notes(
+        chunks,
+        metadata,
+        search_query,
+        analysis,
+    )
 
-You are a precise question-answering system.
-
-Rules:
-- Use ONLY the provided context.
-- If the answer is not in the context, say:
-  "I don't have enough information in the provided context."
-- Do NOT use external knowledge.
-- Do NOT guess or hallucinate.
-
-
-Conversation History:
-
-{conversation}
-
-
-Document Context:
-
-{context}
-
-
-Current Question:
-
-{question}
-
-
-Answer:
-
-""".strip()
+    prompt = build_answer_prompt(
+        question=question,
+        search_query=search_query,
+        history=history,
+        chunks=chunks,
+        metadata=metadata,
+        ids=ids,
+        relevances=relevances,
+        analysis=analysis,
+        mode=product_mode,
+        evidence_notes=evidence_notes,
+        subject=subject,
+    )
 
 
     print("\n========== PROMPT SENT TO LLM ==========\n")
@@ -299,6 +297,7 @@ Answer:
     # ------------------------
 
     sources = []
+    allowed_citations = citation_allowlist(chunks, search_query, analysis)
 
 
     for idx, (chunk_id, meta) in enumerate(zip(ids, metadata)):
@@ -313,6 +312,8 @@ Answer:
 
         if relevance < CITATION_MIN_RELEVANCE:
             continue
+        if allowed_citations is not None and idx not in allowed_citations:
+            continue
 
         meta = meta or {}
         page = _citation_page(meta)
@@ -326,6 +327,8 @@ Answer:
                 "relevance": relevance
             }
         )
+
+    sources = _dedupe_sources(sources)
 
 
     # ------------------------

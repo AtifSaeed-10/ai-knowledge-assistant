@@ -149,7 +149,8 @@ def chat(request: ChatRequest):
     response = ask_question(
         request.question,
         history,
-        scoped_ids
+        scoped_ids,
+        mode=effective_mode(request.mode),
     )
 
 
@@ -215,6 +216,7 @@ def chat_stream(request: ChatRequest):
             history,
             scoped_ids,
             generate=False,
+            mode=effective_mode(request.mode),
         )
 
 
