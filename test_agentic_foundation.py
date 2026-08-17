@@ -28,7 +28,7 @@ class TestAgenticFoundation(unittest.TestCase):
     def test_run_document_qa_delegates_to_ask_question(self):
         sentinel = {"answer": "ok", "sources": []}
 
-        def fake_ask(question, history, document_ids, generate=True):
+        def fake_ask(question, history, document_ids, generate=True, mode=None):
             self.assertEqual(question, "What is entropy?")
             self.assertEqual(document_ids, ["doc-a"])
             self.assertTrue(generate)

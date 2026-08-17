@@ -136,16 +136,86 @@ MEMORY_WINDOW = int(
 # LLM Configuration
 # ========================
 
-PRIMARY_LLM = os.getenv(
-    "PRIMARY_LLM",
-    "ollama"
+def _normalize_provider_name(name: str) -> str:
+    raw = (name or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "google": "gemini",
+        "google_gemini": "gemini",
+        "gemini_api": "gemini",
+        "groq_ai": "groq",
+        "cerebras_ai": "cerebras",
+        "open_router": "openrouter",
+        "mistral_ai": "mistral",
+        "mistralai": "mistral",
+    }
+    return aliases.get(raw, raw)
+
+
+def _csv_providers(value: str | None) -> list[str]:
+    if not value:
+        return []
+    names: list[str] = []
+    for part in value.split(","):
+        name = _normalize_provider_name(part)
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+LLM_PRIMARY_PROVIDER = _normalize_provider_name(
+    os.getenv("LLM_PRIMARY_PROVIDER")
+    or os.getenv("PRIMARY_LLM")
+    or "groq"
 )
 
-FALLBACK_LLM = os.getenv(
-    "FALLBACK_LLM",
-    "groq"
-)
-#................
-GROQ_API_KEY = os.getenv(
-    "GROQ_API_KEY"
-)
+_fallback_raw = os.getenv("LLM_FALLBACK_PROVIDERS")
+if _fallback_raw is None:
+    legacy = os.getenv("FALLBACK_LLM")
+    if legacy:
+        LLM_FALLBACK_PROVIDERS = _csv_providers(legacy)
+    else:
+        LLM_FALLBACK_PROVIDERS = ["gemini", "cerebras", "openrouter", "mistral"]
+else:
+    LLM_FALLBACK_PROVIDERS = _csv_providers(_fallback_raw)
+
+# Backward-compatible aliases used by older modules.
+PRIMARY_LLM = LLM_PRIMARY_PROVIDER
+FALLBACK_LLM = LLM_FALLBACK_PROVIDERS[0] if LLM_FALLBACK_PROVIDERS else "gemini"
+
+LLM_REQUEST_TIMEOUT = _env_float("LLM_REQUEST_TIMEOUT", 60.0)
+LLM_MAX_RETRIES_PER_PROVIDER = _env_int("LLM_MAX_RETRIES_PER_PROVIDER", 1)
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY") or ""
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY") or ""
+CEREBRAS_MODEL = os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or ""
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "")
+
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY") or ""
+MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")

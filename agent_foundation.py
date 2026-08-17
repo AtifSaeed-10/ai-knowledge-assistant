@@ -50,6 +50,7 @@ def run_document_qa(
     history=None,
     document_ids=None,
     generate: bool = True,
+    mode: str | None = None,
     ask_question: Callable[..., dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
@@ -67,6 +68,7 @@ def run_document_qa(
         history,
         document_ids,
         generate=generate,
+        mode=mode,
     )
 
 
