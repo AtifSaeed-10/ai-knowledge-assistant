@@ -4,7 +4,9 @@ export type DocumentStatus =
   | 'chunking'
   | 'embedding'
   | 'indexing'
-  | 'ready';
+  | 'ready'
+  /** Client-side terminal state: processing failed or stopped responding. */
+  | 'failed';
 
 export interface Document {
   id: string;
@@ -14,4 +16,6 @@ export interface Document {
   uploadedAt: Date;
   totalPages?: number;
   totalChunks?: number;
+  /** Populated when status is 'failed'. */
+  error?: string;
 }

@@ -1,203 +1,263 @@
 "use client";
 
-import React, { useState } from "react";
-import { MessageSquarePlus, Pencil, Trash2, Check, X } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { Check, Pencil, Search, SquarePen, Trash2, X } from "lucide-react";
 import { useChatStore } from "@/store/useChatStore";
+import { ConfirmDialog } from "@/components/ui/Dialog";
+import { cn } from "@/lib/cn";
+
+const SEARCH_THRESHOLD = 8;
 
 function formatRelativeTime(value?: string): string {
   if (!value) return "";
+
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const diffMs = Date.now() - date.getTime();
-  const minutes = Math.floor(diffMs / 60000);
+
+  const minutes = Math.floor((Date.now() - date.getTime()) / 60000);
   if (minutes < 1) return "Just now";
   if (minutes < 60) return `${minutes}m ago`;
+
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
+
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
+
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export function ConversationList({ isCollapsed = false }: { isCollapsed?: boolean }) {
+interface ConversationListProps {
+  isCollapsed?: boolean;
+  /** Called after a conversation is opened, so the mobile sidebar can close. */
+  onNavigate?: () => void;
+}
+
+export function ConversationList({ isCollapsed = false, onNavigate }: ConversationListProps) {
   const conversations = useChatStore((state) => state.conversations);
   const conversationId = useChatStore((state) => state.conversationId);
-  const createConversation = useChatStore((state) => state.createConversation);
+  const messages = useChatStore((state) => state.messages);
+  const startNewConversation = useChatStore((state) => state.startNewConversation);
   const selectConversation = useChatStore((state) => state.selectConversation);
   const renameConversation = useChatStore((state) => state.renameConversation);
   const deleteConversation = useChatStore((state) => state.deleteConversation);
-  const isLoading = useChatStore((state) => state.isLoading);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
 
-  const startRename = (id: string, title: string) => {
-    setEditingId(id);
-    setDraftTitle(title);
-  };
+  const isDraft = conversationId === "";
 
-  const commitRename = async () => {
-    if (!editingId) return;
+  const filtered = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return conversations;
+    return conversations.filter((item) => item.title.toLowerCase().includes(term));
+  }, [conversations, query]);
+
+  const commitRename = async (id: string) => {
     const title = draftTitle.trim();
-    if (title) {
-      await renameConversation(editingId, title);
-    }
     setEditingId(null);
+
+    const current = conversations.find((item) => item.conversation_id === id);
+    if (!title || title === current?.title) return;
+
+    await renameConversation(id, title);
   };
 
   if (isCollapsed) {
     return (
-      <div className="px-2 pb-2">
+      <div className="px-2 py-2">
         <button
           type="button"
-          onClick={() => void createConversation()}
-          title="New conversation"
-          className="flex h-9 w-full items-center justify-center rounded-lg text-[#6F7B6B] transition-colors hover:bg-[#EFF1EC] hover:text-[#4A5D23]"
+          onClick={startNewConversation}
+          title="New chat"
+          aria-label="New chat"
+          className="flex h-9 w-full items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-sunken hover:text-olive"
         >
-          <MessageSquarePlus size={18} />
+          <SquarePen size={18} />
         </button>
       </div>
     );
   }
 
   return (
-    <div className="px-3 pb-3">
-      <div className="mb-2 flex items-center justify-between px-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
-          Conversations
-        </span>
+    <section className="flex min-h-0 flex-col" aria-label="Chats">
+      <div className="flex shrink-0 items-center justify-between gap-2 px-5 pb-1.5 pt-3">
+        <h2 className="text-label font-semibold uppercase tracking-[0.09em] text-ink-muted">
+          Chats
+        </h2>
         <button
           type="button"
-          onClick={() => void createConversation()}
-          className="rounded-md p-1 text-[#98A395] transition-colors hover:bg-[#EFF1EC] hover:text-[#4A5D23]"
-          title="New conversation"
+          onClick={startNewConversation}
+          className="rounded-md p-1 text-ink-icon transition-colors hover:bg-surface-sunken hover:text-olive"
+          title="New chat"
+          aria-label="New chat"
         >
-          <MessageSquarePlus className="h-3.5 w-3.5" />
+          <SquarePen className="h-4 w-4" />
         </button>
       </div>
 
-      {conversations.length === 0 ? (
-        <p className="px-2 py-3 text-[12px] text-[#98A395]">
-          Start a chat to keep history here.
-        </p>
-      ) : (
+      {conversations.length > SEARCH_THRESHOLD && (
+        <div className="shrink-0 px-3 pb-2">
+          <div className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2 py-1.5 focus-within:border-sage">
+            <Search className="h-3.5 w-3.5 shrink-0 text-ink-icon" />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search chats"
+              aria-label="Search chats"
+              className="min-w-0 flex-1 bg-transparent text-meta text-ink outline-none placeholder:text-ink-subtle"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="scroll-area min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        {isDraft && (
+          <div className="mb-0.5 flex items-center gap-2 rounded-lg bg-surface px-2.5 py-2 ring-1 ring-line">
+            <SquarePen className="h-3.5 w-3.5 shrink-0 text-olive" />
+            <span className="min-w-0 flex-1 truncate text-ui font-medium text-ink">New chat</span>
+            <span className="shrink-0 text-meta text-ink-subtle">
+              {messages.length > 0 ? "Unsaved" : "Draft"}
+            </span>
+          </div>
+        )}
+
+        {conversations.length === 0 && !isDraft && (
+          <p className="px-2 py-3 text-meta text-ink-muted">
+            Your chats will be listed here.
+          </p>
+        )}
+
+        {conversations.length > 0 && filtered.length === 0 && (
+          <p className="px-2 py-3 text-meta text-ink-muted">No chats match “{query}”.</p>
+        )}
+
         <ul className="space-y-0.5">
-          {conversations.map((item) => {
+          {filtered.map((item) => {
             const isActive = item.conversation_id === conversationId;
             const isEditing = editingId === item.conversation_id;
-            return (
-              <li key={item.conversation_id}>
-                <div
-                  className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 ${
-                    isActive ? "bg-white ring-1 ring-[#EBEFEA]" : "hover:bg-[#F1F3EF]"
-                  }`}
-                >
-                  {isEditing ? (
-                    <form
-                      className="flex min-w-0 flex-1 items-center gap-1"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void commitRename();
+
+            if (isEditing) {
+              return (
+                <li key={item.conversation_id}>
+                  <form
+                    className="flex items-center gap-1 rounded-lg bg-surface px-2 py-1.5 ring-1 ring-sage"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void commitRename(item.conversation_id);
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      value={draftTitle}
+                      onChange={(event) => setDraftTitle(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setEditingId(null);
+                        }
                       }}
+                      onBlur={() => void commitRename(item.conversation_id)}
+                      aria-label={`Rename ${item.title}`}
+                      className="min-w-0 flex-1 rounded border border-line bg-surface px-1.5 py-0.5 text-ui text-ink outline-none focus:border-sage"
+                    />
+                    <button
+                      type="submit"
+                      className="rounded p-1 text-olive transition-colors hover:bg-olive-soft"
+                      aria-label="Save name"
                     >
-                      <input
-                        autoFocus
-                        value={draftTitle}
-                        onChange={(event) => setDraftTitle(event.target.value)}
-                        className="min-w-0 flex-1 rounded border border-[#EBEFEA] px-1.5 py-0.5 text-[12px] text-[#1C241F] outline-none focus:border-[#87AB72]"
-                      />
-                      <button
-                        type="submit"
-                        className="rounded p-1 text-[#4A5D23] hover:bg-[#EFF1EC]"
-                        aria-label="Save name"
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingId(null)}
-                        className="rounded p-1 text-[#98A395] hover:bg-[#EFF1EC]"
-                        aria-label="Cancel rename"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </form>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        disabled={isLoading}
-                        onClick={() => void selectConversation(item.conversation_id)}
-                        className="min-w-0 flex-1 text-left"
-                        title={item.title}
-                      >
-                        <span className="block truncate text-[12.5px] font-medium text-[#1C241F]">
-                          {item.title}
-                        </span>
-                        <span className="block text-[10.5px] text-[#98A395]">
-                          {formatRelativeTime(item.updated_at)}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => startRename(item.conversation_id, item.title)}
-                        className="rounded p-1 text-[#98A395] opacity-0 transition-opacity hover:bg-white hover:text-[#1C241F] group-hover:opacity-100"
-                        title="Rename"
-                        aria-label={`Rename ${item.title}`}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPendingDeleteId(item.conversation_id)}
-                        className="rounded p-1 text-[#98A395] opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
-                        title="Delete"
-                        aria-label={`Delete ${item.title}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </>
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => setEditingId(null)}
+                      className="rounded p-1 text-ink-icon transition-colors hover:bg-surface-sunken hover:text-ink"
+                      aria-label="Cancel rename"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </form>
+                </li>
+              );
+            }
+
+            return (
+              <li key={item.conversation_id} className="group relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void selectConversation(item.conversation_id);
+                    onNavigate?.();
+                  }}
+                  aria-current={isActive ? "true" : undefined}
+                  title={item.title}
+                  className={cn(
+                    "w-full rounded-lg py-2 pl-2.5 pr-16 text-left transition-colors",
+                    isActive
+                      ? "bg-surface ring-1 ring-line"
+                      : "hover:bg-surface-sunken"
                   )}
+                >
+                  <span className="block truncate text-ui font-medium text-ink">
+                    {item.title}
+                  </span>
+                  <span className="mt-0.5 block text-meta text-ink-subtle">
+                    {formatRelativeTime(item.updated_at)}
+                  </span>
+                </button>
+
+                <div className="pointer-events-none absolute right-1.5 top-1.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingId(item.conversation_id);
+                      setDraftTitle(item.title);
+                    }}
+                    className="rounded p-1 text-ink-icon transition-colors hover:bg-surface hover:text-ink"
+                    title="Rename"
+                    aria-label={`Rename ${item.title}`}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPendingDelete({ id: item.conversation_id, title: item.title })
+                    }
+                    className="rounded p-1 text-ink-icon transition-colors hover:bg-danger-soft hover:text-danger"
+                    title="Delete"
+                    aria-label={`Delete ${item.title}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </li>
             );
           })}
         </ul>
-      )}
+      </div>
 
-      {pendingDeleteId && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-[#1C241F]/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-xl border border-[#EBEFEA] bg-white p-5 shadow-2xl">
-            <h3 className="text-[15px] font-semibold text-[#1C241F]">
-              Delete conversation
-            </h3>
-            <p className="mt-2 text-sm text-[#6F7B6B]">
-              This removes the conversation from history. Document indexes are not affected.
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setPendingDeleteId(null)}
-                className="rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#5B6858] hover:bg-[#F1F3EF]"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const id = pendingDeleteId;
-                  setPendingDeleteId(null);
-                  if (id) void deleteConversation(id);
-                }}
-                className="rounded-lg bg-red-600 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-red-700"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete chat"
+        confirmLabel="Delete chat"
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (target) void deleteConversation(target.id);
+        }}
+      >
+        <p>
+          <span className="font-medium text-ink">“{pendingDelete?.title}”</span> and its messages
+          will be removed. Your documents and their indexes are not affected.
+        </p>
+      </ConfirmDialog>
+    </section>
   );
 }

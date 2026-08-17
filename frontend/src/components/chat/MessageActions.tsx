@@ -2,16 +2,18 @@
 
 import React, { useState } from "react";
 import { Check, Copy, RotateCcw } from "lucide-react";
+import { notify } from "@/store/useToastStore";
 
-export function MessageActions({
-  content,
-  showRegenerate,
-  onRegenerate,
-}: {
+interface MessageActionsProps {
   content: string;
-  showRegenerate?: boolean;
-  onRegenerate?: () => void;
-}) {
+  showRetry?: boolean;
+  onRetry?: () => void;
+}
+
+const ACTION_CLASS =
+  "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-meta font-medium text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink";
+
+export function MessageActions({ content, showRetry, onRetry }: MessageActionsProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -19,8 +21,11 @@ export function MessageActions({
       await navigator.clipboard.writeText(content);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
-    } catch (error) {
-      console.error("Copy failed:", error);
+    } catch {
+      notify.error(
+        "Couldn’t copy the answer",
+        "Your browser blocked clipboard access. Select the text and copy manually."
+      );
     }
   };
 
@@ -29,19 +34,19 @@ export function MessageActions({
       <button
         type="button"
         onClick={() => void handleCopy()}
-        className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-[#6F7B6B] transition-colors hover:bg-[#F1F3EF] hover:text-[#1C241F]"
+        className={ACTION_CLASS}
         title="Copy answer"
       >
-        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-olive" />
+        ) : (
+          <Copy className="h-3.5 w-3.5" />
+        )}
         {copied ? "Copied" : "Copy"}
       </button>
-      {showRegenerate && onRegenerate && (
-        <button
-          type="button"
-          onClick={onRegenerate}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-[#6F7B6B] transition-colors hover:bg-[#F1F3EF] hover:text-[#1C241F]"
-          title="Regenerate response"
-        >
+
+      {showRetry && onRetry && (
+        <button type="button" onClick={onRetry} className={ACTION_CLASS} title="Regenerate answer">
           <RotateCcw className="h-3.5 w-3.5" />
           Regenerate
         </button>

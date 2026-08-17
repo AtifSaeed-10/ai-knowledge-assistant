@@ -1,6 +1,6 @@
-import { Message, Citation } from "@/types";
+import { Citation } from "@/types";
 import { ProductMode } from "@/types/mode";
-import { API_CONFIG, delay } from "./client";
+import { API_CONFIG } from "./client";
 
 interface ApiSource {
   document_id?: string;
@@ -9,13 +9,12 @@ interface ApiSource {
   page_number?: number | null;
   chunk_id?: string;
   relevance?: number;
+  snippet?: string;
+  text?: string;
 }
 
-interface ChatApiResponse {
-  answer?: string;
-  response?: string;
-  sources?: ApiSource[];
-}
+const CITATIONS_START = "__CITATIONS__";
+const CITATIONS_END = "__END_CITATIONS__";
 
 export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
   const rawPage = src.page ?? src.page_number;
@@ -26,127 +25,45 @@ export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
 
   return {
     id: src.chunk_id || `cit-${Date.now()}-${idx}`,
-    documentName: src.filename || "Unknown Document",
+    documentName: src.filename || "Unknown document",
     pageNumber,
+    snippet: src.snippet ?? src.text,
     relevance: src.relevance ?? null,
     chunk_id: src.chunk_id ?? null,
     documentId: src.document_id ?? null,
   };
 }
 
+/**
+ * Length of the longest suffix of `value` that is also a prefix of `marker`.
+ * Used to hold back text that might turn out to be a split control marker.
+ */
+function partialMarkerLength(value: string, marker: string): number {
+  const max = Math.min(value.length, marker.length - 1);
+  for (let size = max; size > 0; size -= 1) {
+    if (value.endsWith(marker.slice(0, size))) return size;
+  }
+  return 0;
+}
+
 export const chatApi = {
-
-
-  async sendMessage(
+  /**
+   * POST /chat/stream
+   * The server sends `__CITATIONS__[...]__END_CITATIONS__` first, then answer tokens.
+   */
+  async streamMessage(
     content: string,
     documentIds: string[],
     conversationId: string,
-    mode: ProductMode = "normal"
-  ): Promise<Message> {
-
-
-    if (API_CONFIG.useMock) {
-
-      await delay(1200);
-
-      return {
-        id: `msg-${Date.now()}`,
-        role: "assistant",
-        content: "Mock",
-        timestamp: new Date(),
-      };
-
-    }
-
-
-
-    const response = await fetch(
-      `${API_CONFIG.baseUrl}/chat`,
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type": "application/json",
-        },
-
-        body: JSON.stringify({
-          question: content,
-          conversation_id: conversationId,
-          document_ids: documentIds,
-          mode,
-        }),
-      }
-    );
-
-
-
-    if (!response.ok) {
-
-      throw new Error(
-        "Failed to fetch chat response"
-      );
-
-    }
-
-
-
-    const data = (await response.json()) as ChatApiResponse;
-
-
-
-    const mappedCitations: Citation[] =
-      (data.sources || []).map(mapSourceToCitation);
-
-
-
-    return {
-
-      id:
-        `msg-${Date.now()}`,
-
-      role:
-        "assistant",
-
-      content:
-        data.answer ||
-        data.response ||
-        "No response received.",
-
-      citations:
-        mappedCitations,
-
-      timestamp:
-        new Date(),
-
-    };
-
-  },
-
-
-
-
-
-async streamMessage(
-  content: string,
-  documentIds: string[],
-  conversationId: string,
-  onChunk: (chunk: string) => void,
-  onComplete: (citations: Citation[]) => void,
-  mode: ProductMode = "normal",
-  signal?: AbortSignal,
-  regenerate: boolean = false
-): Promise<void> {
-
-
-  const response = await fetch(
-    `${API_CONFIG.baseUrl}/chat/stream`,
-    {
+    onChunk: (chunk: string) => void,
+    onCitations: (citations: Citation[]) => void,
+    mode: ProductMode = "normal",
+    signal?: AbortSignal,
+    regenerate: boolean = false
+  ): Promise<void> {
+    const response = await fetch(`${API_CONFIG.baseUrl}/chat/stream`, {
       method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-      },
-
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         question: content,
         conversation_id: conversationId,
@@ -155,151 +72,72 @@ async streamMessage(
         regenerate,
       }),
       signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        response.status >= 500
+          ? "The server could not generate an answer. Please try again."
+          : `The request was rejected (${response.status}).`
+      );
     }
-  );
 
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("Streaming is not supported by this browser.");
+    }
 
-  if (!response.ok) {
-    throw new Error(
-      "Failed to stream response"
-    );
-  }
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let citationsSent = false;
 
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-  const reader =
-    response.body?.getReader();
+      buffer += decoder.decode(value, { stream: true });
 
+      if (!citationsSent) {
+        const start = buffer.indexOf(CITATIONS_START);
+        const end = buffer.indexOf(CITATIONS_END);
 
-  if (!reader) {
-    throw new Error(
-      "No stream available"
-    );
-  }
+        if (start !== -1 && end !== -1 && end > start) {
+          const payload = buffer.slice(start + CITATIONS_START.length, end);
 
-
-  const decoder =
-    new TextDecoder();
-
-
-  let buffer = "";
-
-
-  let citationsSent = false;
-
-
-
-  while (true) {
-
-
-    const {
-      done,
-      value
-    } =
-    await reader.read();
-
-
-
-    if (done) break;
-
-
-
-    buffer += decoder.decode(
-      value,
-      {
-        stream:true
-      }
-    );
-
-
-
-    // Extract citations
-
-    if (!citationsSent &&
-        buffer.includes("__END_CITATIONS__")) {
-
-
-      const start =
-        buffer.indexOf(
-          "__CITATIONS__"
-        );
-
-
-      const end =
-        buffer.indexOf(
-          "__END_CITATIONS__"
-        );
-
-
-
-      if(start !== -1 && end !== -1) {
-
-
-        const citationText =
-          buffer.substring(
-            start + "__CITATIONS__".length,
-            end
-          );
-
-
-
-        try {
-
-          const raw = JSON.parse(citationText) as ApiSource[];
-
-          const mapped = raw.map(mapSourceToCitation);
-
-
-          onComplete(mapped);
+          try {
+            const raw = JSON.parse(payload) as ApiSource[];
+            onCitations(raw.map(mapSourceToCitation));
+          } catch {
+            onCitations([]);
+          }
 
           citationsSent = true;
-
-
+          buffer = buffer.slice(0, start) + buffer.slice(end + CITATIONS_END.length);
         }
-        catch(error){
-
-          console.error(
-            "Citation parse error:",
-            error
-          );
-
-        }
-
-
-
-        buffer =
-          buffer.substring(
-            end + "__END_CITATIONS__".length
-          );
-
       }
 
+      // Never emit text that might be the beginning of a control marker.
+      let emitUpTo = buffer.length;
+      if (!citationsSent) {
+        const start = buffer.indexOf(CITATIONS_START);
+        emitUpTo =
+          start !== -1
+            ? start
+            : buffer.length - partialMarkerLength(buffer, CITATIONS_START);
+      }
+
+      if (emitUpTo > 0) {
+        onChunk(buffer.slice(0, emitUpTo));
+        buffer = buffer.slice(emitUpTo);
+      }
     }
 
-
-
-    // only stream answer text
-
-    if(buffer.length > 0) {
-
-
+    if (buffer.length > 0) {
       onChunk(buffer);
-
-      buffer = "";
-
     }
 
-
-  }
-
-
-
-  // finish loading
-  if(!citationsSent){
-
-    onComplete([]);
-
-  }
-
-}
-
+    if (!citationsSent) {
+      onCitations([]);
+    }
+  },
 };

@@ -22,217 +22,103 @@ function mapApiDocumentToDocument(doc: ApiDocument): Document {
     size: 0,
     status: doc.status,
     uploadedAt: new Date(doc.upload_time),
+    totalPages: doc.total_pages,
+    totalChunks: doc.total_chunks,
   };
 }
 
 export const documentsApi = {
-
-  /**
-   * Upload document
-   * POST /upload
-   */
+  /** POST /upload */
   async uploadDocument(file: File): Promise<Document> {
-
     if (API_CONFIG.useMock) {
-
       await delay(400);
-
       return {
         id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         name: file.name,
         size: file.size,
-        status: 'uploaded' as DocumentStatus,
+        status: 'uploaded',
         uploadedAt: new Date(),
       };
-
     }
-
 
     const formData = new FormData();
+    formData.append('file', file);
 
-    formData.append(
-      'file',
-      file
-    );
-
-
-    const response = await fetch(
-      `${API_CONFIG.baseUrl}/upload`,
-      {
-        method: 'POST',
-        body: formData,
-      }
-    );
-
+    const response = await fetch(`${API_CONFIG.baseUrl}/upload`, {
+      method: 'POST',
+      body: formData,
+    });
 
     if (!response.ok) {
-
-      throw new Error(
-        `Failed to upload document: ${response.statusText}`
-      );
-
+      throw new Error(`Upload failed (${response.status}). Please try again.`);
     }
-
 
     const data = (await response.json()) as UploadApiResponse;
 
-
-    console.log(
-      "UPLOAD RESPONSE:",
-      data
-    );
-
-
     return {
-
       id: data.document_id,
-
       name: file.name,
-
       size: file.size,
-
       status: data.status,
-
       uploadedAt: new Date(),
-
     };
-
   },
 
-
-  /**
-   * Fetch all documents
-   * GET /documents
-   */
+  /** GET /documents */
   async getDocuments(): Promise<Document[]> {
-
     if (API_CONFIG.useMock) {
-
       return [];
-
     }
 
-
-    const response = await fetch(
-      `${API_CONFIG.baseUrl}/documents`
-    );
-
+    const response = await fetch(`${API_CONFIG.baseUrl}/documents`);
 
     if (!response.ok) {
-
-      throw new Error(
-        `Failed to fetch documents: ${response.statusText}`
-      );
-
+      throw new Error(`Could not load your documents (${response.status}).`);
     }
-
 
     const data = (await response.json()) as ApiDocument[];
-
-
     return data.map(mapApiDocumentToDocument);
-
   },
 
-
-  /**
-   * Fetch single document with status
-   * GET /documents/{document_id}
-   */
+  /** GET /documents/{document_id} */
   async getDocument(id: string): Promise<Document> {
-
     if (API_CONFIG.useMock) {
-
       await delay(100);
-
       return {
-
         id,
-
-        name: "Mock Document",
-
+        name: 'Mock Document',
         size: 0,
-
-        status: "ready" as DocumentStatus,
-
+        status: 'ready',
         uploadedAt: new Date(),
-
       };
-
     }
 
-
-    const response = await fetch(
-      `${API_CONFIG.baseUrl}/documents/${id}`
-    );
-
+    const response = await fetch(`${API_CONFIG.baseUrl}/documents/${encodeURIComponent(id)}`);
 
     if (!response.ok) {
-
-      throw new Error(
-        `Failed to fetch document: ${response.statusText}`
-      );
-
+      throw new Error(`Could not read processing status (${response.status}).`);
     }
-
 
     const data = (await response.json()) as ApiDocument;
-
-
-    console.log(
-      "DOCUMENT STATUS RESPONSE:",
-      data
-    );
-
-
     return mapApiDocumentToDocument(data);
-
   },
 
-
-  /**
-   * Delete document
-   * DELETE /documents/{document_id}
-   */
-  async deleteDocument(
-    id: string
-  ): Promise<{ success: boolean; id: string }> {
-
-
+  /** DELETE /documents/{document_id} */
+  async deleteDocument(id: string): Promise<{ success: boolean; id: string }> {
     if (API_CONFIG.useMock) {
-
       await delay(300);
-
-      return {
-        success: true,
-        id
-      };
-
+      return { success: true, id };
     }
 
-
-    const response = await fetch(
-      `${API_CONFIG.baseUrl}/documents/${id}`,
-      {
-        method: 'DELETE',
-      }
-    );
-
+    const response = await fetch(`${API_CONFIG.baseUrl}/documents/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
 
     if (!response.ok) {
-
-      throw new Error(
-        `Failed to delete document: ${response.statusText}`
-      );
-
+      throw new Error(`Could not delete the document (${response.status}).`);
     }
 
-
-    return {
-      success: true,
-      id
-    };
-
+    return { success: true, id };
   },
 
   /**
@@ -241,14 +127,11 @@ export const documentsApi = {
    */
   fileUrl(documentId: string, page?: number | null): string {
     const base = `${API_CONFIG.baseUrl}/documents/${encodeURIComponent(documentId)}/file`;
-    if (
-      typeof page === "number" &&
-      Number.isFinite(page) &&
-      page >= 1
-    ) {
+
+    if (typeof page === 'number' && Number.isFinite(page) && page >= 1) {
       return `${base}#page=${Math.floor(page)}`;
     }
+
     return base;
   },
-
 };

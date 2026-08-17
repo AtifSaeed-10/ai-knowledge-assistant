@@ -1,11 +1,20 @@
 "use client";
-import React, { useState, useEffect, useCallback } from 'react';
-import { X, PanelLeftClose, PanelLeft, Plus, FileText, CheckCircle2 } from 'lucide-react';
-import { Logo } from '@/components/ui/Logo';
-import { DocumentLibrary } from '@/components/documents/DocumentLibrary';
-import { DocumentUploader } from '@/components/documents/DocumentUploader';
-import { ConversationList } from '@/components/chat/ConversationList';
-import { useDocumentStore } from '@/store/useDocumentStore';
+
+import React, { useCallback, useEffect, useState } from "react";
+import { CheckCircle2, FileText, PanelLeft, PanelLeftClose, Plus, X } from "lucide-react";
+import { Logo, LogoMark } from "@/components/ui/Logo";
+import { Dialog } from "@/components/ui/Dialog";
+import { DocumentLibrary } from "@/components/documents/DocumentLibrary";
+import { DocumentUploader } from "@/components/documents/DocumentUploader";
+import { ConversationList } from "@/components/chat/ConversationList";
+import { useDocumentStore } from "@/store/useDocumentStore";
+import { cn } from "@/lib/cn";
+
+const WIDTH_KEY = "docusage_sidebar_width";
+const COLLAPSED_KEY = "docusage_sidebar_collapsed";
+const MIN_WIDTH = 248;
+const MAX_WIDTH = 400;
+const COLLAPSED_WIDTH = 76;
 
 interface SidebarProps {
   isOpen: boolean;
@@ -18,212 +27,213 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [width, setWidth] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
 
-  // Restore states
   useEffect(() => {
-    const storedWidth = sessionStorage.getItem('docusage_sidebar_width');
-    const storedCollapsed = sessionStorage.getItem('docusage_sidebar_collapsed');
-    if (storedWidth) setWidth(Number(storedWidth));
-    if (storedCollapsed) setIsCollapsed(storedCollapsed === 'true');
+    try {
+      const storedWidth = window.localStorage.getItem(WIDTH_KEY);
+      const storedCollapsed = window.localStorage.getItem(COLLAPSED_KEY);
+      if (storedWidth) {
+        setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Number(storedWidth) || 300)));
+      }
+      if (storedCollapsed) setIsCollapsed(storedCollapsed === "true");
+    } catch {
+      /* storage unavailable — defaults are fine */
+    }
   }, []);
 
-  const handleCollapseToggle = () => {
-    const newState = !isCollapsed;
-    setIsCollapsed(newState);
-    sessionStorage.setItem('docusage_sidebar_collapsed', String(newState));
+  const persist = (key: string, value: string) => {
+    try {
+      window.localStorage.setItem(key, value);
+    } catch {
+      /* ignore */
+    }
   };
 
-  const startResizing = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
+  const toggleCollapsed = () => {
+    setIsCollapsed((previous) => {
+      persist(COLLAPSED_KEY, String(!previous));
+      return !previous;
+    });
+  };
+
+  const applyWidth = useCallback((next: number) => {
+    const clamped = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next));
+    setWidth(clamped);
+    persist(WIDTH_KEY, String(clamped));
+  }, []);
+
+  const startResizing = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
     setIsResizing(true);
   }, []);
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return;
-      let newWidth = e.clientX;
-      if (newWidth < 240) newWidth = 240;
-      if (newWidth > 380) newWidth = 380;
+    if (!isResizing) return;
 
-      setWidth(newWidth);
-      sessionStorage.setItem('docusage_sidebar_width', String(newWidth));
+    const onMouseMove = (event: MouseEvent) => applyWidth(event.clientX);
+    const onMouseUp = () => setIsResizing(false);
 
-      if (isCollapsed && newWidth > 240) {
-        setIsCollapsed(false);
-        sessionStorage.setItem('docusage_sidebar_collapsed', 'false');
-      }
-    };
-    const handleMouseUp = () => setIsResizing(false);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
 
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    }
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     };
-  }, [isResizing, isCollapsed]);
+  }, [isResizing, applyWidth]);
 
-  // Close upload modal dynamically when upload begins
-  const prevDocsLength = React.useRef(documents.length);
-  useEffect(() => {
-    if (isUploadModalOpen && documents.length > prevDocsLength.current) {
-      setIsUploadModalOpen(false);
-    }
-    prevDocsLength.current = documents.length;
-  }, [documents.length, isUploadModalOpen]);
-
-  const currentWidth = isCollapsed ? 80 : width;
-  const readyCount = documents.filter((doc) => doc.status === 'ready').length;
+  const readyCount = documents.filter((doc) => doc.status === "ready").length;
+  // Collapsing is a desktop affordance; the mobile drawer is always expanded.
+  const isCompact = isCollapsed && !isOpen;
+  const desktopWidth = isCollapsed ? COLLAPSED_WIDTH : width;
 
   return (
     <>
-      {/* Mobile overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-30 bg-[#1C241F]/25 backdrop-blur-[2px] lg:hidden"
+          className="fixed inset-0 z-30 bg-ink/30 lg:hidden"
           onClick={onClose}
+          aria-hidden
         />
       )}
 
-      {/* Sidebar panel */}
       <aside
-        style={{ width: isOpen ? 280 : currentWidth }} // Mobile is fixed, desktop is dynamic
-        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#EBEFEA] bg-[#FBFBFA] transition-all duration-300 ease-out lg:relative ${
-          isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        } ${isResizing ? 'cursor-col-resize select-none transition-none' : ''}`}
+        aria-label="Workspace"
+        style={{ width: isOpen ? 288 : desktopWidth }}
+        className={cn(
+          "fixed left-0 top-0 z-40 flex h-full flex-col border-r border-line bg-surface-muted lg:relative lg:visible lg:translate-x-0",
+          isResizing ? "transition-none" : "transition-[transform,width] duration-200 ease-out",
+          isOpen ? "visible translate-x-0" : "invisible -translate-x-full"
+        )}
       >
-        {/* Brand header */}
         <div
-          className={`flex h-16 shrink-0 items-center gap-2 border-b border-[#EBEFEA] px-3 ${
-            isCollapsed ? 'justify-center' : 'justify-between'
-          }`}
+          className={cn(
+            "flex h-14 shrink-0 items-center gap-2 border-b border-line px-3 sm:h-16",
+            isCompact ? "justify-center" : "justify-between"
+          )}
         >
-          {isCollapsed ? (
-            <span
-              className="flex h-8 w-8 items-center overflow-hidden"
-              aria-label="DocuSage"
-            >
-              <Logo className="w-[128px] shrink-0 [&>svg]:h-auto [&>svg]:w-full" />
-            </span>
+          {isCompact ? (
+            <LogoMark className="h-7 w-auto" />
           ) : (
-            <Logo className="w-[126px] shrink-0 pl-1 [&>svg]:h-auto [&>svg]:w-full" />
+            <Logo className="h-7 w-auto shrink-0" />
           )}
 
-          {!isCollapsed && (
+          {!isCompact && (
             <button
-              onClick={handleCollapseToggle}
-              className="hidden shrink-0 rounded-md p-1.5 text-[#98A395] transition-colors hover:bg-[#EFF1EC] hover:text-[#4A5D23] lg:flex"
+              type="button"
+              onClick={toggleCollapsed}
+              aria-label="Collapse sidebar"
               title="Collapse sidebar"
+              className="hidden shrink-0 rounded-md p-1.5 text-ink-icon transition-colors hover:bg-surface-sunken hover:text-ink lg:flex"
             >
               <PanelLeftClose size={18} />
             </button>
           )}
 
           <button
+            type="button"
             onClick={onClose}
-            className="shrink-0 rounded-md p-1.5 text-[#98A395] transition-colors hover:bg-[#EFF1EC] hover:text-[#1C241F] lg:hidden"
-            aria-label="Close sidebar"
+            className="shrink-0 rounded-md p-1.5 text-ink-icon transition-colors hover:bg-surface-sunken hover:text-ink lg:hidden"
+            aria-label="Close workspace menu"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* Primary action */}
         <div className="shrink-0 space-y-1.5 px-3 py-3">
-          {isCollapsed && (
+          {isCompact && (
             <button
-              onClick={handleCollapseToggle}
-              className="hidden h-9 w-full items-center justify-center rounded-lg text-[#6F7B6B] transition-colors hover:bg-[#EFF1EC] hover:text-[#4A5D23] lg:flex"
+              type="button"
+              onClick={toggleCollapsed}
+              aria-label="Expand sidebar"
               title="Expand sidebar"
+              className="hidden h-9 w-full items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-sunken hover:text-olive lg:flex"
             >
               <PanelLeft size={18} />
             </button>
           )}
 
           <button
-            onClick={() => setIsUploadModalOpen(true)}
-            title="Upload PDF"
-            className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#4A5D23] text-white shadow-sm transition-colors hover:bg-[#3E4E1D]"
+            type="button"
+            onClick={() => setIsUploadOpen(true)}
+            title="Add a PDF"
+            className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-olive text-white shadow-card transition-colors hover:bg-olive-dark"
           >
             <Plus size={16} strokeWidth={2.5} />
-            {!isCollapsed && (
-              <span className="text-[13px] font-medium tracking-[-0.01em]">
-                New document
-              </span>
+            {isCompact ? (
+              <span className="sr-only">Add a PDF</span>
+            ) : (
+              <span className="text-ui font-medium tracking-[-0.01em]">New document</span>
             )}
           </button>
         </div>
 
-        {/* Conversations */}
-        <div className="max-h-[38%] shrink-0 overflow-y-auto border-b border-[#EBEFEA] pt-1">
-          <ConversationList isCollapsed={isCollapsed} />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-[2_1_0%] flex-col border-b border-line">
+            <ConversationList isCollapsed={isCompact} onNavigate={onClose} />
+          </div>
+
+          <div className="flex min-h-0 flex-[3_1_0%] flex-col">
+            <DocumentLibrary isCollapsed={isCompact} />
+          </div>
         </div>
 
-        {/* Document library */}
-        <div className="flex-1 overflow-y-auto pb-4">
-          <DocumentLibrary isCollapsed={isCollapsed} />
-        </div>
-
-        {/* Workspace summary */}
-        {!isCollapsed && documents.length > 0 && (
-          <div className="shrink-0 border-t border-[#EBEFEA] px-4 py-3.5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
-              Workspace
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#5B6858]">
+        {!isCompact && documents.length > 0 && (
+          <div className="shrink-0 border-t border-line px-4 py-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-meta text-ink-muted">
               <span className="inline-flex items-center gap-1.5">
-                <FileText size={13} className="text-[#98A395]" />
-                {documents.length} {documents.length === 1 ? 'document' : 'documents'}
+                <FileText size={13} className="text-ink-icon" />
+                {documents.length} {documents.length === 1 ? "document" : "documents"}
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <CheckCircle2 size={13} className="text-[#87AB72]" />
+                <CheckCircle2 size={13} className="text-sage" />
                 {readyCount} ready
               </span>
             </div>
           </div>
         )}
 
-        {/* Resizer Edge Handler */}
-        {!isCollapsed && (
+        {!isCompact && (
           <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            aria-valuenow={width}
+            aria-valuemin={MIN_WIDTH}
+            aria-valuemax={MAX_WIDTH}
+            tabIndex={0}
             onMouseDown={startResizing}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                applyWidth(width - 16);
+              }
+              if (event.key === "ArrowRight") {
+                event.preventDefault();
+                applyWidth(width + 16);
+              }
+            }}
             className="group absolute bottom-0 right-0 top-0 z-50 hidden w-1.5 cursor-col-resize lg:block"
           >
-            <div className="ml-auto h-full w-px bg-transparent transition-colors group-hover:bg-[#87AB72] group-active:bg-[#4A5D23]" />
+            <div className="ml-auto h-full w-px bg-transparent transition-colors group-hover:bg-sage group-focus-visible:bg-olive group-active:bg-olive" />
           </div>
         )}
       </aside>
 
-      {/* Upload Modal Overlay */}
-      {isUploadModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#1C241F]/40 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="relative flex w-full max-w-xl flex-col overflow-hidden rounded-xl border border-[#EBEFEA] bg-white shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="flex items-start justify-between gap-4 border-b border-[#EBEFEA] px-5 py-4">
-              <div>
-                <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-[#1C241F]">
-                  Upload documents
-                </h2>
-                <p className="mt-0.5 text-xs text-[#6F7B6B]">
-                  PDFs are extracted, chunked and indexed automatically.
-                </p>
-              </div>
-              <button
-                onClick={() => setIsUploadModalOpen(false)}
-                className="shrink-0 rounded-md p-1.5 text-[#98A395] transition-colors hover:bg-[#F1F3EF] hover:text-[#1C241F]"
-                aria-label="Close upload dialog"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-5">
-              <DocumentUploader />
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        title="Add documents"
+        description="PDFs are extracted, chunked and indexed automatically."
+        size="md"
+      >
+        <DocumentUploader onComplete={() => setIsUploadOpen(false)} />
+      </Dialog>
     </>
   );
 }

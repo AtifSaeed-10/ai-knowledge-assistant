@@ -1,27 +1,24 @@
-export type ProductMode = "normal" | "super_focused" | "agentic";
+/**
+ * Wire values are unchanged — only the user-facing labels differ.
+ * `normal` searches every ready document, `super_focused` answers from one.
+ */
+export type ProductMode = "normal" | "super_focused";
 
-export const PRODUCT_MODES: {
+export interface ProductModeOption {
   id: ProductMode;
   label: string;
   description: string;
-  enabled: boolean;
-}[] = [
+}
+
+export const PRODUCT_MODES: ProductModeOption[] = [
   {
     id: "normal",
-    label: "Normal",
-    description: "Search all ready documents",
-    enabled: true,
+    label: "All documents",
+    description: "Search every ready document in this workspace",
   },
   {
     id: "super_focused",
-    label: "Super Focused",
-    description: "Answer only from the selected document",
-    enabled: true,
-  },
-  {
-    id: "agentic",
-    label: "Agentic",
-    description: "Multi-step research — coming later",
-    enabled: false,
+    label: "One document",
+    description: "Answer only from the document you select",
   },
 ];
