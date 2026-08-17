@@ -1,7 +1,7 @@
 export const API_CONFIG = {
   // Update this to your deployed URL when moving to production
   baseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
-  useMock: process.env.NEXT_PUBLIC_USE_MOCK === 'false', // Default to false to use real backend
+  useMock: process.env.NEXT_PUBLIC_USE_MOCK === 'true',
 };
 
 /**
@@ -22,3 +22,14 @@ export const checkHealth = async (): Promise<boolean> => {
     return false;
   }
 };
+
+/** Network failures surface as TypeError; give those a human explanation. */
+export function toUserMessage(error: unknown, fallback: string): string {
+  if (error instanceof TypeError) {
+    return "Can't reach the DocuSage server. Check that it is running and try again.";
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}

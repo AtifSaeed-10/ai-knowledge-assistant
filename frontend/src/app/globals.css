@@ -2,164 +2,93 @@
 @tailwind components;
 @tailwind utilities;
 
-
 @layer base {
-
-  :root {
-
-    /* Brand Tokens */
-    --bg-app: 246 247 244;
-    --bg-surface: 255 255 255;
-
-    --accent-olive-deep: 74 93 35;
-    --accent-sage: 135 171 114;
-
-    --text-primary: 28 36 31;
-    --text-muted: 111 123 107;
-
-    --border-subtle: 235 239 234;
-
-
-    /* shadcn mappings */
-
-    --background: 246 247 244;
-    --foreground: 28 36 31;
-
-
-    --card: 255 255 255;
-    --card-foreground: 28 36 31;
-
-
-    --popover: 255 255 255;
-    --popover-foreground: 28 36 31;
-
-
-    --primary: 74 93 35;
-    --primary-foreground: 255 255 255;
-
-
-    --secondary: 246 247 244;
-    --secondary-foreground: 28 36 31;
-
-
-    --muted: 246 247 244;
-    --muted-foreground: 111 123 107;
-
-
-    --accent: 235 239 234;
-    --accent-foreground: 28 36 31;
-
-
-    --border: 235 239 234;
-    --input: 235 239 234;
-
-    --ring: 74 93 35;
+  html {
+    -webkit-tap-highlight-color: transparent;
   }
-
-
-
-  .dark {
-
-    --background: 12 16 13;
-    --foreground: 241 244 240;
-
-  }
-
-
-}
-
-
-
-@layer base {
-
-  * {
-    @apply border-border;
-  }
-
 
   body {
-
-    @apply 
-    bg-background
-    text-foreground
-    antialiased
-    selection:bg-[#87AB72]
-    selection:text-white;
-
+    @apply bg-paper text-ink antialiased;
+    text-rendering: optimizeLegibility;
   }
 
-}
-
-
-
-/*
- Soft ambient motion for empty/onboarding surfaces.
- Keep subtle — professional SaaS, not flashy AI chrome.
-*/
-
-@keyframes ambient-drift {
-  0%, 100% {
-    opacity: 0.45;
-    transform: translate3d(0, 0, 0) scale(1);
+  ::selection {
+    @apply bg-sage/35 text-ink;
   }
 
-  50% {
-    opacity: 0.7;
-    transform: translate3d(12px, -8px, 0) scale(1.04);
+  /* A single, consistent focus treatment for every interactive element.
+     Outline (not ring) so it reads correctly on white, paper and olive. */
+  :where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+    outline: 2px solid #4a5d23;
+    outline-offset: 2px;
   }
 }
 
-@keyframes ambient-drift-slow {
-  0%, 100% {
-    opacity: 0.3;
-    transform: translate3d(0, 0, 0) scale(1);
+@layer components {
+  /* Scroll containers: quiet scrollbars that match the paper surface. */
+  .scroll-area {
+    scrollbar-width: thin;
+    scrollbar-color: #d6dcd3 transparent;
+    overscroll-behavior: contain;
   }
 
-  50% {
-    opacity: 0.5;
-    transform: translate3d(-16px, 10px, 0) scale(1.06);
-  }
-}
-
-.animate-ambient-drift {
-  animation: ambient-drift 14s ease-in-out infinite;
-}
-
-.animate-ambient-drift-slow {
-  animation: ambient-drift-slow 18s ease-in-out infinite;
-}
-
-@keyframes progress-slide {
-  0% {
-    transform: translateX(-100%);
+  .scroll-area::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
   }
 
-  100% {
-    transform: translateX(200%);
-  }
-}
-
-.animate-progress-slide {
-  animation: progress-slide 1.6s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
+  .scroll-area::-webkit-scrollbar-track {
+    background: transparent;
   }
 
-  100% {
-    background-position: 200% 0;
+  .scroll-area::-webkit-scrollbar-thumb {
+    background-color: #dce2d9;
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+
+  .scroll-area:hover::-webkit-scrollbar-thumb {
+    background-color: #cbd3c7;
+  }
+
+  .skeleton {
+    background-image: linear-gradient(
+      90deg,
+      #eff1ec 0%,
+      #f7f8f5 45%,
+      #eff1ec 100%
+    );
+    background-size: 200% 100%;
+    @apply animate-shimmer rounded;
   }
 }
 
-.animate-shimmer {
-  background: linear-gradient(
-    90deg,
-    #eff1ec 0%,
-    #f6f7f4 45%,
-    #eff1ec 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.8s ease-in-out infinite;
+@layer utilities {
+  /* Long URLs, hashes and pasted tokens must never widen a container. */
+  .break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}
+
+/* Answer body: user-generated markdown must wrap, never overflow. */
+.answer-markdown {
+  overflow-wrap: anywhere;
+}
+
+.answer-markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

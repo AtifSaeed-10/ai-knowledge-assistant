@@ -1,6 +1,17 @@
+"use client";
+
 import React from "react";
+import { ChevronRight } from "lucide-react";
 import { Citation } from "@/types";
 import { useChatStore } from "@/store/useChatStore";
+import { cn } from "@/lib/cn";
+
+export function relevancePercent(relevance?: number | null): number | null {
+  if (relevance === null || relevance === undefined) return null;
+  const value = relevance > 1 ? Math.round(relevance) : Math.round(relevance * 100);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return Math.min(100, value);
+}
 
 export const CitationCard = ({
   citation,
@@ -9,67 +20,66 @@ export const CitationCard = ({
   citation: Citation;
   index?: number;
 }) => {
-  const { setActiveCitation, activeCitation } = useChatStore();
-  const isActive = activeCitation?.id === citation.id;
+  const setActiveCitation = useChatStore((state) => state.setActiveCitation);
+  const activeCitation = useChatStore((state) => state.activeCitation);
 
-  const relScore = citation.relevance
-    ? citation.relevance > 1
-      ? Math.round(citation.relevance)
-      : Math.round(citation.relevance * 100)
-    : null;
+  const isActive = activeCitation?.id === citation.id;
+  const score = relevancePercent(citation.relevance);
+  const pageLabel = citation.pageNumber ? `page ${citation.pageNumber}` : "page unknown";
 
   return (
     <button
       type="button"
       data-citation-chip="true"
       onClick={() => setActiveCitation(citation)}
-      className={`group w-full rounded-xl border px-3 py-2.5 text-left transition-all duration-150 ${
+      aria-label={`Open ${citation.documentName}, ${pageLabel}`}
+      title={`${citation.documentName} · ${pageLabel}`}
+      className={cn(
+        "group relative w-full rounded-xl border bg-surface py-2.5 pl-3 pr-7 text-left transition-colors",
         isActive
-          ? "border-[#87AB72] bg-white shadow-[0_0_0_3px_rgba(135,171,114,0.14)]"
-          : "border-[#EBEFEA] bg-white hover:border-[#D0D7CB] hover:bg-[#FBFBFA]"
-      }`}
-      title={
-        citation.pageNumber
-          ? `${citation.documentName} · page ${citation.pageNumber}`
-          : citation.documentName
-      }
+          ? "border-sage ring-1 ring-sage"
+          : "border-line hover:border-line-strong hover:bg-surface-muted"
+      )}
     >
       <div className="flex items-start gap-2.5">
         {typeof index === "number" && (
           <span
-            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold ${
-              isActive
-                ? "bg-[#4A5D23] text-white"
-                : "bg-[#F1F3EF] text-[#4A5D23]"
-            }`}
+            className={cn(
+              "mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-label font-semibold tabular-nums",
+              isActive ? "bg-olive text-white" : "bg-olive-soft text-olive"
+            )}
           >
             {index}
           </span>
         )}
 
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[12.5px] font-semibold tracking-[-0.01em] text-[#1C241F]">
+          <span className="block truncate text-ui font-semibold tracking-[-0.01em] text-ink">
             {citation.documentName}
           </span>
 
-          <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-[#6F7B6B]">
-            <span className="rounded bg-[#F6F7F4] px-1.5 py-0.5 font-medium text-[#5B6858]">
-              {citation.pageNumber ? `p. ${citation.pageNumber}` : "page unknown"}
+          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-meta text-ink-muted">
+            <span className="rounded bg-surface-sunken px-1.5 py-0.5 font-medium tabular-nums text-ink-muted">
+              {citation.pageNumber ? `p. ${citation.pageNumber}` : "page n/a"}
             </span>
-            {relScore !== null && <span>{relScore}% match</span>}
+            {score !== null && <span className="tabular-nums">{score}% match</span>}
           </span>
 
           {citation.snippet && (
-            <span className="mt-1.5 line-clamp-2 block text-[12px] leading-relaxed text-[#6F7B6B]">
+            <span className="mt-1.5 line-clamp-2 block text-meta leading-relaxed text-ink-muted">
               “{citation.snippet}”
             </span>
           )}
-
-          <span className="mt-1.5 block text-[11px] font-medium text-[#4A5D23] opacity-0 transition-opacity group-hover:opacity-100">
-          View {citation.pageNumber ? `page ${citation.pageNumber}` : "source"} →
-          </span>
         </span>
       </div>
+
+      <ChevronRight
+        aria-hidden
+        className={cn(
+          "absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 transition-colors",
+          isActive ? "text-olive" : "text-ink-icon group-hover:text-olive"
+        )}
+      />
     </button>
   );
 };

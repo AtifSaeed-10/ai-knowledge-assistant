@@ -1,22 +1,31 @@
 "use client";
 
-import React, { useState } from 'react';
-import { FileText, Trash2, ChevronDown, Loader2, Focus } from 'lucide-react';
-import { useDocumentStore } from '@/store/useDocumentStore';
-import { useChatStore } from '@/store/useChatStore';
-import { Document, DocumentStatus } from '@/types';
-import { ProcessingTimeline, getFriendlyDocumentStatus } from './ProcessingTimeline';
+import React, { useId, useState } from "react";
+import {
+  AlertTriangle,
+  ChevronDown,
+  Crosshair,
+  FileText,
+  Loader2,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
+import { useDocumentStore } from "@/store/useDocumentStore";
+import { useChatStore } from "@/store/useChatStore";
+import { Document } from "@/types";
+import { ConfirmDialog } from "@/components/ui/Dialog";
+import { ProcessingTimeline, getFriendlyDocumentStatus } from "./ProcessingTimeline";
+import { cn } from "@/lib/cn";
 
 interface DocumentLibraryProps {
   isCollapsed?: boolean;
 }
 
-function formatRelativeTime(date: Date): string {
-  const value = date instanceof Date ? date : new Date(date);
-  const diffMs = Date.now() - value.getTime();
-  const minutes = Math.floor(diffMs / 60000);
+function formatRelativeTime(input: Date): string {
+  const value = input instanceof Date ? input : new Date(input);
+  const minutes = Math.floor((Date.now() - value.getTime()) / 60000);
 
-  if (Number.isNaN(minutes) || minutes < 1) return 'Just now';
+  if (Number.isNaN(minutes) || minutes < 1) return "Just now";
   if (minutes < 60) return `${minutes}m ago`;
 
   const hours = Math.floor(minutes / 60);
@@ -25,242 +34,281 @@ function formatRelativeTime(date: Date): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
 
-  return value.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-function StatusDot({ status }: { status: DocumentStatus }) {
-  const isReady = status === 'ready';
-
-  return (
-    <span
-      className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
-        isReady
-          ? 'bg-[#87AB72]'
-          : 'bg-[#C4A35A] animate-pulse'
-      }`}
-      aria-hidden
-    />
-  );
+  return value.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 export function DocumentLibrary({ isCollapsed = false }: DocumentLibraryProps) {
   const documents = useDocumentStore((state) => state.documents);
   const deleteDocument = useDocumentStore((state) => state.deleteDocument);
+  const retryProcessing = useDocumentStore((state) => state.retryProcessing);
   const selectedDocumentId = useDocumentStore((state) => state.selectedDocumentId);
   const selectDocument = useDocumentStore((state) => state.selectDocument);
+  const loadError = useDocumentStore((state) => state.loadError);
+  const reload = useDocumentStore((state) => state.reload);
   const productMode = useChatStore((state) => state.productMode);
 
-  const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
-  const [docToDelete, setDocToDelete] = useState<Document | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Document | null>(null);
+  const detailsId = useId();
 
-  const toggleExpand = (id: string) => {
-    setExpandedDoc(expandedDoc === id ? null : id);
-  };
-
-  const confirmDelete = () => {
-    if (docToDelete) {
-      deleteDocument(docToDelete.id);
-      setDocToDelete(null);
-    }
-  };
+  const header = !isCollapsed && (
+    <div className="flex shrink-0 items-center justify-between gap-2 px-5 pb-1.5 pt-3">
+      <h2 className="text-label font-semibold uppercase tracking-[0.09em] text-ink-muted">
+        Documents
+      </h2>
+      {documents.length > 0 && (
+        <span className="rounded-md bg-olive-soft px-1.5 py-0.5 text-label font-medium tabular-nums text-ink-muted">
+          {documents.length}
+        </span>
+      )}
+    </div>
+  );
 
   if (documents.length === 0) {
     if (isCollapsed) return null;
 
     return (
-      <div className="px-4 pt-1">
-        <p className="mb-3 px-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
-          Documents
-        </p>
-        <div className="rounded-lg px-3 py-5 text-center">
-          <p className="text-[13px] font-medium tracking-[-0.01em] text-[#5B6858]">
-            No documents yet
-          </p>
-          <p className="mt-1 text-[12px] leading-relaxed text-[#98A395]">
-            Use New document to add your first PDF.
-          </p>
+      <section className="flex min-h-0 flex-col" aria-label="Documents">
+        {header}
+        <div className="px-5 py-3">
+          {loadError ? (
+            <div className="rounded-lg border border-danger-line bg-danger-soft p-3">
+              <p className="text-meta font-medium text-danger">Couldn’t load documents</p>
+              <p className="mt-1 text-meta leading-relaxed text-ink-muted break-anywhere">
+                {loadError}
+              </p>
+              <button
+                type="button"
+                onClick={() => void reload()}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-surface px-2 py-1 text-meta font-medium text-ink ring-1 ring-line transition-colors hover:bg-surface-muted"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Try again
+              </button>
+            </div>
+          ) : (
+            <p className="text-meta leading-relaxed text-ink-muted">
+              No documents yet. Use <span className="font-medium text-ink">New document</span> to
+              add your first PDF.
+            </p>
+          )}
         </div>
-      </div>
+      </section>
     );
   }
 
   return (
-    <div className={isCollapsed ? 'px-2' : 'px-3'}>
-      {!isCollapsed && (
-        <div className="mb-2 flex items-center justify-between px-2">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
-            Documents
-          </span>
-          <span className="rounded-md bg-[#EFF1EC] px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-[#5B6858]">
-            {documents.length}
-          </span>
-        </div>
-      )}
+    <section className="flex min-h-0 flex-col" aria-label="Documents">
+      {header}
 
-      <ul className="space-y-0.5">
-        {documents.map((doc) => {
-          const isExpanded = expandedDoc === doc.id;
-          const isSelected = selectedDocumentId === doc.id;
-          const isReady = doc.status === 'ready';
-          const friendlyStatus = getFriendlyDocumentStatus(doc.status);
+      <div className={cn("scroll-area min-h-0 flex-1 overflow-y-auto pb-3", isCollapsed ? "px-2" : "px-3")}>
+        <ul className="space-y-0.5">
+          {documents.map((doc) => {
+            const isExpanded = expandedId === doc.id;
+            const isSelected = selectedDocumentId === doc.id;
+            const isReady = doc.status === "ready";
+            const isFailed = doc.status === "failed";
+            const rowDetailsId = `${detailsId}-${doc.id}`;
 
-          return (
-            <li
-              key={doc.id}
-              className="group animate-in fade-in slide-in-from-left-1 duration-300"
-            >
-              <div
-                className={`flex items-center rounded-lg transition-colors duration-150 ${
-                  isCollapsed
-                    ? 'justify-center p-2'
-                    : 'justify-between gap-1 px-2 py-2'
-                } ${
-                  isSelected
-                    ? 'bg-white ring-1 ring-[#87AB72]'
-                    : isExpanded
-                      ? 'bg-[#EFF1EC]'
-                      : 'hover:bg-[#F1F3EF]'
-                }`}
-              >
-                <div
-                  className={`flex min-w-0 items-center gap-2.5 cursor-pointer ${
-                    isCollapsed ? 'justify-center' : 'flex-1'
-                  }`}
-                  onClick={() => {
-                    if (isCollapsed) {
-                      selectDocument(doc.id);
-                      return;
-                    }
-                    selectDocument(doc.id);
-                  }}
-                  title={
-                    isReady
-                      ? `Use ${doc.name} as the focused document`
-                      : doc.name
-                  }
-                >
-                  <div
-                    className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors ${
-                      isReady
-                        ? 'border-[#EBEFEA] bg-white text-[#4A5D23]'
-                        : 'border-[#EBEFEA] bg-white text-[#98A395]'
-                    }`}
+            if (isCollapsed) {
+              return (
+                <li key={doc.id}>
+                  <button
+                    type="button"
+                    onClick={() => selectDocument(doc.id)}
+                    aria-pressed={isSelected}
+                    title={`${doc.name} — ${getFriendlyDocumentStatus(doc.status)}`}
+                    className={cn(
+                      "relative flex h-11 w-full items-center justify-center rounded-lg transition-colors",
+                      isSelected ? "bg-surface ring-1 ring-sage" : "hover:bg-surface-sunken"
+                    )}
                   >
-                    {isReady ? (
+                    <span className="sr-only">{doc.name}</span>
+                    {isFailed ? (
+                      <AlertTriangle className="h-4 w-4 text-danger" strokeWidth={1.75} />
+                    ) : isReady ? (
+                      <FileText className="h-4 w-4 text-olive" strokeWidth={1.75} />
+                    ) : (
+                      <Loader2 className="h-4 w-4 animate-spin text-olive" strokeWidth={1.75} />
+                    )}
+                  </button>
+                </li>
+              );
+            }
+
+            return (
+              <li key={doc.id} className="group relative">
+                <button
+                  type="button"
+                  onClick={() => selectDocument(isSelected ? null : doc.id)}
+                  aria-pressed={isSelected}
+                  title={doc.name}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-lg py-2 pl-2 pr-[4.25rem] text-left transition-colors",
+                    isSelected
+                      ? "bg-surface ring-1 ring-sage"
+                      : isExpanded
+                        ? "bg-olive-soft"
+                        : "hover:bg-surface-sunken"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-surface",
+                      isFailed ? "border-danger-line text-danger" : "border-line text-olive"
+                    )}
+                  >
+                    {isFailed ? (
+                      <AlertTriangle className="h-3.5 w-3.5" strokeWidth={1.75} />
+                    ) : isReady ? (
                       <FileText className="h-3.5 w-3.5" strokeWidth={1.75} />
                     ) : (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[#4A5D23]" strokeWidth={1.75} />
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
                     )}
-                    {isCollapsed && (
-                      <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5 items-center justify-center rounded-full border-2 border-[#FBFBFA] bg-[#FBFBFA]">
-                        <StatusDot status={doc.status} />
-                      </span>
-                    )}
-                  </div>
+                  </span>
 
-                  {!isCollapsed && (
-                    <div className="min-w-0 flex-1">
-                      <h4
-                        className={`truncate text-[13px] font-medium tracking-[-0.01em] ${
-                          isReady ? 'text-[#1C241F]' : 'text-[#5B6858]'
-                        }`}
-                      >
-                        {doc.name}
-                      </h4>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[#98A395]">
-                        <StatusDot status={doc.status} />
-                        <span className={isReady ? 'text-[#5B6858]' : 'text-[#8A7350]'}>
-                          {friendlyStatus}
-                        </span>
-                        {isSelected && (
-                          <>
-                            <span className="text-[#D5DBD3]">·</span>
-                            <span className="inline-flex items-center gap-0.5 font-medium text-[#4A5D23]">
-                              <Focus className="h-3 w-3" />
-                              {productMode === 'super_focused' ? 'Focused' : 'Selected'}
-                            </span>
-                          </>
+                  <span className="min-w-0 flex-1">
+                    <span
+                      className={cn(
+                        "block truncate text-ui font-medium tracking-[-0.01em]",
+                        isReady || isFailed ? "text-ink" : "text-ink-muted"
+                      )}
+                    >
+                      {doc.name}
+                    </span>
+
+                    <span className="mt-0.5 flex items-center gap-1.5 text-meta text-ink-subtle">
+                      <span
+                        className={cn(
+                          "truncate",
+                          isFailed ? "text-danger" : isReady ? "text-ink-muted" : "text-warn"
                         )}
-                        <span className="text-[#D5DBD3]">·</span>
-                        <span>{formatRelativeTime(doc.uploadedAt)}</span>
-                      </div>
-                    </div>
-                  )}
+                      >
+                        {isFailed ? "Processing failed" : getFriendlyDocumentStatus(doc.status)}
+                      </span>
+
+                      {isReady && doc.totalPages ? (
+                        <>
+                          <span aria-hidden className="text-line-strong">
+                            ·
+                          </span>
+                          <span className="shrink-0 tabular-nums">{doc.totalPages}p</span>
+                        </>
+                      ) : null}
+
+                      {isSelected && (
+                        <>
+                          <span aria-hidden className="text-line-strong">
+                            ·
+                          </span>
+                          <span className="inline-flex shrink-0 items-center gap-0.5 font-medium text-olive">
+                            <Crosshair className="h-3 w-3" />
+                            {productMode === "super_focused" ? "Focused" : "Selected"}
+                          </span>
+                        </>
+                      )}
+
+                      {!isSelected && (
+                        <>
+                          <span aria-hidden className="text-line-strong">
+                            ·
+                          </span>
+                          <span className="shrink-0">{formatRelativeTime(doc.uploadedAt)}</span>
+                        </>
+                      )}
+                    </span>
+                  </span>
+                </button>
+
+                <div className="pointer-events-none absolute right-1.5 top-1.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(isExpanded ? null : doc.id)}
+                    aria-expanded={isExpanded}
+                    aria-controls={rowDetailsId}
+                    className="rounded-md p-1.5 text-ink-icon transition-colors hover:bg-surface hover:text-ink"
+                    title={isExpanded ? "Hide details" : "Show details"}
+                    aria-label={`${isExpanded ? "Hide" : "Show"} details for ${doc.name}`}
+                  >
+                    <ChevronDown
+                      className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-180")}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPendingDelete(doc)}
+                    className="rounded-md p-1.5 text-ink-icon transition-colors hover:bg-danger-soft hover:text-danger"
+                    title="Delete document"
+                    aria-label={`Delete ${doc.name}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
 
-                {!isCollapsed && (
-                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
-                    <button
-                      onClick={() => toggleExpand(doc.id)}
-                      className="rounded-md p-1.5 text-[#98A395] transition-colors hover:bg-white hover:text-[#1C241F]"
-                      aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
-                      title={isExpanded ? 'Collapse' : 'Details'}
-                    >
-                      <ChevronDown
-                        className={`h-3.5 w-3.5 transition-transform duration-200 ${
-                          isExpanded ? 'rotate-180' : ''
-                        }`}
-                      />
-                    </button>
-                    <button
-                      onClick={() => setDocToDelete(doc)}
-                      className="rounded-md p-1.5 text-[#98A395] transition-colors hover:bg-red-50 hover:text-red-600"
-                      title="Delete document"
-                      aria-label={`Delete ${doc.name}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                {isFailed && (
+                  <div className="mx-2 mb-1.5 mt-1 rounded-lg border border-danger-line bg-danger-soft px-3 py-2.5">
+                    <p className="text-meta leading-relaxed text-ink-muted break-anywhere">
+                      {doc.error || "Processing did not finish."}
+                    </p>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => retryProcessing(doc.id)}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-surface px-2 py-1 text-meta font-medium text-ink ring-1 ring-line transition-colors hover:bg-surface-muted"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Check again
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPendingDelete(doc)}
+                        className="rounded-md px-2 py-1 text-meta font-medium text-danger transition-colors hover:bg-surface"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
                 )}
-              </div>
 
-              {!isCollapsed && isExpanded && (
-                <div className="mx-2 mb-1.5 overflow-hidden rounded-lg border border-[#EBEFEA] bg-white px-3 py-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#98A395]">
-                    Progress
-                  </p>
-                  <ProcessingTimeline status={doc.status} />
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+                {isExpanded && (
+                  <div
+                    id={rowDetailsId}
+                    className="mx-2 mb-1.5 mt-1 animate-fade-in rounded-lg border border-line bg-surface px-3 py-2.5"
+                  >
+                    <p className="mb-2 text-label font-semibold uppercase tracking-[0.09em] text-ink-muted">
+                      Progress
+                    </p>
+                    <ProcessingTimeline status={doc.status} />
+                    {doc.totalChunks ? (
+                      <p className="mt-2.5 border-t border-line pt-2 text-meta text-ink-muted">
+                        {doc.totalPages ? `${doc.totalPages} pages · ` : ""}
+                        {doc.totalChunks} indexed passages
+                      </p>
+                    ) : null}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
 
-      {/* Delete Confirmation Dialog */}
-      {docToDelete && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-[#1C241F]/40 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-sm rounded-xl border border-[#EBEFEA] bg-white p-5 shadow-2xl animate-in zoom-in-95 duration-200">
-            <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-[#1C241F]">
-              Delete document
-            </h3>
-            <p className="mt-2 text-sm leading-relaxed text-[#6F7B6B]">
-              Remove{' '}
-              <span className="font-medium text-[#1C241F]">
-                &quot;{docToDelete.name}&quot;
-              </span>
-              {' '}from your workspace? It will no longer be searchable, and this cannot be undone.
-            </p>
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setDocToDelete(null)}
-                className="rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#5B6858] transition-colors hover:bg-[#F1F3EF]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmDelete}
-                className="rounded-lg bg-red-600 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm transition-colors hover:bg-red-700"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete document"
+        confirmLabel="Delete document"
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (target) void deleteDocument(target.id);
+        }}
+      >
+        <p>
+          <span className="font-medium text-ink">“{pendingDelete?.name}”</span> will be removed from
+          your workspace and will no longer be searchable. This cannot be undone.
+        </p>
+      </ConfirmDialog>
+    </section>
   );
 }
