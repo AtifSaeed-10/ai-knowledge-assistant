@@ -93,6 +93,18 @@ def init_db():
     )
 
 
+    try:
+        cursor.execute(
+            """
+            ALTER TABLE documents
+            ADD COLUMN index_error TEXT
+            """
+        )
+
+    except sqlite3.OperationalError:
+        pass
+
+
     connection.commit()
 
     connection.close()
