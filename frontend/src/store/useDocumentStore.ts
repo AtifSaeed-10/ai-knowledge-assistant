@@ -92,7 +92,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
           status: updated.status,
           totalPages: updated.totalPages,
           totalChunks: updated.totalChunks,
-          error: undefined,
+          error: updated.status === 'failed' ? updated.error : undefined,
         });
 
         if (updated.status === 'ready') {
@@ -101,7 +101,10 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
         }
 
         if (updated.status === 'failed') {
-          markFailed(documentId, 'Processing failed on the server.');
+          markFailed(
+            documentId,
+            updated.error || 'Processing failed on the server.'
+          );
           return;
         }
 

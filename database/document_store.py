@@ -80,7 +80,8 @@ def document_to_dict(document):
         "upload_time": document[2],
         "total_pages": document[3],
         "total_chunks": document[4],
-        "status": document[5]
+        "status": document[5],
+        "index_error": document[6] if len(document) > 6 else None,
     }
 
 def get_all_documents():
@@ -182,4 +183,32 @@ def update_document_status(
     connection.commit()
 
     connection.close()
+
+
+def update_document_index_error(
+    document_id: str,
+    message: str | None,
+) -> None:
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        UPDATE documents
+        SET index_error = ?
+        WHERE document_id = ?
+        """,
+        (message, document_id),
+    )
+
+    connection.commit()
+    connection.close()
+
+
+def mark_document_index_failed(
+    document_id: str,
+    message: str,
+) -> None:
+    update_document_status(document_id, "failed")
+    update_document_index_error(document_id, message)
 
