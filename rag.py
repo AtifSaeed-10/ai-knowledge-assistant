@@ -6,6 +6,7 @@ from retrieval_logger import log_retrieval
 from query_rewriter import rewrite_query
 from conversation_query import analyze_turn, infer_subject_phrase
 from answer_prompt import build_answer_prompt
+from answer_planner import format_plan_for_prompt, plan_answer
 from evidence_focus import citation_allowlist, format_evidence_notes
 from modes import normalize_mode
 from config import (
@@ -20,7 +21,8 @@ from config import (
 )
 from bm25_index import bm25_index
 from reranker import reranker
-from citation_resolver import attach_quotes_to_sources, evidence_id_for_index, resolve_answer
+from citation_resolver import evidence_id_for_index, resolve_answer
+from claim_validator import finalize_answer_citations, used_sources
 from evidence_mapping import make_snippet
 from hybrid_retrieval import (
     retrieve_dense,
@@ -207,9 +209,100 @@ __all__ = [
 ]
 
 
-# ========================
-# RAG Pipeline
-# ========================
+def _merge_retrieval_results(
+    primary: dict,
+    supplemental: dict,
+    *,
+    max_extra: int = 2,
+) -> dict:
+    """
+    Append unique chunks from a supplemental retrieval pass.
+
+    Keeps primary rerank order; adds up to max_extra new chunks at the end.
+    """
+    if max_extra <= 0 or not supplemental.get("ids"):
+        return primary
+
+    seen = set(primary.get("ids") or [])
+    merged = {key: list(primary.get(key) or []) for key in (
+        "chunks",
+        "distances",
+        "metadata",
+        "ids",
+        "dense_distances",
+        "bm25_scores",
+        "rrf_scores",
+        "reranker_scores",
+        "relevances",
+    )}
+    added = 0
+    for idx, chunk_id in enumerate(supplemental.get("ids") or []):
+        if chunk_id in seen:
+            continue
+        seen.add(chunk_id)
+        merged["chunks"].append(supplemental["chunks"][idx])
+        for field in (
+            "distances",
+            "metadata",
+            "ids",
+            "dense_distances",
+            "bm25_scores",
+            "rrf_scores",
+            "reranker_scores",
+            "relevances",
+        ):
+            values = supplemental.get(field) or []
+            merged[field].append(values[idx] if idx < len(values) else None)
+        added += 1
+        if added >= max_extra:
+            break
+
+    if added == 0:
+        return primary
+
+    out = dict(primary)
+    for field, values in merged.items():
+        out[field] = values
+    return out
+
+
+def _retrieve_with_plan(
+    search_query: str,
+    plan,
+    document_ids=None,
+) -> dict:
+    """Primary hybrid retrieval, optionally augmented by plan sub-queries."""
+    primary = retrieve_candidates(search_query, document_ids)
+    sub_queries = [
+        item.strip()
+        for item in (getattr(plan, "sub_queries", None) or [])
+        if item and item.strip()
+    ]
+    if not sub_queries:
+        return primary
+
+    normalized_primary = search_query.strip().lower()
+    result = primary
+    extras_budget = 2
+    for sub_query in sub_queries[:3]:
+        if extras_budget <= 0:
+            break
+        if sub_query.strip().lower() == normalized_primary:
+            continue
+        supplemental = retrieve_candidates(
+            sub_query,
+            document_ids,
+            top_k=2,
+        )
+        before = len(result.get("ids") or [])
+        result = _merge_retrieval_results(
+            result,
+            supplemental,
+            max_extra=extras_budget,
+        )
+        extras_budget -= max(0, len(result.get("ids") or []) - before)
+    return result
+
 
 def ask_question(
     question: str,
@@ -251,11 +344,13 @@ def ask_question(
         f"rewrite={analysis.needs_rewrite} ({analysis.reason})"
     )
 
+    answer_plan_obj = plan_answer(question, search_query, analysis)
 
-    retrieval_result = retrieve_candidates(
+    retrieval_result = _retrieve_with_plan(
         search_query,
-        document_ids
-        )
+        answer_plan_obj,
+        document_ids,
+    )
 
 
     chunks = retrieval_result["chunks"]
@@ -336,6 +431,7 @@ def ask_question(
         search_query,
         analysis,
     )
+    plan_text = format_plan_for_prompt(answer_plan_obj)
 
     prompt = build_answer_prompt(
         question=question,
@@ -350,6 +446,7 @@ def ask_question(
         mode=product_mode,
         evidence_notes=evidence_notes,
         subject=subject,
+        answer_plan=plan_text,
     )
 
 
@@ -370,7 +467,7 @@ def ask_question(
         }
 
     answer = resolve_answer(generate_response(prompt), sources)
-    sources = attach_quotes_to_sources(sources, answer)
+    answer, sources = finalize_answer_citations(answer, sources)
 
     return {
         "answer": answer,

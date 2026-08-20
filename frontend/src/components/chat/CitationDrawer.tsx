@@ -7,6 +7,7 @@ import { useChatStore } from "@/store/useChatStore";
 import { documentsApi } from "@/lib/api/documents";
 import { fetchChunkEvidence } from "@/lib/api/evidence";
 import { resolveEvidenceView, type ChunkEvidence } from "@/lib/pdf/coords";
+import type { Citation } from "@/types/citation";
 import { pdfFileUrlWithoutHash } from "@/lib/pdf/pdfjs";
 import { relevancePercent } from "./CitationCard";
 import { PdfEvidenceViewer } from "./PdfEvidenceViewer";
@@ -18,6 +19,40 @@ const SLOW_LOAD_MS = 6000;
 const MIN_ZOOM = 0.75;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 0.25;
+
+function citationToChunkEvidence(citation: Citation): ChunkEvidence | null {
+  if (!citation.chunk_id || !citation.documentId) return null;
+  const page = citation.pageNumber && citation.pageNumber >= 1 ? citation.pageNumber : 1;
+  return {
+    chunk_id: citation.chunk_id,
+    document_id: citation.documentId,
+    page_start: page,
+    page_end: page,
+    snippet: citation.snippet || citation.quote || "",
+    highlight_available: false,
+    regions: [],
+    quote: citation.quote ?? null,
+    quote_highlight_available: citation.quoteHighlightAvailable === true,
+    quote_regions: citation.quoteRegions || [],
+    quote_mapping_status: citation.quoteMappingStatus ?? null,
+  };
+}
+
+function mappingStatusMessage(status: string | null | undefined): string | null {
+  if (!status || status === "none" || status === "exact" || status === "normalized") {
+    return null;
+  }
+  if (status === "not_in_chunk") {
+    return "The cited quote could not be matched to the retrieved passage.";
+  }
+  if (status === "not_on_page") {
+    return "The quote appears in the passage but could not be located on the PDF page.";
+  }
+  if (status === "rejected") {
+    return "The cited quote was rejected as invalid.";
+  }
+  return "Exact highlighting is unavailable for this citation.";
+}
 
 function isValidPage(page: number | null | undefined): page is number {
   return typeof page === "number" && Number.isFinite(page) && page >= 1;
@@ -58,6 +93,9 @@ export const CitationDrawer = () => {
   const viewerUrl = pdfUrl ? pdfFileUrlWithoutHash(pdfUrl) : null;
   const snippet = view.snippet || activeCitation?.quote || activeCitation?.snippet || "";
   const showSnippetFallback = evidenceReady && !view.canHighlight;
+  const mappingMessage =
+    mappingStatusMessage(activeCitation?.quoteMappingStatus) ||
+    mappingStatusMessage(evidence?.quote_mapping_status ?? null);
 
   useEffect(() => {
     setIsFrameLoading(true);
@@ -73,6 +111,18 @@ export const CitationDrawer = () => {
       setEvidenceReady(true);
       return;
     }
+
+    const preResolved = citationToChunkEvidence(activeCitation);
+    if (
+      preResolved &&
+      (preResolved.quote_highlight_available === true ||
+        Boolean(preResolved.quote_mapping_status && preResolved.quote_mapping_status !== "none"))
+    ) {
+      setEvidence(preResolved);
+      setEvidenceReady(true);
+      return;
+    }
+
     const controller = new AbortController();
 
     void fetchChunkEvidence(documentId, activeCitation.chunk_id, {
@@ -242,6 +292,9 @@ export const CitationDrawer = () => {
         {showSnippetFallback && (
           <div className="shrink-0 border-b border-warn-line bg-warn-soft px-5 py-3">
             <p className="text-meta font-medium text-warn">Highlight unavailable</p>
+            {mappingMessage ? (
+              <p className="mt-1 text-ui leading-relaxed text-ink-muted">{mappingMessage}</p>
+            ) : null}
             {snippet ? (
               <p className="mt-1 text-ui leading-relaxed text-ink-muted">
                 “{snippet}”

@@ -5,6 +5,7 @@ import {
   displayNumberFromEvidenceId,
   incompleteBracketLength,
 } from "@/lib/citations/markers";
+import type { EvidenceRegion } from "@/types/citation";
 
 interface ApiSource {
   document_id?: string;
@@ -18,9 +19,14 @@ interface ApiSource {
   evidence_id?: string;
   evidenceId?: string;
   quote?: string | null;
+  quotes?: string[] | null;
+  quote_mapping_status?: string | null;
+  quote_highlight_available?: boolean | null;
+  quote_regions?: EvidenceRegion[] | null;
 }
 
 const CITATIONS_START = "__CITATIONS__";
+const CITATIONS_FINAL_START = "__CITATIONS_FINAL__";
 const CITATIONS_END = "__END_CITATIONS__";
 
 export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
@@ -31,6 +37,13 @@ export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
       : null;
   const evidenceId = src.evidence_id || src.evidenceId || null;
   const displayNumber = displayNumberFromEvidenceId(evidenceId);
+  const quotes = Array.isArray(src.quotes)
+    ? src.quotes.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+  const quote =
+    typeof src.quote === "string" && src.quote.trim()
+      ? src.quote.trim()
+      : quotes[0] ?? null;
 
   return {
     id: src.chunk_id || `cit-${Date.now()}-${idx}`,
@@ -42,7 +55,16 @@ export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
     documentId: src.document_id ?? null,
     evidenceId,
     displayNumber,
-    quote: typeof src.quote === "string" && src.quote.trim() ? src.quote.trim() : null,
+    quote,
+    quotes: quotes.length > 0 ? quotes : quote ? [quote] : [],
+    quoteMappingStatus: src.quote_mapping_status ?? null,
+    quoteHighlightAvailable: src.quote_highlight_available === true,
+    quoteRegions: Array.isArray(src.quote_regions)
+      ? src.quote_regions.filter(
+          (region): region is EvidenceRegion =>
+            Boolean(region && typeof region === "object" && typeof region.page === "number")
+        )
+      : [],
   };
 }
 
@@ -58,10 +80,41 @@ function partialMarkerLength(value: string, marker: string): number {
   return 0;
 }
 
+function tryParseCitations(payload: string): Citation[] {
+  try {
+    const raw = JSON.parse(payload) as ApiSource[];
+    return raw.map(mapSourceToCitation);
+  } catch {
+    return [];
+  }
+}
+
+function stripControlMarkers(buffer: string): {
+  buffer: string;
+  citations: Citation[] | null;
+  marker: "initial" | "final" | null;
+} {
+  for (const [start, kind] of [
+    [CITATIONS_FINAL_START, "final"],
+    [CITATIONS_START, "initial"],
+  ] as const) {
+    const begin = buffer.indexOf(start);
+    const end = buffer.indexOf(CITATIONS_END);
+    if (begin !== -1 && end !== -1 && end > begin) {
+      const payload = buffer.slice(begin + start.length, end);
+      const citations = tryParseCitations(payload);
+      const next = buffer.slice(0, begin) + buffer.slice(end + CITATIONS_END.length);
+      return { buffer: next, citations, marker: kind };
+    }
+  }
+  return { buffer, citations: null, marker: null };
+}
+
 export const chatApi = {
   /**
    * POST /chat/stream
-   * The server sends `__CITATIONS__[...]__END_CITATIONS__` first, then answer tokens.
+   * The server sends `__CITATIONS__[...]__END_CITATIONS__` first, then answer tokens,
+   * then optional `__CITATIONS_FINAL__[...]__END_CITATIONS__` with validated citations.
    */
   async streamMessage(
     content: string,
@@ -109,27 +162,19 @@ export const chatApi = {
 
       buffer += decoder.decode(value, { stream: true });
 
-      if (!citationsSent) {
-        const start = buffer.indexOf(CITATIONS_START);
-        const end = buffer.indexOf(CITATIONS_END);
-
-        if (start !== -1 && end !== -1 && end > start) {
-          const payload = buffer.slice(start + CITATIONS_START.length, end);
-
-          try {
-            const raw = JSON.parse(payload) as ApiSource[];
-            onCitations(raw.map(mapSourceToCitation));
-          } catch {
-            onCitations([]);
-          }
-
+      while (true) {
+        const parsed = stripControlMarkers(buffer);
+        buffer = parsed.buffer;
+        if (!parsed.citations) break;
+        if (parsed.marker === "initial" && !citationsSent) {
+          onCitations(parsed.citations);
           citationsSent = true;
-          buffer = buffer.slice(0, start) + buffer.slice(end + CITATIONS_END.length);
+        } else if (parsed.marker === "final") {
+          onCitations(parsed.citations);
+          citationsSent = true;
         }
       }
 
-      // Never emit text that might be the beginning of a control marker
-      // or an incomplete [E1] citation token.
       let emitUpTo = buffer.length;
       if (!citationsSent) {
         const start = buffer.indexOf(CITATIONS_START);
@@ -138,12 +183,29 @@ export const chatApi = {
             ? start
             : buffer.length - partialMarkerLength(buffer, CITATIONS_START);
       } else {
-        emitUpTo = buffer.length - incompleteBracketLength(buffer);
+        const finalStart = buffer.indexOf(CITATIONS_FINAL_START);
+        if (finalStart !== -1) {
+          emitUpTo = finalStart;
+        } else {
+          emitUpTo =
+            buffer.length - partialMarkerLength(buffer, CITATIONS_FINAL_START);
+        }
+        emitUpTo = Math.min(emitUpTo, buffer.length - incompleteBracketLength(buffer));
       }
 
       if (emitUpTo > 0) {
         onChunk(buffer.slice(0, emitUpTo));
         buffer = buffer.slice(emitUpTo);
+      }
+    }
+
+    while (true) {
+      const parsed = stripControlMarkers(buffer);
+      buffer = parsed.buffer;
+      if (!parsed.citations) break;
+      if (parsed.marker === "final" || (parsed.marker === "initial" && !citationsSent)) {
+        onCitations(parsed.citations);
+        citationsSent = true;
       }
     }
 

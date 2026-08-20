@@ -103,7 +103,7 @@ class TestConversationPersistence(unittest.TestCase):
             return_value=retrieval,
         ), patch(
             "rag.generate_response",
-            return_value="Supervised learning uses labels.",
+            return_value="Supervised learning uses labels.[E1]",
         ):
             response = self.client.post(
                 "/chat",

@@ -204,7 +204,7 @@ class TestAskQuestionConversationRouting(unittest.TestCase):
 
         mock_rewrite.assert_not_called()
         self.assertEqual(
-            mock_retrieve.call_args.args[0],
+            mock_retrieve.call_args_list[0].args[0],
             "What is a red card in football?",
         )
         self.assertNotIn("SHOULD NOT BE USED", result["prompt"])
@@ -311,13 +311,14 @@ class TestGroundedPrompt(unittest.TestCase):
             analysis=analysis,
             mode="normal",
         )
-        self.assertIn('[E1:"supervised learning uses labeled examples"]', prompt)
-        self.assertIn("verbatim quote", prompt)
-        self.assertIn("PDF coordinates", prompt)
-        self.assertIn("Never invent an id", prompt)
-        self.assertIn("complete briefing", prompt)
-        self.assertIn("never pile", prompt.lower())
-        self.assertIn("two to four", prompt)
+        self.assertIn('[E1:"uses labeled training examples"]', prompt)
+        self.assertIn("verbatim anchor", prompt)
+        self.assertIn("coordinates", prompt)
+        self.assertIn("Never invent ids", prompt)
+        self.assertIn("concise research briefing", prompt)
+        self.assertIn("NEVER paste long quoted passages", prompt)
+        self.assertIn("At most", prompt)
+        self.assertIn("120-240", prompt)
 
 
 class TestCitationDedupeAndGrounding(unittest.TestCase):

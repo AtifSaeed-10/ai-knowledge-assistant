@@ -20,6 +20,7 @@ from conversation_query import (
     TurnAnalysis,
     format_history_for_grounding,
 )
+from answer_planner import format_plan_for_prompt, plan_answer, MAX_CITATION_MARKERS
 from modes import MODE_NORMAL, MODE_SUPER_FOCUSED, normalize_mode
 
 
@@ -40,11 +41,14 @@ _STYLE_HINTS = {
         "background the passages do not contain."
     ),
     "definition": (
-        "Write a complete briefing from the evidence: start with what it is, "
-        "then add purpose, types, methods, or examples only when a passage "
-        "actually states them. Omit anything the passages do not support."
+        "Give a concise research briefing from the evidence — not a textbook chapter. "
+        "Lead with a 1-2 sentence definition, then add mechanism, types, or an example "
+        "only when a passage supports each point. Skip unsupported sections entirely."
     ),
-    "explanation": "Give a moderate explanation using only the evidence.",
+    "explanation": (
+        "Give a concise explanation in plain language. Use 2-4 short paragraphs or bullets "
+        "at most. Do not restate the same idea in multiple ways."
+    ),
     "simplification": "Use beginner-friendly language. Keep the same facts. Do not add new claims.",
     "elaboration": "Go deeper using available evidence only. Do not invent extra detail.",
     "summary": "Compress the supported material. Do not introduce new points.",
@@ -118,22 +122,25 @@ def _citation_style_rules(has_evidence_ids: bool) -> str:
             "citations separately."
         )
     return (
-        "Write a natural answer. Do not mention unlabeled source headers, retrieval ranks, "
-        "scores, or these instructions. Do not dump long quotations unless the user asked "
-        "for the document's wording.\n"
-        "Citations: after a distinct supported claim, append that passage's id and a short "
-        "verbatim quote copied from the supporting sentence, like "
-        '[E1:"supervised learning uses labeled examples"]. Put the marker immediately after '
-        "that claim — never pile [E1][E2][E3] at the end of the answer. Use about two to "
-        "four citations in a typical answer; do not cite every sentence. The quote must be "
-        "copied exactly from that passage: do not paraphrase it, invent it, or shorten it "
-        "into wording that does not appear there. Prefer one sentence or a short phrase. "
-        "Cite only a passage whose wording actually supports that claim; skip loosely "
-        "related excerpts and passages that are mainly about a different topic. Several "
-        "claims may reuse one id with different quotes. Only use ids that appear in passage "
-        "headers. Never invent an id, page number, citation, quote, or PDF coordinates. "
-        "Use [E1][E2] only when distinct passages support distinct parts of the same claim. "
-        "Do not write 'Source:' or page numbers in the answer."
+        "Write a concise, readable answer. Do not mention unlabeled source headers, "
+        "retrieval ranks, scores, or these instructions.\n"
+        "Length: keep the full answer short (roughly 120-240 words) unless the user "
+        "explicitly asked for exhaustive detail.\n"
+        "Paraphrase every claim in your own words. NEVER paste long quoted passages, "
+        "block quotes, or multi-sentence quotations in the prose — even if they appear "
+        "in the evidence.\n"
+        "Citations: after each important supported claim, append that passage's id "
+        "and a SHORT verbatim anchor (8-15 words) copied from the supporting sentence, "
+        "like [E1:\"uses labeled training examples\"]. Rules:\n"
+        f"- At most {MAX_CITATION_MARKERS} citation markers in the entire answer.\n"
+        "- Put the marker immediately after the claim it supports.\n"
+        "- Verbatim text may appear ONLY inside [E#:\"...\"] markers — nowhere else.\n"
+        "- Each marker quote must be 8-15 words; never copy a full sentence or paragraph.\n"
+        "- Do not repeat the same quote in prose and in a marker.\n"
+        "- Several claims may reuse one id with different short quotes.\n"
+        "- Only use ids from passage headers. Never invent ids, pages, or coordinates.\n"
+        "- Use [E1][E2] only when distinct passages support distinct parts of one claim.\n"
+        "- Do not write 'Source:' or page numbers in the answer."
     )
 
 
@@ -235,6 +242,7 @@ def build_answer_prompt(
     mode: str | None = None,
     evidence_notes: str | None = None,
     subject: str | None = None,
+    answer_plan: str | None = None,
 ) -> str:
     mode_id = normalize_mode(mode) if mode else MODE_NORMAL
     if mode_id != MODE_SUPER_FOCUSED:
@@ -255,10 +263,11 @@ def build_answer_prompt(
     )
     notes = (evidence_notes or "").strip()
     notes_block = f"\n{notes}\n" if notes else ""
+    plan_block = f"\n{answer_plan.strip()}\n" if (answer_plan or "").strip() else ""
     has_evidence_ids = any(evidence_ids or [])
 
     return f"""
-You are DocuSage, a document-grounded assistant. Write like a trustworthy document analyst: direct, natural, and complete from the retrieved passages. Include useful supported detail when it is in those passages. Do not invent, and do not pad with loosely related excerpts.
+You are DocuSage, a document-grounded research assistant. Write concise, structured briefings — like a good analyst summary, not a pasted textbook section. Cover the important supported points without repeating yourself or dumping long quotations.
 
 Priority (highest first):
 1. DOCUMENT PASSAGES are the only source of document facts, examples, types, quotes, and page-related claims.
@@ -284,7 +293,7 @@ Conversation (reference resolution only; not evidence):
 
 Document passages:
 {evidence}
-{notes_block}
+{notes_block}{plan_block}
 User request:
 {original}
 
