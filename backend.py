@@ -6,7 +6,8 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from citation_resolver import attach_quotes_to_sources, iter_resolved_stream
+from citation_resolver import iter_resolved_stream
+from claim_validator import finalize_answer_citations, used_sources
 from rag import ask_question
 from llm_service import generate_response_stream
 from indexer import index_pdf
@@ -32,6 +33,7 @@ from database.document_service import (
     remove_document
 )
 from quote_evidence import resolve_quote_evidence
+from document_paths import pdf_path_for_filename
 from config import DATA_DIR
 from modes import (
     MODE_SUPER_FOCUSED,
@@ -64,6 +66,10 @@ class Source(BaseModel):
     evidence_id: Optional[str] = None
     snippet: Optional[str] = None
     quote: Optional[str] = None
+    quotes: Optional[List[str]] = None
+    quote_mapping_status: Optional[str] = None
+    quote_highlight_available: Optional[bool] = None
+    quote_regions: Optional[List[dict]] = None
 
 
 class ChatResponse(BaseModel):
@@ -109,20 +115,7 @@ def _scoped_document_ids(request: ChatRequest) -> tuple[list[str] | None, dict |
 
 
 def _document_pdf_path(filename: str) -> str | None:
-    if not filename:
-        return None
-    data_root = os.path.abspath(DATA_DIR)
-    os.makedirs(data_root, exist_ok=True)
-    candidate = os.path.abspath(os.path.join(data_root, filename))
-    try:
-        common = os.path.commonpath([data_root, candidate])
-    except ValueError:
-        return None
-    if common != data_root:
-        return None
-    if not os.path.isfile(candidate):
-        return None
-    return candidate
+    return pdf_path_for_filename(filename)
 
 @app.get("/health")
 def health():
@@ -179,7 +172,7 @@ def chat(request: ChatRequest):
             request.conversation_id,
             "assistant",
             answer,
-            citations=response.get("sources") or [],
+            citations=used_sources(response.get("sources") or [], answer),
                 )
 
 
@@ -294,6 +287,8 @@ def chat_stream(request: ChatRequest):
         if completed:
 
             answer = "".join(answer_parts)
+            answer, enriched_sources = finalize_answer_citations(answer, sources)
+            final_sources = used_sources(enriched_sources, answer)
 
             if is_valid_response(answer):
 
@@ -301,8 +296,10 @@ def chat_stream(request: ChatRequest):
                     request.conversation_id,
                     "assistant",
                     answer,
-                    citations=attach_quotes_to_sources(sources, answer),
+                    citations=final_sources,
                 )
+
+            yield f"__CITATIONS_FINAL__{json.dumps(final_sources)}__END_CITATIONS__"
 
 
 

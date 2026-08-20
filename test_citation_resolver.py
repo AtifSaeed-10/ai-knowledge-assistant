@@ -290,6 +290,16 @@ class TestAskQuestionEvidenceIds(unittest.TestCase):
         ), patch(
             "rag.generate_response",
             return_value="Supervised learning uses labeled examples.[E1] It supports classification.[E2] Fake.[E9]",
+        ), patch(
+            "claim_validator.enrich_source_with_quote_evidence",
+            side_effect=lambda source, **kwargs: {
+                **source,
+                "quote": kwargs.get("quote"),
+                "quotes": [kwargs.get("quote")] if kwargs.get("quote") else [],
+                "quote_mapping_status": "none",
+                "quote_highlight_available": False,
+                "quote_regions": [],
+            },
         ):
             result = ask_question("What is supervised learning?", None, ["doc-a"])
 
@@ -302,9 +312,9 @@ class TestAskQuestionEvidenceIds(unittest.TestCase):
         self.assertIsNone(result["sources"][1]["quote"])
         self.assertIn("[E1] ml.pdf, p. 42", result["prompt"])
         self.assertIn("[E2] ml.pdf, p. 42", result["prompt"])
-        self.assertIn("Never invent an id", result["prompt"])
-        self.assertIn("verbatim quote", result["prompt"])
-        self.assertIn("PDF coordinates", result["prompt"])
+        self.assertIn("Never invent ids", result["prompt"])
+        self.assertIn("verbatim anchor", result["prompt"])
+        self.assertIn("coordinates", result["prompt"])
         self.assertEqual(
             result["answer"],
             "Supervised learning uses labeled examples.[E1] It supports classification.[E2] Fake.",
@@ -320,6 +330,22 @@ class TestAskQuestionEvidenceIds(unittest.TestCase):
                 'Uses labels.[E1:"Labeled examples."] Also tasks.'
                 '[E2:"Classification and regression."] Fake.[E9:"not real"]'
             ),
+        ), patch(
+            "claim_validator._chunk_text_for_source",
+            side_effect=lambda source: {
+                "doc-a_1": "Labeled examples.",
+                "doc-a_2": "Classification and regression.",
+            }.get(str(source.get("chunk_id")), ""),
+        ), patch(
+            "claim_validator.enrich_source_with_quote_evidence",
+            side_effect=lambda source, **kwargs: {
+                **source,
+                "quote": kwargs.get("quote"),
+                "quotes": [kwargs.get("quote")] if kwargs.get("quote") else [],
+                "quote_mapping_status": "exact" if kwargs.get("quote") else "none",
+                "quote_highlight_available": bool(kwargs.get("quote")),
+                "quote_regions": [],
+            },
         ):
             result = ask_question("What is supervised learning?", None, ["doc-a"])
 
@@ -430,6 +456,19 @@ class TestStreamProtocolWithCitations(unittest.TestCase):
                     " Other retrieved sources stay uncited.",
                 ]
             ),
+        ), patch(
+            "claim_validator._chunk_text_for_source",
+            return_value="Supervised learning uses labeled examples.",
+        ), patch(
+            "claim_validator.enrich_source_with_quote_evidence",
+            side_effect=lambda source, **kwargs: {
+                **source,
+                "quote": kwargs.get("quote"),
+                "quotes": [kwargs.get("quote")] if kwargs.get("quote") else [],
+                "quote_mapping_status": "exact",
+                "quote_highlight_available": True,
+                "quote_regions": [],
+            },
         ):
             response = self.client.post(
                 "/chat/stream",
@@ -450,15 +489,18 @@ class TestStreamProtocolWithCitations(unittest.TestCase):
         self.assertIsNone(sources[0].get("quote"))
         self.assertEqual(sources[0]["snippet"], "Supervised learning uses labeled examples.")
         answer = payload[1]
+        if "__CITATIONS_FINAL__" in answer:
+            answer = answer.split("__CITATIONS_FINAL__", 1)[0]
         self.assertIn('[E1:"labeled examples"]', answer)
         self.assertNotIn("[E2]", answer)
 
         stored = get_conversation(self.conversation_id)
         assert stored is not None
         saved = stored["messages"][1]["citations"]
+        self.assertEqual(len(saved), 1)
         self.assertEqual(saved[0]["quote"], "labeled examples")
-        self.assertIsNone(saved[1]["quote"])
-        self.assertEqual(saved[1]["evidence_id"], "E2")
+        self.assertEqual(saved[0]["evidence_id"], "E1")
+        self.assertIn("__CITATIONS_FINAL__", body)
 
 
 if __name__ == "__main__":

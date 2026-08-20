@@ -37,7 +37,7 @@ _COORD_MARKER_RE = re.compile(
     re.IGNORECASE,
 )
 
-MAX_QUOTE_CHARS = 400
+MAX_QUOTE_CHARS = 120
 MIN_QUOTE_COMPACT = 8
 
 
@@ -122,13 +122,14 @@ def attach_quotes_to_sources(
     sources: list[dict[str, Any]] | None,
     text: str,
 ) -> list[dict[str, Any]]:
-    """Copy sources; set quote only on E-IDs the answer actually cited with a quote."""
+    """Copy sources; set quote and quotes on E-IDs the answer actually cited."""
     quotes = quotes_by_evidence_id(text)
     attached: list[dict[str, Any]] = []
     for source in sources or []:
         item = dict(source)
         evidence_id = _normalize_token(str(item.get("evidence_id") or ""))
         used = quotes.get(evidence_id or "") or []
+        item["quotes"] = used
         item["quote"] = used[0] if used else None
         attached.append(item)
     return attached
