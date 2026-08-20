@@ -6,4 +6,7 @@ export interface Citation {
   relevance?: number | null;
   chunk_id?: string | null;
   documentId?: string | null;
+  evidenceId?: string | null;
+  displayNumber?: number | null;
+  quote?: string | null;
 }

@@ -20,6 +20,8 @@ from database.document_store import (
     update_document_index_error,
     update_document_status,
 )
+from database.evidence_store import replace_document_evidence
+from evidence_mapping import build_document_evidence
 from pdf_extraction import (
     INDEX_FAILURE_NO_TEXT,
     extract_pages_from_pdf,
@@ -75,6 +77,21 @@ def index_pdf(pdf_path: str, document_id: str):
                 extraction.pages_with_text,
             )
             return
+
+        try:
+            evidence = build_document_evidence(
+                pdf_path,
+                document_id,
+                pages,
+                chunks,
+                text_engine=extraction.engine_used,
+            )
+            replace_document_evidence(document_id, evidence)
+        except Exception:
+            logger.exception(
+                "index_pdf document_id=%s evidence mapping failed; continuing index",
+                document_id,
+            )
 
         client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
         collection = client.get_or_create_collection(name=COLLECTION_NAME)

@@ -27,7 +27,11 @@ export const SourceList = ({ citations }: { citations?: Citation[] }) => {
 
       <div className="grid gap-2 sm:grid-cols-2">
         {visible.map((citation, index) => (
-          <CitationCard key={citation.id} citation={citation} index={index + 1} />
+          <CitationCard
+            key={citation.id}
+            citation={citation}
+            index={citation.displayNumber ?? index + 1}
+          />
         ))}
       </div>
 

@@ -1,5 +1,6 @@
 import { ConversationSummary } from "@/types/conversation";
 import { Message, Citation } from "@/types";
+import { toDisplayCitationText } from "@/lib/citations/markers";
 
 function citationLine(citation: Citation): string {
   const page = citation.pageNumber ? ` — p. ${citation.pageNumber}` : "";
@@ -21,7 +22,7 @@ export function conversationToMarkdown(
     if (message.role === "user") {
       lines.push("## User", "", message.content.trim(), "");
     } else {
-      lines.push("## DocuSage", "", message.content.trim(), "");
+      lines.push("## DocuSage", "", toDisplayCitationText(message.content).trim(), "");
       if (message.citations && message.citations.length > 0) {
         lines.push("Citations:", "");
         for (const citation of message.citations) {

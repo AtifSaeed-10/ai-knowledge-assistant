@@ -286,9 +286,37 @@ class TestGroundedPrompt(unittest.TestCase):
         self.assertIn("page unknown", text)
         self.assertNotIn("p. 1", text)
 
+    def test_evidence_ids_label_passages(self):
+        text = format_evidence_passages(
+            ["alpha", "beta"],
+            [
+                {"filename": "ml.pdf", "page_number": 4},
+                {"filename": "ml.pdf", "page_number": 5},
+            ],
+            ids=["c1", "c2"],
+            evidence_ids=["E1", None],
+        )
+        self.assertIn("[E1] ml.pdf, p. 4", text)
+        self.assertIn("Source: ml.pdf, p. 5", text)
+
+    def test_prompt_requests_verbatim_quotes_not_coordinates(self):
+        prompt = build_answer_prompt(
+            question="What is supervised learning?",
+            search_query="What is supervised learning?",
+            history=None,
+            chunks=["Supervised learning uses labeled examples."],
+            metadata=[{"filename": "ml.pdf", "page_number": 3}],
+            evidence_ids=["E1"],
+            mode="normal",
+        )
+        self.assertIn('[E1:"supervised learning uses labeled examples"]', prompt)
+        self.assertIn("verbatim quote", prompt)
+        self.assertIn("PDF coordinates", prompt)
+        self.assertIn("Never invent an id", prompt)
+
 
 class TestCitationDedupeAndGrounding(unittest.TestCase):
-    def test_duplicate_page_citations_are_collapsed(self):
+    def test_same_page_distinct_chunks_are_not_collapsed(self):
         sources = _dedupe_sources(
             [
                 {
@@ -314,8 +342,7 @@ class TestCitationDedupeAndGrounding(unittest.TestCase):
                 },
             ]
         )
-        pages = [item["page"] for item in sources]
-        self.assertEqual(pages, [10, 20])
+        self.assertEqual([item["chunk_id"] for item in sources], ["doc-a_1", "doc-a_2", "doc-a_3"])
 
     def test_empty_retrieval_has_no_citations(self):
         with patch(
@@ -358,7 +385,11 @@ class TestCitationDedupeAndGrounding(unittest.TestCase):
         ):
             result = ask_question("What is entropy?", None, ["doc-a"], generate=True)
 
-        self.assertEqual(len(result["sources"]), 1)
+        self.assertEqual(len(result["sources"]), 2)
+        self.assertEqual(result["sources"][0]["evidence_id"], "E1")
+        self.assertEqual(result["sources"][1]["evidence_id"], "E2")
+        self.assertEqual(result["sources"][0]["chunk_id"], "doc-a_1")
+        self.assertEqual(result["sources"][1]["chunk_id"], "doc-a_2")
         self.assertEqual(result["sources"][0]["page"], 4)
         self.assertEqual(result["sources"][0]["document_id"], "doc-a")
         self.assertIn("Strong evidence about entropy.", result["prompt"])

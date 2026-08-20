@@ -7,6 +7,7 @@ import { SourceList } from "./SourceList";
 import { AnswerMarkdown } from "./AnswerMarkdown";
 import { MessageActions } from "./MessageActions";
 import { useChatStore } from "@/store/useChatStore";
+import { withAnswerQuotes } from "@/lib/citations/markers";
 
 interface MessageBubbleProps {
   message: Message;
@@ -21,6 +22,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
   const hasContent = Boolean(message.content?.trim());
   const isSearching = !hasContent && isStreaming;
   const citationCount = message.citations?.length ?? 0;
+  const citations = withAnswerQuotes(message.citations, message.content);
 
   const lastAssistant = [...messages].reverse().find((item) => item.role === "assistant");
   const isLastAssistant = lastAssistant?.id === message.id;
@@ -100,7 +102,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
           <div className="skeleton h-3 w-[56%]" />
         </div>
       ) : (
-        <AnswerMarkdown content={message.content} />
+        <AnswerMarkdown content={message.content} citations={citations} />
       )}
 
       {message.status === "stopped" && (
@@ -109,7 +111,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
         </p>
       )}
 
-      {!isStreaming && citationCount > 0 && <SourceList citations={message.citations!} />}
+      {!isStreaming && citationCount > 0 && <SourceList citations={citations} />}
 
       {!isStreaming && hasContent && (
         <MessageActions

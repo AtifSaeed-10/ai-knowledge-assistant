@@ -1,0 +1,712 @@
+"""
+Index-time evidence provenance: chunk text → page slices → PDF span bboxes.
+
+Alignment is the mapping-proof algorithm:
+1. Exact substring of concatenated dict spans
+2. Whitespace-normalized compact(plain) == compact(spans) index map
+3. Compact substring search
+4. Hyphen-stripped compact search
+
+Chunking and extraction are not modified. PAGE_JOIN-merged chunks that are
+not a substring of concatenated page text are recovered by mapping each
+join-separated part independently.
+
+Coordinates are PyMuPDF page space (origin top-left, PDF points). Never invent
+boxes: highlight_available is true only when every non-empty slice mapped to
+at least one real span bbox.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from dataclasses import dataclass
+from typing import Any
+
+import pymupdf as fitz
+
+from chunking import PAGE_JOIN, build_document_text
+from pdf_extraction import PRIMARY_ENGINE
+
+logger = logging.getLogger(__name__)
+
+SOURCE_NATIVE = "native"
+SOURCE_NONE = "none"
+COORD_SPACE_PDF = "pdf"
+SNIPPET_MAX = 280
+
+SUCCESS_MATCH_TYPES = frozenset(
+    {"exact", "normalized", "fuzzy_compact", "hyphen_fuzzy"}
+)
+
+
+@dataclass
+class Span:
+    text: str
+    bbox: tuple[float, float, float, float]
+    line_bbox: tuple[float, float, float, float]
+
+
+@dataclass
+class PageLayout:
+    page_number: int
+    width: float
+    height: float
+    plain: str
+    spans: list[Span]
+    source: str
+    engine: str
+
+
+def compact(text: str, drop_hyphens: bool = False) -> tuple[str, list[int]]:
+    """Drop whitespace (and optionally hyphens); map compact index → original."""
+    chars: list[str] = []
+    orig: list[int] = []
+    for index, char in enumerate(text):
+        if char.isspace():
+            continue
+        if drop_hyphens and char == "-":
+            continue
+        chars.append(char)
+        orig.append(index)
+    return "".join(chars), orig
+
+
+def concat_spans(spans: list[Span]) -> tuple[str, list[int]]:
+    parts: list[str] = []
+    char_to_span: list[int] = []
+    for index, span in enumerate(spans):
+        parts.append(span.text)
+        char_to_span.extend([index] * len(span.text))
+    return "".join(parts), char_to_span
+
+
+def unique_boxes(
+    boxes: list[tuple[float, float, float, float]],
+) -> list[list[float]]:
+    seen: set[tuple[float, float, float, float]] = set()
+    out: list[list[float]] = []
+    for box in boxes:
+        if box[2] <= box[0] or box[3] <= box[1]:
+            continue
+        key = (
+            round(box[0], 3),
+            round(box[1], 3),
+            round(box[2], 3),
+            round(box[3], 3),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append([round(value, 2) for value in box])
+    return out
+
+
+def make_snippet(text: str, limit: int = SNIPPET_MAX) -> str:
+    collapsed = re.sub(r"\s+", " ", (text or "").strip())
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[: limit - 1].rstrip() + "…"
+
+
+def extract_spans(page: fitz.Page) -> list[Span]:
+    payload = page.get_text("dict") or {}
+    spans: list[Span] = []
+    for block in payload.get("blocks") or []:
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines") or []:
+            line_bbox = tuple(line.get("bbox") or (0.0, 0.0, 0.0, 0.0))
+            for item in line.get("spans") or []:
+                box = tuple(item.get("bbox") or (0.0, 0.0, 0.0, 0.0))
+                spans.append(
+                    Span(
+                        text=item.get("text") or "",
+                        bbox=(
+                            float(box[0]),
+                            float(box[1]),
+                            float(box[2]),
+                            float(box[3]),
+                        ),
+                        line_bbox=(
+                            float(line_bbox[0]),
+                            float(line_bbox[1]),
+                            float(line_bbox[2]),
+                            float(line_bbox[3]),
+                        ),
+                    )
+                )
+    return spans
+
+
+def extract_page_layouts(
+    pdf_path: str,
+    page_numbers: set[int] | None = None,
+) -> dict[int, PageLayout]:
+    """Read page plain text and dict spans. Keyed by 1-based page number."""
+    wanted = {int(page) for page in page_numbers} if page_numbers else None
+    layouts: dict[int, PageLayout] = {}
+    document = fitz.open(pdf_path)
+    try:
+        for index in range(document.page_count):
+            page_number = index + 1
+            if wanted is not None and page_number not in wanted:
+                continue
+            page = document.load_page(index)
+            spans = extract_spans(page)
+            layouts[page_number] = PageLayout(
+                page_number=page_number,
+                width=float(page.rect.width),
+                height=float(page.rect.height),
+                plain=(page.get_text("text") or "").strip(),
+                spans=spans,
+                source=SOURCE_NATIVE if spans else SOURCE_NONE,
+                engine=PRIMARY_ENGINE,
+            )
+    finally:
+        document.close()
+    return layouts
+
+
+def split_range_by_pages(
+    start: int,
+    end: int,
+    page_spans: list[tuple[int, int, int]],
+    full_text: str,
+) -> list[dict[str, Any]]:
+    parts: list[dict[str, Any]] = []
+    for page_start, page_end, page_number in page_spans:
+        left = max(start, page_start)
+        right = min(end, page_end)
+        if left < right:
+            parts.append(
+                {
+                    "page": page_number,
+                    "start": left,
+                    "end": right,
+                    "text": full_text[left:right],
+                    "page_char_start": left - page_start,
+                    "page_char_end": right - page_start,
+                }
+            )
+    return parts
+
+
+def locate_chunk_slices(
+    chunk_text: str,
+    full_text: str,
+    page_spans: list[tuple[int, int, int]],
+    search_from: int,
+) -> tuple[list[dict[str, Any]], int, bool, bool]:
+    """
+    Locate a chunk in concatenated page text.
+
+    Returns (slices, next_search_from, join_recovered, fully_located).
+    join_recovered is True when the chunk was not a contiguous substring and
+    PAGE_JOIN-separated parts were mapped instead (merge_tiny_chunks).
+    """
+    located = full_text.find(chunk_text, search_from)
+    if located == -1:
+        located = full_text.find(chunk_text)
+    if located != -1:
+        slices = split_range_by_pages(
+            located,
+            located + len(chunk_text),
+            page_spans,
+            full_text,
+        )
+        return slices, max(search_from, located + 1), False, True
+
+    slices: list[dict[str, Any]] = []
+    cursor = search_from
+    expected = [part for part in chunk_text.split(PAGE_JOIN) if part]
+    found = 0
+    for part in expected:
+        index = full_text.find(part, cursor)
+        if index == -1:
+            index = full_text.find(part)
+        if index == -1:
+            continue
+        found += 1
+        slices.extend(
+            split_range_by_pages(
+                index,
+                index + len(part),
+                page_spans,
+                full_text,
+            )
+        )
+        cursor = max(cursor, index + 1)
+
+    fully_located = found == len(expected) and bool(expected)
+    next_from = cursor if slices else search_from
+    return slices, next_from, True, fully_located
+
+
+def map_slice_to_spans(slice_text: str, spans: list[Span], plain: str) -> dict[str, Any]:
+    """Map one page-local chunk slice onto dict spans (mapping-proof order)."""
+    failed = {
+        "match_type": "failed",
+        "confidence": 0.0,
+        "matched_span_text": "",
+        "bbox_count": 0,
+        "regions": [],
+        "notes": "",
+    }
+    if not slice_text.strip():
+        return {
+            "match_type": "empty_slice",
+            "confidence": 1.0,
+            "matched_span_text": "",
+            "bbox_count": 0,
+            "regions": [],
+            "notes": "whitespace-only page slice",
+        }
+    if not spans:
+        failed["notes"] = "no dict spans on page"
+        return failed
+
+    span_concat, char_to_span = concat_spans(spans)
+    span_c, span_orig = compact(span_concat)
+    needle_c, _ = compact(slice_text)
+    plain_c, _ = compact(plain)
+    page_compact_eq = plain_c == span_c
+
+    def spans_for_compact_range(hay_orig: list[int], start: int, end: int) -> dict[str, Any]:
+        span_ids: list[int] = []
+        for compact_i in range(start, end):
+            orig_i = hay_orig[compact_i]
+            span_ids.append(char_to_span[orig_i])
+        ordered: list[int] = []
+        seen_ids: set[int] = set()
+        for span_id in span_ids:
+            if span_id not in seen_ids:
+                seen_ids.add(span_id)
+                ordered.append(span_id)
+        boxes = unique_boxes([spans[i].bbox for i in ordered])
+        matched_text = "".join(spans[i].text for i in ordered)
+        return {
+            "matched_span_text": matched_text,
+            "bbox_count": len(boxes),
+            "regions": boxes,
+            "span_count": len(ordered),
+        }
+
+    exact_at = span_concat.find(slice_text)
+    if exact_at != -1 and needle_c:
+        start_c = len(compact(span_concat[:exact_at])[0])
+        end_c = start_c + len(needle_c)
+        mapped = spans_for_compact_range(span_orig, start_c, end_c)
+        mapped.update(
+            {
+                "match_type": "exact",
+                "confidence": 1.0,
+                "notes": "exact substring of span concat",
+            }
+        )
+        return mapped
+
+    if needle_c and page_compact_eq:
+        plain_at = plain.find(slice_text)
+        if plain_at != -1:
+            start_c = len(compact(plain[:plain_at])[0])
+            end_c = start_c + len(needle_c)
+            if span_c[start_c:end_c] == needle_c:
+                mapped = spans_for_compact_range(span_orig, start_c, end_c)
+                mapped.update(
+                    {
+                        "match_type": "normalized",
+                        "confidence": 0.9,
+                        "notes": "whitespace-normalized; page compact identity",
+                    }
+                )
+                return mapped
+
+    if needle_c:
+        hits: list[int] = []
+        start = 0
+        while True:
+            at = span_c.find(needle_c, start)
+            if at == -1:
+                break
+            hits.append(at)
+            start = at + 1
+            if len(hits) > 20:
+                break
+        if hits:
+            chosen = hits[0]
+            plain_at = plain.find(slice_text)
+            if plain_at != -1 and plain_c:
+                target = len(compact(plain[:plain_at])[0])
+                chosen = min(hits, key=lambda hit: abs(hit - target))
+            mapped = spans_for_compact_range(
+                span_orig, chosen, chosen + len(needle_c)
+            )
+            mapped.update(
+                {
+                    "match_type": "fuzzy_compact",
+                    "confidence": 0.85 if page_compact_eq else 0.7,
+                    "notes": (
+                        f"compact substring; hits={len(hits)} "
+                        f"page_compact_eq={page_compact_eq}"
+                    ),
+                }
+            )
+            return mapped
+
+    needle_h, _ = compact(slice_text, drop_hyphens=True)
+    span_h, span_h_orig = compact(span_concat, drop_hyphens=True)
+    if needle_h:
+        at = span_h.find(needle_h)
+        if at != -1:
+            span_ids: list[int] = []
+            for compact_i in range(at, at + len(needle_h)):
+                orig_i = span_h_orig[compact_i]
+                span_ids.append(char_to_span[orig_i])
+            ordered = list(dict.fromkeys(span_ids))
+            boxes = unique_boxes([spans[i].bbox for i in ordered])
+            return {
+                "match_type": "hyphen_fuzzy",
+                "confidence": 0.6,
+                "matched_span_text": "".join(spans[i].text for i in ordered),
+                "bbox_count": len(boxes),
+                "regions": boxes,
+                "notes": "matched after dropping hyphens and whitespace",
+            }
+
+    failed["notes"] = (
+        f"no compact match; page_compact_eq={page_compact_eq} "
+        f"plain_c={len(plain_c)} span_c={len(span_c)} needle_c={len(needle_c)}"
+    )
+    return failed
+
+
+def _regions_for_page(page_number: int, boxes: list[list[float]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "page": page_number,
+            "x0": box[0],
+            "y0": box[1],
+            "x1": box[2],
+            "y1": box[3],
+            "coord_space": COORD_SPACE_PDF,
+        }
+        for box in boxes
+    ]
+
+
+def compact_contains(haystack: str, needle: str) -> bool:
+    hay_c, _ = compact(haystack or "")
+    needle_c, _ = compact(needle or "")
+    return bool(needle_c) and needle_c in hay_c
+
+
+def _empty_quote_map(match_type: str = "failed") -> dict[str, Any]:
+    return {
+        "quote_highlight_available": False,
+        "regions": [],
+        "match_type": match_type,
+        "pages": [],
+    }
+
+
+def _map_slices_to_regions(
+    slices: list[dict[str, Any]],
+    layouts: dict[int, PageLayout],
+) -> tuple[list[dict[str, Any]], str]:
+    regions: list[dict[str, Any]] = []
+    match_types: list[str] = []
+    nonempty_slices = 0
+    nonempty_success = 0
+    for slice_row in slices:
+        page_number = int(slice_row["page"])
+        layout = layouts.get(page_number)
+        slice_text = slice_row.get("text") or ""
+        if layout is None:
+            match_types.append("failed")
+            if slice_text.strip():
+                nonempty_slices += 1
+            continue
+        mapped = map_slice_to_spans(slice_text, layout.spans, layout.plain)
+        match_type = mapped["match_type"]
+        match_types.append(match_type)
+        page_regions = _regions_for_page(page_number, mapped.get("regions") or [])
+        if slice_text.strip():
+            nonempty_slices += 1
+            if match_type in SUCCESS_MATCH_TYPES and page_regions:
+                nonempty_success += 1
+                regions.extend(page_regions)
+    rank = {
+        "failed": 0,
+        "empty_slice": 1,
+        "hyphen_fuzzy": 2,
+        "fuzzy_compact": 3,
+        "normalized": 4,
+        "exact": 5,
+    }
+    overall = min(match_types, key=lambda item: rank.get(item, 0)) if match_types else "failed"
+    if nonempty_slices == 0 or nonempty_success != nonempty_slices or not regions:
+        return [], overall if overall in SUCCESS_MATCH_TYPES else "failed"
+    return regions, overall
+
+
+def map_quote_to_regions(
+    quote: str,
+    *,
+    chunk_text: str,
+    layouts: dict[int, PageLayout],
+    page_start: int,
+    page_end: int,
+    ranges: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """
+    Map a verbatim quote onto PDF span boxes for one cited chunk.
+
+    The quote must compact-match the chunk text. Boxes come only from
+    map_slice_to_spans; none are invented.
+    """
+    cleaned = re.sub(r"\s+", " ", (quote or "").strip())
+    if not cleaned or not compact_contains(chunk_text or "", cleaned):
+        return _empty_quote_map("not_in_chunk")
+    if not layouts:
+        return _empty_quote_map("no_layout")
+
+    page_rows: list[dict[str, Any]] = []
+    range_rows = [
+        row
+        for row in (ranges or [])
+        if isinstance(row, dict) and row.get("page") in layouts
+    ]
+    if range_rows:
+        for row in sorted(range_rows, key=lambda item: int(item["page"])):
+            page_number = int(row["page"])
+            layout = layouts[page_number]
+            try:
+                start = max(0, int(row.get("char_start") if row.get("char_start") is not None else row.get("page_char_start") or 0))
+                end = int(row.get("char_end") if row.get("char_end") is not None else row.get("page_char_end") or 0)
+            except (TypeError, ValueError):
+                start, end = 0, 0
+            if end > start:
+                text = layout.plain[start:end]
+            else:
+                text = layout.plain
+            if text.strip():
+                page_rows.append({"page_number": page_number, "text": text})
+    if not page_rows:
+        for page_number in range(int(page_start), int(page_end) + 1):
+            layout = layouts.get(page_number)
+            if layout and layout.plain.strip():
+                page_rows.append({"page_number": page_number, "text": layout.plain})
+    if not page_rows:
+        return _empty_quote_map("no_layout")
+
+    window, page_spans = build_document_text(page_rows)
+    slices, _, _, fully = locate_chunk_slices(cleaned, window, page_spans, 0)
+    if not fully or not slices:
+        # Compact locate: quote may differ in whitespace from the page window.
+        hay_c, hay_orig = compact(window)
+        needle_c, _ = compact(cleaned)
+        at = hay_c.find(needle_c) if needle_c else -1
+        if at == -1:
+            return _empty_quote_map("not_on_page")
+        start = hay_orig[at]
+        end = hay_orig[at + len(needle_c) - 1] + 1
+        slices = split_range_by_pages(start, end, page_spans, window)
+        if not slices:
+            return _empty_quote_map("not_on_page")
+
+    regions, match_type = _map_slices_to_regions(slices, layouts)
+    if not regions:
+        return _empty_quote_map(match_type)
+    pages = sorted({int(item["page"]) for item in regions})
+    return {
+        "quote_highlight_available": True,
+        "regions": regions,
+        "match_type": match_type,
+        "pages": pages,
+    }
+
+
+def map_chunk_to_evidence(
+    chunk: dict[str, Any],
+    *,
+    document_id: str,
+    full_text: str,
+    page_spans: list[tuple[int, int, int]],
+    layouts: dict[int, PageLayout],
+    search_from: int,
+    text_engine: str,
+) -> tuple[dict[str, Any], int]:
+    slices, next_from, join_recovered, fully_located = locate_chunk_slices(
+        chunk["text"],
+        full_text,
+        page_spans,
+        search_from,
+    )
+
+    part_results: list[dict[str, Any]] = []
+    regions: list[dict[str, Any]] = []
+    ranges: list[dict[str, Any]] = []
+    match_types: list[str] = []
+
+    nonempty_slices = 0
+    nonempty_success = 0
+
+    for slice_row in slices:
+        page_number = int(slice_row["page"])
+        layout = layouts.get(page_number)
+        if layout is None:
+            mapped = {
+                "match_type": "failed",
+                "confidence": 0.0,
+                "bbox_count": 0,
+                "regions": [],
+                "notes": "missing page layout",
+            }
+        else:
+            mapped = map_slice_to_spans(
+                slice_row["text"],
+                layout.spans,
+                layout.plain,
+            )
+        match_type = mapped["match_type"]
+        match_types.append(match_type)
+        page_regions = _regions_for_page(page_number, mapped.get("regions") or [])
+        regions.extend(page_regions)
+        ranges.append(
+            {
+                "page": page_number,
+                "char_start": slice_row.get("page_char_start"),
+                "char_end": slice_row.get("page_char_end"),
+                "match_type": match_type,
+            }
+        )
+        part_results.append(
+            {
+                "page": page_number,
+                "match_type": match_type,
+                "bbox_count": len(page_regions),
+                "notes": mapped.get("notes") or "",
+            }
+        )
+        if slice_row["text"].strip():
+            nonempty_slices += 1
+            if match_type in SUCCESS_MATCH_TYPES and page_regions:
+                nonempty_success += 1
+
+    if match_types:
+        rank = {
+            "failed": 0,
+            "empty_slice": 1,
+            "hyphen_fuzzy": 2,
+            "fuzzy_compact": 3,
+            "normalized": 4,
+            "exact": 5,
+        }
+        overall_type = min(match_types, key=lambda item: rank.get(item, 0))
+    else:
+        overall_type = "failed"
+
+    highlight_available = (
+        fully_located
+        and nonempty_slices > 0
+        and nonempty_success == nonempty_slices
+        and bool(regions)
+    )
+    if not highlight_available:
+        # Drop incomplete rects so Phase 2 cannot treat a partial map as exact.
+        if not fully_located or nonempty_success != nonempty_slices:
+            regions = []
+
+    pages = [int(row["page"]) for row in slices] or [
+        int(chunk.get("page_start") or chunk.get("page_number") or 1)
+    ]
+    if slices:
+        sources = {
+            (layouts[p].source if p in layouts else SOURCE_NONE)
+            for p in pages
+        }
+        layout_source = SOURCE_NATIVE if sources == {SOURCE_NATIVE} else SOURCE_NONE
+    else:
+        layout_source = SOURCE_NONE
+
+    record = {
+        "chunk_id": chunk["chunk_id"],
+        "document_id": document_id,
+        "page_start": min(pages),
+        "page_end": max(pages),
+        "snippet": make_snippet(chunk.get("text") or ""),
+        "highlight_available": highlight_available,
+        "match_type": overall_type if slices else "failed",
+        "source": layout_source,
+        "text_engine": text_engine,
+        "layout_engine": PRIMARY_ENGINE,
+        "join_recovered": join_recovered,
+        "ranges": ranges,
+        "regions": regions,
+        "parts": part_results,
+    }
+    return record, next_from
+
+
+def page_layout_records(layouts: dict[int, PageLayout]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for page_number in sorted(layouts):
+        layout = layouts[page_number]
+        rows.append(
+            {
+                "page_number": layout.page_number,
+                "width": layout.width,
+                "height": layout.height,
+                "source": layout.source,
+                "engine": layout.engine,
+                "span_count": len(layout.spans),
+            }
+        )
+    return rows
+
+
+def build_document_evidence(
+    pdf_path: str,
+    document_id: str,
+    pages: list[dict[str, Any]],
+    chunks: list[dict[str, Any]],
+    *,
+    text_engine: str,
+) -> dict[str, Any]:
+    """
+    Build persistable evidence for one document.
+
+    `pages` and `chunks` must be the same objects produced by the existing
+    extraction/chunking pipeline.
+    """
+    layouts = extract_page_layouts(pdf_path)
+    full_text, page_spans = build_document_text(pages)
+    search_from = 0
+    chunk_rows: list[dict[str, Any]] = []
+    highlighted = 0
+    for chunk in chunks:
+        record, search_from = map_chunk_to_evidence(
+            chunk,
+            document_id=document_id,
+            full_text=full_text,
+            page_spans=page_spans,
+            layouts=layouts,
+            search_from=search_from,
+            text_engine=text_engine,
+        )
+        if record["highlight_available"]:
+            highlighted += 1
+        chunk_rows.append(record)
+
+    logger.info(
+        "evidence_mapping document_id=%s chunks=%s highlighted=%s engine=%s",
+        document_id,
+        len(chunk_rows),
+        highlighted,
+        text_engine,
+    )
+    return {
+        "pages": page_layout_records(layouts),
+        "chunks": chunk_rows,
+    }

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { Check, Copy, RotateCcw } from "lucide-react";
 import { notify } from "@/store/useToastStore";
+import { toDisplayCitationText } from "@/lib/citations/markers";
 
 interface MessageActionsProps {
   content: string;
@@ -18,7 +19,7 @@ export function MessageActions({ content, showRetry, onRetry }: MessageActionsPr
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(content);
+      await navigator.clipboard.writeText(toDisplayCitationText(content));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {

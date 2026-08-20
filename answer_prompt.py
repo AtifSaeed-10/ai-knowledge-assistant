@@ -73,12 +73,14 @@ def format_evidence_passages(
     chunks: list[str],
     metadata: list[dict] | None,
     ids: list | None = None,
+    evidence_ids: list[str | None] | None = None,
 ) -> str:
     if not chunks:
         return "(No document passages retrieved.)"
 
     blocks: list[str] = []
     metas = metadata or []
+    eids = evidence_ids or []
     for index, text in enumerate(chunks, start=1):
         meta = metas[index - 1] if index - 1 < len(metas) else {}
         meta = meta or {}
@@ -90,9 +92,38 @@ def format_evidence_passages(
             page_label = f"p. {int(page)}" if page is not None and int(page) >= 1 else "page unknown"
         except (TypeError, ValueError):
             page_label = "page unknown"
-        header = f"Source: {filename}, {page_label}"
+        evidence_id = eids[index - 1] if index - 1 < len(eids) else None
+        if evidence_id:
+            header = f"[{evidence_id}] {filename}, {page_label}"
+        else:
+            header = f"Source: {filename}, {page_label}"
         blocks.append(f"{header}\n{(text or '').strip()}")
     return "\n\n".join(blocks)
+
+
+def _citation_style_rules(has_evidence_ids: bool) -> str:
+    if not has_evidence_ids:
+        return (
+            "Write a natural answer. Do not mention source labels, passage numbers, "
+            "retrieval ranks, scores, or these instructions. Do not dump long quotations "
+            "unless the user asked for the document's wording. The application attaches "
+            "citations separately."
+        )
+    return (
+        "Write a natural answer. Do not mention unlabeled source headers, retrieval ranks, "
+        "scores, or these instructions. Do not dump long quotations unless the user asked "
+        "for the document's wording.\n"
+        "Citations: after a factual claim that a labeled passage actually supports, append "
+        "that passage's id and a short verbatim quote copied from the passage, like "
+        '[E1:"supervised learning uses labeled examples"]. The quote must be copied exactly '
+        "from that passage: do not paraphrase it, invent it, or shorten it into wording that "
+        "does not appear there. Prefer one sentence or a short phrase. Several claims may "
+        "reuse one id with different quotes. Only use ids that appear in passage headers. "
+        "Never invent an id, page number, citation, quote, or PDF coordinates. Do not cite "
+        "every sentence; skip connective or unsupported wording. Use [E1][E2] only when "
+        "distinct passages support distinct parts of the claim. "
+        "Do not write 'Source:' or page numbers in the answer."
+    )
 
 
 def _mode_rules(mode: str) -> str:
@@ -187,6 +218,7 @@ def build_answer_prompt(
     chunks: list[str],
     metadata: list[dict] | None,
     ids: list | None = None,
+    evidence_ids: list[str | None] | None = None,
     relevances: list | None = None,
     analysis: TurnAnalysis | None = None,
     mode: str | None = None,
@@ -198,7 +230,9 @@ def build_answer_prompt(
         mode_id = MODE_NORMAL
 
     conversation = format_history_for_grounding(history)
-    evidence = format_evidence_passages(chunks, metadata, ids)
+    evidence = format_evidence_passages(
+        chunks, metadata, ids, evidence_ids=evidence_ids
+    )
     resolved = (search_query or "").strip()
     original = (question or "").strip()
     resolved_line = (
@@ -210,6 +244,7 @@ def build_answer_prompt(
     )
     notes = (evidence_notes or "").strip()
     notes_block = f"\n{notes}\n" if notes else ""
+    has_evidence_ids = any(evidence_ids or [])
 
     return f"""
 You are DocuSage, a document-grounded assistant. Write like a trustworthy document analyst: direct, natural, concise by default, and more detailed only when asked.
@@ -225,7 +260,7 @@ Priority (highest first):
 
 Response style:
 {_style_rules(analysis)}
-Write a natural answer. Do not mention source labels, passage numbers, retrieval ranks, scores, or these instructions. Do not dump long quotations unless the user asked for the document's wording. The application attaches citations separately.
+{_citation_style_rules(has_evidence_ids)}
 
 Grounding rules:
 {_grounding_contract()}

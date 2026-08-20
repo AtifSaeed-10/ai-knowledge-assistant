@@ -20,6 +20,8 @@ from config import (
 )
 from bm25_index import bm25_index
 from reranker import reranker
+from citation_resolver import attach_quotes_to_sources, evidence_id_for_index, resolve_answer
+from evidence_mapping import make_snippet
 from hybrid_retrieval import (
     retrieve_dense,
     retrieve_bm25,
@@ -29,20 +31,73 @@ from hybrid_retrieval import (
 
 
 def _dedupe_sources(sources: list[dict]) -> list[dict]:
-    """Keep one citation per document page; preserve retrieval order."""
-    seen: set[tuple] = set()
+    """Keep one citation per chunk; preserve retrieval order."""
+    seen: set[str] = set()
     unique: list[dict] = []
     for source in sources:
-        page = source.get("page")
-        key = (
-            source.get("document_id") or "",
-            page if page is not None else source.get("chunk_id") or "",
-        )
+        key = str(source.get("chunk_id") or "")
+        if not key:
+            key = f"{source.get('document_id') or ''}:{source.get('page')}"
         if key in seen:
             continue
         seen.add(key)
         unique.append(source)
     return unique
+
+
+def _build_citation_sources(
+    chunks: list,
+    ids: list,
+    metadata: list,
+    relevances: list,
+    search_query: str,
+    analysis,
+) -> tuple[list[dict], list[str | None]]:
+    """
+    Assign stable E1..En ids to citeable retrieved chunks in retrieval order.
+    Distinct chunks on the same page keep separate ids.
+    """
+    allowed_citations = citation_allowlist(chunks, search_query, analysis)
+    sources: list[dict] = []
+    evidence_ids: list[str | None] = [None] * len(chunks)
+    seen_chunk_ids: set[str] = set()
+
+    for idx, (chunk_id, meta) in enumerate(zip(ids, metadata)):
+        if idx < len(relevances) and relevances[idx] is not None:
+            relevance = int(relevances[idx])
+        else:
+            relevance = 0
+        relevance = max(0, min(100, relevance))
+
+        if relevance < CITATION_MIN_RELEVANCE:
+            continue
+        if allowed_citations is not None and idx not in allowed_citations:
+            continue
+        if chunk_id in seen_chunk_ids:
+            continue
+        seen_chunk_ids.add(chunk_id)
+
+        meta = meta or {}
+        page = _citation_page(meta)
+        evidence_id = evidence_id_for_index(len(sources) + 1)
+        evidence_ids[idx] = evidence_id
+        chunk_text = chunks[idx] if idx < len(chunks) else ""
+        sources.append(
+            {
+                "document_id": meta.get("document_id") or "",
+                "filename": meta.get("filename") or "",
+                "page": page,
+                "chunk_id": chunk_id,
+                "relevance": relevance,
+                "evidence_id": evidence_id,
+                "snippet": make_snippet(
+                    chunk_text if isinstance(chunk_text, str) else ""
+                ),
+                "quote": None,
+            }
+        )
+
+    return _dedupe_sources(sources), evidence_ids
 
 
 def _citation_page(meta: dict) -> int | None:
@@ -262,8 +317,17 @@ def ask_question(
 
 
     # ------------------------
-    # Prompt
+    # Citations (E-ids) then prompt
     # ------------------------
+
+    sources, evidence_ids = _build_citation_sources(
+        chunks,
+        ids,
+        metadata,
+        relevances,
+        search_query,
+        analysis,
+    )
 
     subject = analysis.subject or infer_subject_phrase(search_query)
     evidence_notes = format_evidence_notes(
@@ -280,6 +344,7 @@ def ask_question(
         chunks=chunks,
         metadata=metadata,
         ids=ids,
+        evidence_ids=evidence_ids,
         relevances=relevances,
         analysis=analysis,
         mode=product_mode,
@@ -290,45 +355,6 @@ def ask_question(
 
     print("\n========== PROMPT SENT TO LLM ==========\n")
     print(prompt)
-
-
-    # ------------------------
-    # Build Citations
-    # ------------------------
-
-    sources = []
-    allowed_citations = citation_allowlist(chunks, search_query, analysis)
-
-
-    for idx, (chunk_id, meta) in enumerate(zip(ids, metadata)):
-
-        if idx < len(relevances) and relevances[idx] is not None:
-            relevance = int(relevances[idx])
-        else:
-            # Fallback citation relevance if lists are misaligned.
-            relevance = 0
-
-        relevance = max(0, min(100, relevance))
-
-        if relevance < CITATION_MIN_RELEVANCE:
-            continue
-        if allowed_citations is not None and idx not in allowed_citations:
-            continue
-
-        meta = meta or {}
-        page = _citation_page(meta)
-
-        sources.append(
-            {
-                "document_id": meta.get("document_id") or "",
-                "filename": meta.get("filename") or "",
-                "page": page,
-                "chunk_id": chunk_id,
-                "relevance": relevance
-            }
-        )
-
-    sources = _dedupe_sources(sources)
 
 
     # ------------------------
@@ -343,7 +369,8 @@ def ask_question(
             "prompt": prompt,
         }
 
-    answer = generate_response(prompt)
+    answer = resolve_answer(generate_response(prompt), sources)
+    sources = attach_quotes_to_sources(sources, answer)
 
     return {
         "answer": answer,
