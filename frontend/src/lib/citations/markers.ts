@@ -89,3 +89,36 @@ export function withAnswerQuotes<T extends { evidenceId?: string | null; quote?:
     return { ...citation, quote: used[0] };
   });
 }
+
+export function usedEvidenceIds(content: string): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const part of splitEvidenceMarkers(content)) {
+    if (part.type !== "citation") continue;
+    const key = part.evidenceId.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ids.push(key);
+  }
+  return ids;
+}
+
+/** Citations the answer actually used, in first-appearance order. */
+export function usedCitations<T extends { evidenceId?: string | null; quote?: string | null }>(
+  citations: T[] | undefined,
+  content: string
+): T[] {
+  const quoted = withAnswerQuotes(citations, content);
+  const byId = new Map<string, T>();
+  for (const citation of quoted) {
+    const key = (citation.evidenceId || "").toUpperCase();
+    if (!key || byId.has(key)) continue;
+    byId.set(key, citation);
+  }
+  const out: T[] = [];
+  for (const id of usedEvidenceIds(content)) {
+    const item = byId.get(id);
+    if (item) out.push(item);
+  }
+  return out;
+}

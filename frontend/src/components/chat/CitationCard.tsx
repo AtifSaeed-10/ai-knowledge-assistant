@@ -24,8 +24,8 @@ export const CitationCard = ({
   const activeCitation = useChatStore((state) => state.activeCitation);
 
   const isActive = activeCitation?.id === citation.id;
-  const score = relevancePercent(citation.relevance);
   const pageLabel = citation.pageNumber ? `page ${citation.pageNumber}` : "page unknown";
+  const preview = (citation.quote || citation.snippet || "").trim();
 
   return (
     <button
@@ -58,16 +58,13 @@ export const CitationCard = ({
             {citation.documentName}
           </span>
 
-          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-meta text-ink-muted">
-            <span className="rounded bg-surface-sunken px-1.5 py-0.5 font-medium tabular-nums text-ink-muted">
-              {citation.pageNumber ? `p. ${citation.pageNumber}` : "page n/a"}
-            </span>
-            {score !== null && <span className="tabular-nums">{score}% match</span>}
+          <span className="mt-1 inline-flex rounded bg-surface-sunken px-1.5 py-0.5 text-meta font-medium tabular-nums text-ink-muted">
+            {citation.pageNumber ? `p. ${citation.pageNumber}` : "page n/a"}
           </span>
 
-          {citation.snippet && (
+          {preview && (
             <span className="mt-1.5 line-clamp-2 block text-meta leading-relaxed text-ink-muted">
-              “{citation.snippet}”
+              “{preview}”
             </span>
           )}
         </span>
