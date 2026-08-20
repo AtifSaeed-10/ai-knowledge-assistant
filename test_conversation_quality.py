@@ -300,6 +300,7 @@ class TestGroundedPrompt(unittest.TestCase):
         self.assertIn("Source: ml.pdf, p. 5", text)
 
     def test_prompt_requests_verbatim_quotes_not_coordinates(self):
+        analysis = analyze_turn("What is supervised learning?", None)
         prompt = build_answer_prompt(
             question="What is supervised learning?",
             search_query="What is supervised learning?",
@@ -307,12 +308,16 @@ class TestGroundedPrompt(unittest.TestCase):
             chunks=["Supervised learning uses labeled examples."],
             metadata=[{"filename": "ml.pdf", "page_number": 3}],
             evidence_ids=["E1"],
+            analysis=analysis,
             mode="normal",
         )
         self.assertIn('[E1:"supervised learning uses labeled examples"]', prompt)
         self.assertIn("verbatim quote", prompt)
         self.assertIn("PDF coordinates", prompt)
         self.assertIn("Never invent an id", prompt)
+        self.assertIn("complete briefing", prompt)
+        self.assertIn("never pile", prompt.lower())
+        self.assertIn("two to four", prompt)
 
 
 class TestCitationDedupeAndGrounding(unittest.TestCase):

@@ -34,8 +34,16 @@ MISSING_EXAMPLE_PHRASE = (
 )
 
 _STYLE_HINTS = {
-    "factual": "Answer concisely and directly. Do not add extra background.",
-    "definition": "Give a concise definition from the evidence.",
+    "factual": (
+        "Answer the question directly from the passages. Include important "
+        "supported details that help the user understand the topic. Do not add "
+        "background the passages do not contain."
+    ),
+    "definition": (
+        "Write a complete briefing from the evidence: start with what it is, "
+        "then add purpose, types, methods, or examples only when a passage "
+        "actually states them. Omit anything the passages do not support."
+    ),
     "explanation": "Give a moderate explanation using only the evidence.",
     "simplification": "Use beginner-friendly language. Keep the same facts. Do not add new claims.",
     "elaboration": "Go deeper using available evidence only. Do not invent extra detail.",
@@ -113,15 +121,18 @@ def _citation_style_rules(has_evidence_ids: bool) -> str:
         "Write a natural answer. Do not mention unlabeled source headers, retrieval ranks, "
         "scores, or these instructions. Do not dump long quotations unless the user asked "
         "for the document's wording.\n"
-        "Citations: after a factual claim that a labeled passage actually supports, append "
-        "that passage's id and a short verbatim quote copied from the passage, like "
-        '[E1:"supervised learning uses labeled examples"]. The quote must be copied exactly '
-        "from that passage: do not paraphrase it, invent it, or shorten it into wording that "
-        "does not appear there. Prefer one sentence or a short phrase. Several claims may "
-        "reuse one id with different quotes. Only use ids that appear in passage headers. "
-        "Never invent an id, page number, citation, quote, or PDF coordinates. Do not cite "
-        "every sentence; skip connective or unsupported wording. Use [E1][E2] only when "
-        "distinct passages support distinct parts of the claim. "
+        "Citations: after a distinct supported claim, append that passage's id and a short "
+        "verbatim quote copied from the supporting sentence, like "
+        '[E1:"supervised learning uses labeled examples"]. Put the marker immediately after '
+        "that claim — never pile [E1][E2][E3] at the end of the answer. Use about two to "
+        "four citations in a typical answer; do not cite every sentence. The quote must be "
+        "copied exactly from that passage: do not paraphrase it, invent it, or shorten it "
+        "into wording that does not appear there. Prefer one sentence or a short phrase. "
+        "Cite only a passage whose wording actually supports that claim; skip loosely "
+        "related excerpts and passages that are mainly about a different topic. Several "
+        "claims may reuse one id with different quotes. Only use ids that appear in passage "
+        "headers. Never invent an id, page number, citation, quote, or PDF coordinates. "
+        "Use [E1][E2] only when distinct passages support distinct parts of the same claim. "
         "Do not write 'Source:' or page numbers in the answer."
     )
 
@@ -247,7 +258,7 @@ def build_answer_prompt(
     has_evidence_ids = any(evidence_ids or [])
 
     return f"""
-You are DocuSage, a document-grounded assistant. Write like a trustworthy document analyst: direct, natural, concise by default, and more detailed only when asked.
+You are DocuSage, a document-grounded assistant. Write like a trustworthy document analyst: direct, natural, and complete from the retrieved passages. Include useful supported detail when it is in those passages. Do not invent, and do not pad with loosely related excerpts.
 
 Priority (highest first):
 1. DOCUMENT PASSAGES are the only source of document facts, examples, types, quotes, and page-related claims.

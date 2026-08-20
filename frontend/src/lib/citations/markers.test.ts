@@ -4,6 +4,7 @@ import {
   parseEvidenceMarker,
   splitEvidenceMarkers,
   toDisplayCitationText,
+  usedCitations,
   withAnswerQuotes,
 } from "./markers";
 
@@ -120,6 +121,21 @@ describe("answer quotes vs retrieved evidence", () => {
     expect(withAnswerQuotes(citations, content).map((item) => item.quote)).toEqual([
       "supervised learning uses labeled examples",
       "classification and regression",
+    ]);
+  });
+
+  it("lists only inline-cited sources in first-appearance order", () => {
+    const citations = [
+      { evidenceId: "E1", id: "c1" },
+      { evidenceId: "E2", id: "c2" },
+      { evidenceId: "E3", id: "c3" },
+      { evidenceId: "E5", id: "c5" },
+    ];
+    const content =
+      'A definition.[E3:"unsupervised learning uses unlabeled data"] An example.[E1:"clustering groups similar items"]';
+    expect(usedCitations(citations, content).map((item) => item.evidenceId)).toEqual([
+      "E3",
+      "E1",
     ]);
   });
 });

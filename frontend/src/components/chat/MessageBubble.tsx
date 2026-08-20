@@ -7,7 +7,7 @@ import { SourceList } from "./SourceList";
 import { AnswerMarkdown } from "./AnswerMarkdown";
 import { MessageActions } from "./MessageActions";
 import { useChatStore } from "@/store/useChatStore";
-import { withAnswerQuotes } from "@/lib/citations/markers";
+import { withAnswerQuotes, usedCitations } from "@/lib/citations/markers";
 
 interface MessageBubbleProps {
   message: Message;
@@ -21,8 +21,8 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
 
   const hasContent = Boolean(message.content?.trim());
   const isSearching = !hasContent && isStreaming;
-  const citationCount = message.citations?.length ?? 0;
   const citations = withAnswerQuotes(message.citations, message.content);
+  const citedSources = usedCitations(message.citations, message.content);
 
   const lastAssistant = [...messages].reverse().find((item) => item.role === "assistant");
   const isLastAssistant = lastAssistant?.id === message.id;
@@ -81,12 +81,6 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
           </span>
         )}
 
-        {isStreaming && citationCount > 0 && (
-          <span className="text-meta text-ink-subtle">
-            {citationCount} source{citationCount === 1 ? "" : "s"} found
-          </span>
-        )}
-
         {message.status === "stopped" && (
           <span className="inline-flex items-center gap-1 text-meta font-medium text-ink-subtle">
             <CircleSlash className="h-3 w-3" />
@@ -111,7 +105,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
         </p>
       )}
 
-      {!isStreaming && citationCount > 0 && <SourceList citations={citations} />}
+      {!isStreaming && citedSources.length > 0 && <SourceList citations={citedSources} />}
 
       {!isStreaming && hasContent && (
         <MessageActions
