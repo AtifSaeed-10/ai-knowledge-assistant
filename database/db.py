@@ -105,6 +105,49 @@ def init_db():
         pass
 
 
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS page_layouts (
+            document_id TEXT NOT NULL,
+            page_number INTEGER NOT NULL,
+            width REAL NOT NULL,
+            height REAL NOT NULL,
+            source TEXT NOT NULL,
+            engine TEXT NOT NULL,
+            span_count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (document_id, page_number)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chunk_evidence (
+            chunk_id TEXT PRIMARY KEY,
+            document_id TEXT NOT NULL,
+            page_start INTEGER NOT NULL,
+            page_end INTEGER NOT NULL,
+            snippet TEXT,
+            highlight_available INTEGER NOT NULL DEFAULT 0,
+            match_type TEXT NOT NULL,
+            source TEXT,
+            text_engine TEXT,
+            layout_engine TEXT,
+            join_recovered INTEGER NOT NULL DEFAULT 0,
+            ranges_json TEXT,
+            regions_json TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chunk_evidence_document
+        ON chunk_evidence (document_id)
+        """
+    )
+
+
     connection.commit()
 
     connection.close()

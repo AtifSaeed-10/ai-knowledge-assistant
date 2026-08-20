@@ -1,6 +1,10 @@
 import { Citation } from "@/types";
 import { ProductMode } from "@/types/mode";
 import { API_CONFIG } from "./client";
+import {
+  displayNumberFromEvidenceId,
+  incompleteBracketLength,
+} from "@/lib/citations/markers";
 
 interface ApiSource {
   document_id?: string;
@@ -11,6 +15,9 @@ interface ApiSource {
   relevance?: number;
   snippet?: string;
   text?: string;
+  evidence_id?: string;
+  evidenceId?: string;
+  quote?: string | null;
 }
 
 const CITATIONS_START = "__CITATIONS__";
@@ -22,6 +29,8 @@ export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
     typeof rawPage === "number" && Number.isFinite(rawPage) && rawPage >= 1
       ? Math.floor(rawPage)
       : null;
+  const evidenceId = src.evidence_id || src.evidenceId || null;
+  const displayNumber = displayNumberFromEvidenceId(evidenceId);
 
   return {
     id: src.chunk_id || `cit-${Date.now()}-${idx}`,
@@ -31,6 +40,9 @@ export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
     relevance: src.relevance ?? null,
     chunk_id: src.chunk_id ?? null,
     documentId: src.document_id ?? null,
+    evidenceId,
+    displayNumber,
+    quote: typeof src.quote === "string" && src.quote.trim() ? src.quote.trim() : null,
   };
 }
 
@@ -116,7 +128,8 @@ export const chatApi = {
         }
       }
 
-      // Never emit text that might be the beginning of a control marker.
+      // Never emit text that might be the beginning of a control marker
+      // or an incomplete [E1] citation token.
       let emitUpTo = buffer.length;
       if (!citationsSent) {
         const start = buffer.indexOf(CITATIONS_START);
@@ -124,6 +137,8 @@ export const chatApi = {
           start !== -1
             ? start
             : buffer.length - partialMarkerLength(buffer, CITATIONS_START);
+      } else {
+        emitUpTo = buffer.length - incompleteBracketLength(buffer);
       }
 
       if (emitUpTo > 0) {
@@ -133,7 +148,10 @@ export const chatApi = {
     }
 
     if (buffer.length > 0) {
-      onChunk(buffer);
+      const hold = citationsSent ? incompleteBracketLength(buffer) : 0;
+      if (hold < buffer.length) {
+        onChunk(buffer.slice(0, buffer.length - hold));
+      }
     }
 
     if (!citationsSent) {

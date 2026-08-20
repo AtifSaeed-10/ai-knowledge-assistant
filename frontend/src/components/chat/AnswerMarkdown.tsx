@@ -4,6 +4,9 @@ import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import { splitEvidenceMarkers } from "@/lib/citations/markers";
+import { Citation } from "@/types";
+import { InlineCitation } from "./InlineCitation";
 
 const sanitizeSchema = {
   ...defaultSchema,
@@ -27,13 +30,66 @@ const sanitizeSchema = {
   },
 };
 
-export function AnswerMarkdown({ content }: { content: string }) {
+type MdNode = {
+  type?: string;
+  value?: string;
+  children?: MdNode[];
+  url?: string;
+  title?: string | null;
+};
+
+function splitCitationText(value: string): MdNode[] {
+  return splitEvidenceMarkers(value).map((part) => {
+    if (part.type === "citation") {
+      const number = part.evidenceId.replace(/^E/i, "");
+      return {
+        type: "link",
+        url: `#cite-${part.evidenceId}`,
+        ...(part.quote ? { title: part.quote } : {}),
+        children: [{ type: "text", value: number }],
+      };
+    }
+    return { type: "text", value: part.value };
+  });
+}
+
+function remarkEvidenceCitations() {
+  return (tree: MdNode) => {
+    const walk = (node: MdNode) => {
+      if (node.type === "code" || node.type === "inlineCode") return;
+      if (!Array.isArray(node.children)) return;
+      const next: MdNode[] = [];
+      for (const child of node.children) {
+        if (
+          child.type === "text" &&
+          child.value &&
+          /\[E[1-9]\d*(?:(?::\s*|\|\s*quote\s*=\s*)"[^"\]]*")?\]/i.test(child.value)
+        ) {
+          next.push(...splitCitationText(child.value));
+        } else {
+          walk(child);
+          next.push(child);
+        }
+      }
+      node.children = next;
+    };
+    walk(tree);
+  };
+}
+
+export function AnswerMarkdown({
+  content,
+  citations,
+}: {
+  content: string;
+  citations?: Citation[];
+}) {
   if (!content.trim()) return null;
 
   return (
     <div className="answer-markdown text-answer tracking-[-0.01em] text-ink-soft">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkEvidenceCitations]}
         rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
         components={{
           h1: ({ children }) => (
@@ -63,16 +119,28 @@ export function AnswerMarkdown({ content }: { content: string }) {
             <strong className="font-semibold text-ink">{children}</strong>
           ),
           em: ({ children }) => <em className="italic">{children}</em>,
-          a: ({ href, children }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-olive underline decoration-sage-soft underline-offset-2 hover:text-olive-dark"
-            >
-              {children}
-            </a>
-          ),
+          a: ({ href, title, children }) => {
+            const citeMatch = href?.match(/^#cite-(E[1-9]\d*)$/i);
+            if (citeMatch) {
+              return (
+                <InlineCitation
+                  evidenceId={`E${citeMatch[1].replace(/^E/i, "")}`}
+                  quote={title?.trim() || null}
+                  citations={citations}
+                />
+              );
+            }
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-olive underline decoration-sage-soft underline-offset-2 hover:text-olive-dark"
+              >
+                {children}
+              </a>
+            );
+          },
           blockquote: ({ children }) => (
             <blockquote className="mb-3 border-l-2 border-sage pl-3 text-ink-muted last:mb-0">
               {children}

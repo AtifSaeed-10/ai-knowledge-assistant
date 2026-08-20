@@ -1,3 +1,4 @@
+import sqlite3
 import uuid
 from datetime import datetime
 
@@ -137,6 +138,14 @@ def delete_document(document_id):
 
     cursor = connection.cursor()
 
+    for table in ("chunk_evidence", "page_layouts"):
+        try:
+            cursor.execute(
+                f"DELETE FROM {table} WHERE document_id = ?",
+                (document_id,),
+            )
+        except sqlite3.OperationalError:
+            pass
 
     cursor.execute(
         """

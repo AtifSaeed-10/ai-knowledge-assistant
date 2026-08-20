@@ -6,6 +6,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from citation_resolver import attach_quotes_to_sources, iter_resolved_stream
 from rag import ask_question
 from llm_service import generate_response_stream
 from indexer import index_pdf
@@ -30,6 +31,7 @@ from database.document_service import (
     get_document_details,
     remove_document
 )
+from quote_evidence import resolve_quote_evidence
 from config import DATA_DIR
 from modes import (
     MODE_SUPER_FOCUSED,
@@ -50,6 +52,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Accept-Ranges", "Content-Range", "Content-Length"],
 )
 
 class Source(BaseModel):
@@ -58,6 +61,9 @@ class Source(BaseModel):
     page: Optional[int] = None
     chunk_id: str
     relevance: int
+    evidence_id: Optional[str] = None
+    snippet: Optional[str] = None
+    quote: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -270,7 +276,10 @@ def chat_stream(request: ChatRequest):
 
         try:
 
-            for chunk in generate_response_stream(prompt):
+            for chunk in iter_resolved_stream(
+                generate_response_stream(prompt),
+                sources,
+            ):
 
                 answer_parts.append(chunk)
                 yield chunk
@@ -292,7 +301,7 @@ def chat_stream(request: ChatRequest):
                     request.conversation_id,
                     "assistant",
                     answer,
-                    citations=sources,
+                    citations=attach_quotes_to_sources(sources, answer),
                 )
 
 
@@ -448,6 +457,28 @@ def document_file(document_id: str):
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@app.get("/documents/{document_id}/chunks/{chunk_id}/evidence")
+def chunk_evidence(document_id: str, chunk_id: str, quote: str | None = None):
+    """Return Phase 1 chunk_evidence, optionally narrowed to a verbatim quote."""
+
+    document = get_document_details(document_id)
+    if not document or document.get("error"):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    filename = document.get("filename") or ""
+    path = _document_pdf_path(filename)
+    payload = resolve_quote_evidence(
+        document_id=document_id,
+        chunk_id=chunk_id,
+        quote=quote,
+        pdf_path=path,
+    )
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    return payload
+
 
 @app.delete("/documents/{document_id}")
 def delete_document_api(document_id: str):

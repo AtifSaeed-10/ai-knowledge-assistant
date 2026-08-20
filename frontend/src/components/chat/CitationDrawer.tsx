@@ -2,15 +2,22 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, ExternalLink, FileText, X } from "lucide-react";
+import { AlertCircle, ExternalLink, FileText, Minus, Plus, X } from "lucide-react";
 import { useChatStore } from "@/store/useChatStore";
 import { documentsApi } from "@/lib/api/documents";
+import { fetchChunkEvidence } from "@/lib/api/evidence";
+import { resolveEvidenceView, type ChunkEvidence } from "@/lib/pdf/coords";
+import { pdfFileUrlWithoutHash } from "@/lib/pdf/pdfjs";
 import { relevancePercent } from "./CitationCard";
+import { PdfEvidenceViewer } from "./PdfEvidenceViewer";
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 const SLOW_LOAD_MS = 6000;
+const MIN_ZOOM = 0.75;
+const MAX_ZOOM = 2.5;
+const ZOOM_STEP = 0.25;
 
 function isValidPage(page: number | null | undefined): page is number {
   return typeof page === "number" && Number.isFinite(page) && page >= 1;
@@ -27,6 +34,10 @@ export const CitationDrawer = () => {
   const [mounted, setMounted] = useState(false);
   const [isFrameLoading, setIsFrameLoading] = useState(true);
   const [isSlow, setIsSlow] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [evidence, setEvidence] = useState<ChunkEvidence | null>(null);
+  const [evidenceReady, setEvidenceReady] = useState(false);
 
   const isOpen = Boolean(activeCitation);
   const close = useCallback(() => setActiveCitation(null), [setActiveCitation]);
@@ -34,15 +45,53 @@ export const CitationDrawer = () => {
   useEffect(() => setMounted(true), []);
 
   const documentId = activeCitation?.documentId || null;
-  const pageValid = isValidPage(activeCitation?.pageNumber ?? null);
+  const view = resolveEvidenceView({
+    citationPage: activeCitation?.pageNumber ?? null,
+    evidence,
+    citationSnippet: activeCitation?.snippet ?? null,
+    citationQuote: activeCitation?.quote ?? null,
+  });
+  const pageValid = isValidPage(view.page);
   const pdfUrl = documentId
-    ? documentsApi.fileUrl(documentId, pageValid ? activeCitation?.pageNumber : null)
+    ? documentsApi.fileUrl(documentId, pageValid ? view.page : null)
     : null;
+  const viewerUrl = pdfUrl ? pdfFileUrlWithoutHash(pdfUrl) : null;
+  const snippet = view.snippet || activeCitation?.quote || activeCitation?.snippet || "";
+  const showSnippetFallback = evidenceReady && !view.canHighlight;
 
   useEffect(() => {
     setIsFrameLoading(true);
     setIsSlow(false);
-  }, [activeCitation?.id, activeCitation?.pageNumber]);
+    setLoadFailed(false);
+    setZoom(1);
+    setEvidence(null);
+    setEvidenceReady(false);
+  }, [activeCitation?.id, activeCitation?.pageNumber, activeCitation?.chunk_id, activeCitation?.quote]);
+
+  useEffect(() => {
+    if (!documentId || !activeCitation?.chunk_id) {
+      setEvidenceReady(true);
+      return;
+    }
+    const controller = new AbortController();
+
+    void fetchChunkEvidence(documentId, activeCitation.chunk_id, {
+      quote: activeCitation.quote,
+      signal: controller.signal,
+    })
+      .then((row) => {
+        if (controller.signal.aborted) return;
+        setEvidence(row);
+        setEvidenceReady(true);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setEvidence(null);
+        setEvidenceReady(true);
+      });
+
+    return () => controller.abort();
+  }, [activeCitation?.chunk_id, activeCitation?.quote, documentId]);
 
   useEffect(() => {
     if (!isOpen || !isFrameLoading) return;
@@ -65,6 +114,16 @@ export const CitationDrawer = () => {
       returnFocusRef.current?.focus?.();
     };
   }, [isOpen]);
+
+  const handleReady = useCallback(() => {
+    setIsFrameLoading(false);
+    setLoadFailed(false);
+  }, []);
+
+  const handleError = useCallback(() => {
+    setIsFrameLoading(false);
+    setLoadFailed(true);
+  }, []);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "Escape") {
@@ -96,6 +155,7 @@ export const CitationDrawer = () => {
   if (!mounted || !isOpen || !activeCitation) return null;
 
   const score = relevancePercent(activeCitation.relevance);
+  const pageLabel = pageValid ? `Page ${view.page}` : "Page unavailable";
 
   return createPortal(
     <div className="fixed inset-0 z-[110]" onKeyDown={handleKeyDown}>
@@ -131,13 +191,39 @@ export const CitationDrawer = () => {
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-5 py-3">
           <span className="inline-flex items-center gap-1.5 rounded-lg bg-surface-sunken px-2.5 py-1.5 text-meta font-medium text-ink-muted">
             <FileText className="h-3.5 w-3.5" />
-            {pageValid ? `Page ${activeCitation.pageNumber}` : "Page unavailable"}
+            {pageLabel}
           </span>
 
           {score !== null && (
             <span className="inline-flex items-center rounded-lg bg-surface-sunken px-2.5 py-1.5 text-meta font-medium tabular-nums text-ink-muted">
               {score}% relevance
             </span>
+          )}
+
+          {viewerUrl && (
+            <div className="inline-flex items-center rounded-lg bg-surface-sunken">
+              <button
+                type="button"
+                onClick={() => setZoom((value) => Math.max(MIN_ZOOM, value - ZOOM_STEP))}
+                disabled={zoom <= MIN_ZOOM}
+                className="rounded-lg p-1.5 text-ink-icon transition-colors hover:text-ink disabled:opacity-40"
+                aria-label="Zoom out"
+              >
+                <Minus className="h-3.5 w-3.5" />
+              </button>
+              <span className="min-w-10 px-0.5 text-center text-meta tabular-nums text-ink-muted">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setZoom((value) => Math.min(MAX_ZOOM, value + ZOOM_STEP))}
+                disabled={zoom >= MAX_ZOOM}
+                className="rounded-lg p-1.5 text-ink-icon transition-colors hover:text-ink disabled:opacity-40"
+                aria-label="Zoom in"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
           )}
 
           {pdfUrl && (
@@ -153,15 +239,32 @@ export const CitationDrawer = () => {
           )}
         </div>
 
+        {showSnippetFallback && (
+          <div className="shrink-0 border-b border-warn-line bg-warn-soft px-5 py-3">
+            <p className="text-meta font-medium text-warn">Highlight unavailable</p>
+            {snippet ? (
+              <p className="mt-1 text-ui leading-relaxed text-ink-muted">
+                “{snippet}”
+              </p>
+            ) : (
+              <p className="mt-1 text-ui leading-relaxed text-ink-muted">
+                This source has no stored highlight. Showing the cited page.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="relative min-h-0 flex-1 bg-paper">
-          {pdfUrl ? (
+          {viewerUrl ? (
             <>
-              <iframe
-                key={`${documentId}-${pageValid ? activeCitation.pageNumber : "none"}`}
-                title={`${activeCitation.documentName}, page preview`}
-                src={pdfUrl}
-                onLoad={() => setIsFrameLoading(false)}
-                className="h-full w-full border-0 bg-surface"
+              <PdfEvidenceViewer
+                key={`${documentId}-${activeCitation.chunk_id || "none"}-${activeCitation.quote || ""}`}
+                fileUrl={viewerUrl}
+                focusPage={view.page}
+                evidence={evidence}
+                scale={zoom}
+                onReady={handleReady}
+                onError={handleError}
               />
 
               {isFrameLoading && (
@@ -175,6 +278,15 @@ export const CitationDrawer = () => {
                     {isSlow
                       ? "Still loading this page. You can open the PDF in a new tab instead."
                       : "Loading page…"}
+                  </p>
+                </div>
+              )}
+
+              {loadFailed && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-paper px-8 text-center">
+                  <AlertCircle className="h-5 w-5 text-ink-icon" />
+                  <p className="max-w-sm text-ui leading-relaxed text-ink-muted">
+                    The PDF preview could not be loaded. Open it in a new tab instead.
                   </p>
                 </div>
               )}
