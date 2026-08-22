@@ -15,13 +15,18 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from config import (
+    CITATION_MIN_RELEVANCE,
     EVIDENCE_FALLBACK_MIN_RERANK,
-    EVIDENCE_MIN_RELEVANCE,
     EVIDENCE_NEAR_DUP_RATIO,
+    RECALL_TOP_K,
     RERANK_MAX_CHARS,
     RERANK_MIN_SCORE,
-    RERANK_TOP_K,
     RERANKER_MODEL,
+)
+from rerank_calibration import (
+    adaptive_keep_candidates,
+    calibrated_relevance,
+    resolve_rerank_model_name,
 )
 
 
@@ -229,6 +234,31 @@ def has_dual_retrieval_support(candidate: dict[str, Any]) -> bool:
     return "dense" in source_set and "bm25" in source_set
 
 
+def is_citation_eligible(
+    candidate: dict[str, Any],
+    min_relevance: int | None = None,
+) -> bool:
+    """True when a recall-pool chunk may receive an E# (citation pool)."""
+    floor = (
+        CITATION_MIN_RELEVANCE if min_relevance is None else int(min_relevance)
+    )
+    return int(candidate.get("relevance") or 0) >= floor
+
+
+def _annotate_pools(
+    items: list[dict[str, Any]],
+    *,
+    recall_fallback: bool,
+    gating_path: str | None = None,
+) -> list[dict[str, Any]]:
+    for item in items:
+        item["recall_fallback"] = bool(recall_fallback)
+        item["citation_eligible"] = is_citation_eligible(item)
+        if gating_path is not None:
+            item["gating_path"] = gating_path
+    return items
+
+
 def dual_source_fallback_candidates(
     candidates: list[dict[str, Any]],
     min_rerank_score: float | None = None,
@@ -263,17 +293,26 @@ def select_evidence(
     top_k: int,
     min_relevance: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Filter weak evidence, suppress near-dupes, diversify pages, take slots."""
-    relevance_floor = (
-        min_relevance
-        if min_relevance is not None
-        else EVIDENCE_MIN_RELEVANCE
+    """
+    Build the LLM recall pool from a scored candidate list.
+
+    Prefer chunks at/above the (calibrated) evidence floor, plus near-tied
+    neighbors. Dual-source MiniLM rescue and recall-first fallback still
+    apply when the floor would empty a nonempty pool. Citation eligibility
+    is annotated separately.
+    """
+    kept, gating_path = adaptive_keep_candidates(
+        candidates,
+        min_relevance=min_relevance,
     )
-    filtered = filter_min_relevance(candidates, relevance_floor)
-    if not filtered:
-        filtered = dual_source_fallback_candidates(candidates)
-    deduped = suppress_near_duplicates(filtered)
-    return diversify_by_page(deduped, top_k)
+    used_recall_fallback = gating_path == "recall_fallback"
+    deduped = suppress_near_duplicates(kept)
+    selected = diversify_by_page(deduped, top_k)
+    return _annotate_pools(
+        selected,
+        recall_fallback=used_recall_fallback,
+        gating_path=gating_path,
+    )
 
 
 def dedupe_exact_text(
@@ -392,9 +431,9 @@ def rerank_candidates(
       1) dedupe by chunk id
       2) dedupe by exact text (score one copy)
       3) score truncated text with the configured cross-encoder
-      4) return top_k with FULL original text for context/citations
+      4) return the recall pool (top_k, full original text)
     """
-    limit = top_k if top_k is not None else RERANK_TOP_K
+    limit = top_k if top_k is not None else RECALL_TOP_K
     score_floor = RERANK_MIN_SCORE if min_score is None else min_score
     char_limit = RERANK_MAX_CHARS if max_chars is None else max_chars
     service = reranker_service or reranker
@@ -406,6 +445,8 @@ def rerank_candidates(
                     "input_count": 0,
                     "unique_count": 0,
                     "deduped_count": 0,
+                    "recall_fallback": False,
+                    "selected_count": 0,
                 }
             )
         return []
@@ -429,28 +470,48 @@ def rerank_candidates(
         truncate_for_rerank(c.get("text") or "", char_limit) for c in pool
     ]
     scores = service.score(query, scored_docs)
+    model_name = resolve_rerank_model_name(getattr(service, "model_name", None))
 
     scored: list[dict[str, Any]] = []
     for cand, raw_score in zip(pool, scores):
-        item = {
-            "id": cand["id"],
-            "text": cand.get("text") or "",
-            "metadata": cand.get("metadata") or {},
-            "dense_distance": cand.get("dense_distance"),
-            "bm25_score": cand.get("bm25_score"),
-            "rrf_score": float(cand.get("rrf_score") or 0.0),
-            "sources": list(cand.get("sources") or []),
-            "reranker_score": float(raw_score),
-            "relevance": sigmoid_relevance(float(raw_score)),
-        }
-        if score_floor is not None and item["reranker_score"] < score_floor:
-            continue
-        scored.append(item)
+        logit = float(raw_score)
+        scored.append(
+            {
+                "id": cand["id"],
+                "text": cand.get("text") or "",
+                "metadata": cand.get("metadata") or {},
+                "dense_distance": cand.get("dense_distance"),
+                "bm25_score": cand.get("bm25_score"),
+                "rrf_score": float(cand.get("rrf_score") or 0.0),
+                "sources": list(cand.get("sources") or []),
+                "reranker_score": logit,
+                "relevance": calibrated_relevance(logit, model_name),
+            }
+        )
 
     scored.sort(
         key=lambda item: (-item["reranker_score"], item["id"])
     )
-    return select_evidence(scored, limit)
+    if score_floor is not None:
+        above_floor = [
+            item
+            for item in scored
+            if item["reranker_score"] >= score_floor
+        ]
+        if above_floor:
+            scored = above_floor
+
+    selected = select_evidence(scored, limit)
+    if stats_out is not None:
+        stats_out["recall_fallback"] = any(
+            bool(item.get("recall_fallback")) for item in selected
+        )
+        stats_out["selected_count"] = len(selected)
+        stats_out["gating_path"] = (
+            selected[0].get("gating_path") if selected else None
+        )
+        stats_out["model_name"] = model_name
+    return selected
 
 
 def rrf_fallback_candidates(
@@ -463,7 +524,7 @@ def rrf_fallback_candidates(
     Explicit fallback when the reranker is unavailable: keep RRF order,
     leave reranker_score as None, and mark relevance from RRF only.
     """
-    limit = top_k if top_k is not None else RERANK_TOP_K
+    limit = top_k if top_k is not None else RECALL_TOP_K
     if reason:
         print(f"WARNING: RERANKER FALLBACK: {reason}")
 

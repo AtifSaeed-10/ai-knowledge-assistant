@@ -29,7 +29,7 @@ export const SourceList = ({ citations }: { citations?: Citation[] }) => {
         <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
           {citations.map((citation, index) => (
             <CitationCard
-              key={citation.id}
+              key={citation.id || `${citation.evidenceId}-${index}`}
               citation={citation}
               index={citation.displayNumber ?? index + 1}
             />

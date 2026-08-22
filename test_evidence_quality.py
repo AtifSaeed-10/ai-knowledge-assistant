@@ -83,7 +83,7 @@ class TestCitationFiltering(unittest.TestCase):
             result["answer"],
         )
 
-    def test_weak_pipeline_evidence_does_not_reach_llm(self):
+    def test_weak_pipeline_evidence_reaches_llm_recall_pool_not_citations(self):
         service = MagicMock()
         service.score.return_value = [-7.0, -8.0]
         candidates = [
@@ -157,8 +157,55 @@ class TestCitationFiltering(unittest.TestCase):
                 top_k=5,
             )
 
-        self.assertEqual(result["chunks"], [])
-        self.assertEqual(result["ids"], [])
+        self.assertGreaterEqual(len(result["chunks"]), 1)
+        self.assertGreaterEqual(len(result["ids"]), 1)
+        self.assertEqual(result["fused_count"], 2)
+        self.assertTrue(result["recall_fallback"])
+        self.assertTrue(all(not flag for flag in result["citation_eligible"]))
+        self.assertTrue(
+            all(int(rel or 0) < 30 for rel in result["relevances"])
+        )
+
+    def test_recall_fallback_context_is_prompted_without_e_ids(self):
+        retrieval = {
+            "chunks": [
+                "Nanking is also spelled Nanjing in later scholarship."
+            ],
+            "distances": [0.8],
+            "metadata": [
+                {
+                    "document_id": "ww2",
+                    "filename": "ww2_history.pdf",
+                    "page_number": 19,
+                }
+            ],
+            "ids": ["ww2_21"],
+            "relevances": [4],
+            "reranker_scores": [-6.2],
+            "citation_eligible": [False],
+            "recall_fallbacks": [True],
+            "recall_fallback": True,
+            "fused_count": 20,
+            "rerank_fallback": False,
+        }
+
+        with patch(
+            "rag.retrieve_candidates",
+            return_value=retrieval,
+        ), patch(
+            "rag.generate_response",
+            return_value="The text also uses the spelling Nanjing.",
+        ):
+            result = ask_question(
+                "Does the book mention the spelling Nanjing?",
+                None,
+                ["ww2"],
+                generate=True,
+            )
+
+        self.assertEqual(result["sources"], [])
+        self.assertIn("Nanjing", result["prompt"])
+        self.assertNotIn("No relevant information", result["answer"])
 
 
 if __name__ == "__main__":

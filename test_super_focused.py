@@ -62,8 +62,14 @@ class TestSuperFocusedChat(unittest.TestCase):
         self.conversation_id = "test-super-focused"
         delete_conversation(self.conversation_id)
         self.client = TestClient(app)
+        self._live = patch(
+            "index_hygiene.live_searchable_document_ids",
+            return_value=["doc-a", "doc-b", "football-doc"],
+        )
+        self._live.start()
 
     def tearDown(self):
+        self._live.stop()
         delete_conversation(self.conversation_id)
 
     def _retrieval(self, document_id="doc-a"):
@@ -102,8 +108,8 @@ class TestSuperFocusedChat(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        mock_retrieve.assert_called_once()
-        self.assertEqual(mock_retrieve.call_args.args[1], ["doc-a"])
+        self.assertGreaterEqual(mock_retrieve.call_count, 1)
+        self.assertEqual(mock_retrieve.call_args_list[0].args[1], ["doc-a"])
         body = response.json()
         self.assertIn("supervised", body["answer"].lower())
         self.assertEqual(len(body["sources"]), 1)
@@ -223,6 +229,9 @@ class TestAskQuestionCitations(unittest.TestCase):
         with patch("rag.retrieve_candidates", return_value=retrieval), patch(
             "rag.generate_response",
             return_value="ok",
+        ), patch(
+            "index_hygiene.live_searchable_document_ids",
+            return_value=["doc-a"],
         ):
             result = ask_question("q", None, ["doc-a"], generate=True)
 
@@ -248,6 +257,9 @@ class TestAskQuestionCitations(unittest.TestCase):
         with patch("rag.retrieve_candidates", return_value=retrieval), patch(
             "rag.generate_response",
             return_value="ok",
+        ), patch(
+            "index_hygiene.live_searchable_document_ids",
+            return_value=["doc-a"],
         ):
             result = ask_question("q", None, ["doc-a"], generate=True)
 

@@ -15,6 +15,7 @@ from reranker import (
     RerankerUnavailableError,
     dedupe_exact_text,
     diversify_by_page,
+    dual_source_fallback_candidates,
     filter_min_relevance,
     has_dual_retrieval_support,
     rerank_candidates,
@@ -85,6 +86,7 @@ class TestScoreHelpers(unittest.TestCase):
 class TestRerankOrderingAndDedupe(unittest.TestCase):
     def test_dedupe_before_scoring_and_order_by_reranker(self):
         service = MagicMock()
+        service.model_name = RERANKER_MODEL_BGE
         service.score.return_value = [1.0, 5.0]  # after dedupe: a, b
 
         candidates = [
@@ -375,6 +377,8 @@ class TestEvidenceSelection(unittest.TestCase):
         )
         self.assertEqual([c["id"] for c in ranked], ["p10_a", "p20_good"])
         self.assertTrue(all(c["relevance"] >= 25 for c in ranked))
+        self.assertTrue(all(not c.get("recall_fallback") for c in ranked))
+        self.assertTrue(all(c.get("citation_eligible") for c in ranked))
 
     def test_near_duplicate_suppression_prefers_higher_score(self):
         shared = (
@@ -507,13 +511,16 @@ class TestEvidenceSelection(unittest.TestCase):
         scored_doc = service.score.call_args.args[1][0]
         self.assertLessEqual(len(scored_doc), 40)
 
-    def test_unanswerable_pipeline_returns_no_evidence(self):
+    def test_unanswerable_pipeline_keeps_recall_pool(self):
         service = MagicMock()
         service.score.return_value = [-7.0, -8.5, -6.0]
         candidates = [
             {
                 "id": f"noise_{i}",
-                "text": f"irrelevant football noise paragraph {i}",
+                "text": (
+                    f"Stadium lighting schedule {i}, concession prices, "
+                    f"and the {i}th league table have no geography facts."
+                ),
                 "metadata": {
                     "document_id": "docB",
                     "filename": "fb.pdf",
@@ -532,7 +539,11 @@ class TestEvidenceSelection(unittest.TestCase):
             top_k=5,
             reranker_service=service,
         )
-        self.assertEqual(ranked, [])
+        self.assertGreaterEqual(len(ranked), 1)
+        self.assertEqual(ranked[0]["id"], "noise_2")
+        self.assertTrue(all(c.get("recall_fallback") for c in ranked))
+        self.assertTrue(all(not c.get("citation_eligible") for c in ranked))
+        self.assertTrue(all(int(c.get("relevance") or 0) < 25 for c in ranked))
 
 
 class TestDualSourceFallback(unittest.TestCase):
@@ -571,6 +582,7 @@ class TestDualSourceFallback(unittest.TestCase):
 
     def test_entropy_why_query_admits_dual_source_minilm_false_negative(self):
         service = MagicMock()
+        service.model_name = RERANKER_MODEL_BGE
         service.score.return_value = [-4.4518, -5.5941]
         ranked = rerank_candidates(
             "Why is lower entropy better when choosing a split?",
@@ -581,8 +593,10 @@ class TestDualSourceFallback(unittest.TestCase):
         self.assertEqual(len(ranked), 1)
         self.assertEqual(ranked[0]["id"], "entropy_93")
         self.assertIn("less uncertainty", ranked[0]["text"])
+        self.assertFalse(ranked[0].get("recall_fallback"))
+        self.assertFalse(ranked[0].get("citation_eligible"))
 
-    def test_france_query_remains_empty_without_dual_source(self):
+    def test_france_query_keeps_recall_pool_without_citations(self):
         service = MagicMock()
         service.score.return_value = [-10.9996, -11.0083]
         candidates = [
@@ -611,9 +625,12 @@ class TestDualSourceFallback(unittest.TestCase):
             top_k=5,
             reranker_service=service,
         )
-        self.assertEqual(ranked, [])
+        self.assertGreaterEqual(len(ranked), 1)
+        self.assertTrue(all(c.get("recall_fallback") for c in ranked))
+        self.assertTrue(all(not c.get("citation_eligible") for c in ranked))
+        self.assertEqual(dual_source_fallback_candidates(ranked), [])
 
-    def test_world_cup_query_remains_empty(self):
+    def test_world_cup_query_keeps_recall_pool_without_citations(self):
         service = MagicMock()
         service.score.return_value = [-5.9783, -7.5695]
         candidates = [
@@ -642,7 +659,9 @@ class TestDualSourceFallback(unittest.TestCase):
             top_k=5,
             reranker_service=service,
         )
-        self.assertEqual(ranked, [])
+        self.assertGreaterEqual(len(ranked), 1)
+        self.assertTrue(all(c.get("recall_fallback") for c in ranked))
+        self.assertTrue(all(not c.get("citation_eligible") for c in ranked))
 
     def test_fallback_does_not_change_normal_relevance_pass(self):
         service = MagicMock()
@@ -709,8 +728,9 @@ class TestDualSourceFallback(unittest.TestCase):
         )
         self.assertEqual([c["id"] for c in ranked], ["p10_a", "p20_good"])
         self.assertTrue(all(c["relevance"] >= 25 for c in ranked))
+        self.assertTrue(all(not c.get("recall_fallback") for c in ranked))
 
-    def test_dual_source_below_rerank_floor_still_rejected(self):
+    def test_dual_source_below_rerank_floor_does_not_empty_recall_pool(self):
         candidates = [
             {
                 "id": "dual_weak",
@@ -721,7 +741,12 @@ class TestDualSourceFallback(unittest.TestCase):
                 "sources": ["dense", "bm25"],
             }
         ]
-        self.assertEqual(select_evidence(candidates, top_k=5), [])
+        self.assertEqual(dual_source_fallback_candidates(candidates), [])
+        selected = select_evidence(candidates, top_k=5)
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0]["id"], "dual_weak")
+        self.assertTrue(selected[0]["recall_fallback"])
+        self.assertFalse(selected[0]["citation_eligible"])
         self.assertTrue(has_dual_retrieval_support(candidates[0]))
         self.assertTrue(has_dual_retrieval_support(
             {"sources": ["dense", "bm25"]}
@@ -818,6 +843,9 @@ class TestPipelineFallbackAndFilter(unittest.TestCase):
 
         self.assertTrue(result["rerank_fallback"])
         self.assertEqual(len(result["ids"]), 2)
+        self.assertFalse(result["recall_fallback"])
+        self.assertEqual(result["fused_count"], 2)
+        self.assertEqual(len(result["citation_eligible"]), 2)
         self.assertTrue(all(s is None for s in result["reranker_scores"]))
         # distances are dense-only (None for BM25-only)
         self.assertEqual(result["distances"][0], 0.25)

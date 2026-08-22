@@ -147,6 +147,41 @@ def init_db():
         """
     )
 
+    try:
+        cursor.execute(
+            """
+            ALTER TABLE chunk_evidence
+            ADD COLUMN segments_json TEXT
+            """
+        )
+    except sqlite3.OperationalError:
+        pass
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS quote_region_cache (
+            chunk_id TEXT NOT NULL,
+            quote_hash TEXT NOT NULL,
+            document_id TEXT NOT NULL,
+            quote_text TEXT NOT NULL,
+            match_type TEXT NOT NULL,
+            quote_highlight_available INTEGER NOT NULL DEFAULT 0,
+            regions_json TEXT,
+            page_start INTEGER,
+            page_end INTEGER,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (chunk_id, quote_hash)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_quote_cache_document
+        ON quote_region_cache (document_id)
+        """
+    )
+
 
     connection.commit()
 

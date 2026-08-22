@@ -1,4 +1,4 @@
-import { Document, DocumentStatus } from '@/types';
+import { Document, DocumentEvidenceSummary, DocumentStatus } from '@/types';
 import { API_CONFIG, delay } from './client';
 
 interface ApiDocument {
@@ -138,5 +138,28 @@ export const documentsApi = {
     }
 
     return base;
+  },
+
+  /** GET /documents/{document_id}/evidence-summary */
+  async getEvidenceSummary(documentId: string): Promise<DocumentEvidenceSummary> {
+    if (API_CONFIG.useMock) {
+      return {
+        document_id: documentId,
+        chunk_evidence_count: 0,
+        highlighted_chunk_count: 0,
+        has_evidence_data: false,
+        highlight_ratio: 0,
+      };
+    }
+
+    const response = await fetch(
+      `${API_CONFIG.baseUrl}/documents/${encodeURIComponent(documentId)}/evidence-summary`
+    );
+
+    if (!response.ok) {
+      throw new Error(`Could not load highlight data (${response.status}).`);
+    }
+
+    return (await response.json()) as DocumentEvidenceSummary;
   },
 };

@@ -22,6 +22,7 @@ from database.document_store import (
 )
 from database.evidence_store import replace_document_evidence
 from evidence_mapping import build_document_evidence
+from index_hygiene import purge_chroma_document, purge_document_index
 from pdf_extraction import (
     INDEX_FAILURE_NO_TEXT,
     extract_pages_from_pdf,
@@ -69,6 +70,7 @@ def index_pdf(pdf_path: str, document_id: str):
         )
 
         if not chunks:
+            purge_document_index(document_id, delete_files=False)
             mark_document_index_failed(document_id, INDEX_FAILURE_NO_TEXT)
             logger.warning(
                 "index_pdf document_id=%s failed: no chunks (engine=%s pages_with_text=%s)",
@@ -95,6 +97,7 @@ def index_pdf(pdf_path: str, document_id: str):
 
         client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
         collection = client.get_or_create_collection(name=COLLECTION_NAME)
+        purge_chroma_document(document_id, collection=collection)
 
         update_document_status(document_id, "embedding")
 
@@ -143,6 +146,7 @@ def index_pdf(pdf_path: str, document_id: str):
         return document_id
 
     except Exception as exc:
+        purge_document_index(document_id, delete_files=False)
         message = f"Indexing failed: {exc.__class__.__name__}"
         mark_document_index_failed(document_id, message)
         logger.exception(

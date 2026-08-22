@@ -22,4 +22,8 @@ export interface Citation {
   quoteMappingStatus?: string | null;
   quoteHighlightAvailable?: boolean;
   quoteRegions?: EvidenceRegion[];
+  claimContext?: string | null;
+  localizationConfidence?: number | null;
+  uiStatus?: string | null;
+  contentType?: string | null;
 }

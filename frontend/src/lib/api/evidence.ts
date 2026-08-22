@@ -62,13 +62,15 @@ function parseEvidence(payload: unknown): ChunkEvidence | null {
 export async function fetchChunkEvidence(
   documentId: string,
   chunkId: string,
-  options?: { quote?: string | null; signal?: AbortSignal }
+  options?: { quote?: string | null; claim?: string | null; signal?: AbortSignal }
 ): Promise<ChunkEvidence | null> {
   if (API_CONFIG.useMock) return null;
 
   const params = new URLSearchParams();
   const quote = options?.quote?.trim();
+  const claim = options?.claim?.trim();
   if (quote) params.set("quote", quote);
+  if (claim) params.set("claim", claim);
   const query = params.toString();
   const response = await fetch(
     `${API_CONFIG.baseUrl}/documents/${encodeURIComponent(documentId)}/chunks/${encodeURIComponent(chunkId)}/evidence${query ? `?${query}` : ""}`,

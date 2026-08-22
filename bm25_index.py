@@ -15,6 +15,8 @@ from typing import Any
 
 from rank_bm25 import BM25Okapi
 
+from config import PHRASE_BM25_BOOST
+
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
@@ -24,6 +26,41 @@ def tokenize(text: str) -> list[str]:
     if not text:
         return []
     return _TOKEN_RE.findall(text.lower())
+
+
+def contains_consecutive_phrase(
+    document_tokens: list[str],
+    phrase: str,
+) -> bool:
+    """True when phrase tokens appear as a contiguous span in document_tokens."""
+    needle = tokenize(phrase)
+    if not needle:
+        return False
+    hay = document_tokens
+    n = len(needle)
+    if n == 1:
+        return needle[0] in hay
+    if len(hay) < n:
+        return False
+    for i in range(len(hay) - n + 1):
+        if hay[i : i + n] == needle:
+            return True
+    return False
+
+
+def metadata_page(metadata: dict | None) -> int | None:
+    if not metadata:
+        return None
+    value = metadata.get("page_number")
+    if value is None:
+        value = metadata.get("page_start")
+    try:
+        page = int(value)
+    except (TypeError, ValueError):
+        return None
+    if page < 1:
+        return None
+    return page
 
 
 def corpus_fingerprint(ids: list[str]) -> str:
@@ -114,10 +151,19 @@ class BM25Index:
         query: str,
         k: int,
         document_ids: list[str] | None = None,
+        *,
+        phrases: list[str] | None = None,
+        page_min: int | None = None,
+        page_max: int | None = None,
+        phrase_boost: float | None = None,
     ) -> list[dict[str, Any]]:
         """
         Return top-k BM25 hits as candidate dicts:
         {id, text, metadata, bm25_score, rank}
+
+        Optional consecutive-phrase boost multiplies a hit's score when any
+        phrase appears as a contiguous token span. Page min/max filter on
+        stored chunk metadata without changing the BM25 model.
         """
         with self._lock:
             if self._bm25 is None or not self._ids or k <= 0:
@@ -127,18 +173,43 @@ class BM25Index:
             if not tokens:
                 return []
 
-            scores = self._bm25.get_scores(tokens)
+            scores = list(self._bm25.get_scores(tokens))
+            boost = (
+                PHRASE_BM25_BOOST if phrase_boost is None else float(phrase_boost)
+            )
+            phrase_list = [p for p in (phrases or []) if p and tokenize(p)]
             allowed = None
-            if document_ids:
+            if document_ids is not None:
+                if not document_ids:
+                    return []
                 allowed = set(document_ids)
 
             ranked: list[tuple[float, int]] = []
-            for i, score in enumerate(scores):
+            for i, raw_score in enumerate(scores):
                 if allowed is not None:
                     doc_id = self._metadatas[i].get("document_id")
                     if doc_id not in allowed:
                         continue
-                ranked.append((float(score), i))
+                if page_min is not None or page_max is not None:
+                    page = metadata_page(self._metadatas[i])
+                    if page is None:
+                        continue
+                    if page_min is not None and page < page_min:
+                        continue
+                    if page_max is not None and page > page_max:
+                        continue
+                score = float(raw_score)
+                if phrase_list:
+                    doc_tokens = tokenize(self._documents[i])
+                    matched = any(
+                        contains_consecutive_phrase(doc_tokens, phrase)
+                        for phrase in phrase_list
+                    )
+                    if matched:
+                        if score <= 0:
+                            score = 1.0
+                        score *= boost
+                ranked.append((score, i))
 
             # Deterministic: score desc, then id asc for ties.
             ranked.sort(

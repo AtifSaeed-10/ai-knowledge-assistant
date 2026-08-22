@@ -7,7 +7,7 @@ import { SourceList } from "./SourceList";
 import { AnswerMarkdown } from "./AnswerMarkdown";
 import { MessageActions } from "./MessageActions";
 import { useChatStore } from "@/store/useChatStore";
-import { withAnswerQuotes, usedCitations } from "@/lib/citations/markers";
+import { withAnswerQuotes, usedCitationsWithFallback } from "@/lib/citations/markers";
 
 interface MessageBubbleProps {
   message: Message;
@@ -22,7 +22,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
   const hasContent = Boolean(message.content?.trim());
   const isSearching = !hasContent && isStreaming;
   const citations = withAnswerQuotes(message.citations, message.content);
-  const citedSources = usedCitations(message.citations, message.content);
+  const citedSources = usedCitationsWithFallback(message.citations, message.content);
 
   const lastAssistant = [...messages].reverse().find((item) => item.role === "assistant");
   const isLastAssistant = lastAssistant?.id === message.id;

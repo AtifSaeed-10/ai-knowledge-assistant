@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useId, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import {
   AlertTriangle,
   ChevronDown,
@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { useChatStore } from "@/store/useChatStore";
-import { Document } from "@/types";
+import { Document, DocumentEvidenceSummary } from "@/types";
+import { documentsApi } from "@/lib/api/documents";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { ProcessingTimeline, getFriendlyDocumentStatus } from "./ProcessingTimeline";
 import { cn } from "@/lib/cn";
@@ -35,6 +36,47 @@ function formatRelativeTime(input: Date): string {
   if (days < 7) return `${days}d ago`;
 
   return value.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function highlightAvailabilityLabel(summary: DocumentEvidenceSummary): string | null {
+  if (!summary.has_evidence_data) {
+    return "PDF highlight data is unavailable for this document. Citations still work, but page regions may be limited.";
+  }
+  const ratio = summary.highlight_ratio;
+  if (ratio >= 0.95) return null;
+  const pct = Math.round(ratio * 100);
+  if (pct === 0) {
+    return "This PDF has no mappable text regions. Citations show snippets only.";
+  }
+  return `PDF highlights available for ${pct}% of indexed passages.`;
+}
+
+function DocumentEvidenceNote({ documentId }: { documentId: string }) {
+  const [summary, setSummary] = useState<DocumentEvidenceSummary | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void documentsApi
+      .getEvidenceSummary(documentId)
+      .then((data) => {
+        if (!cancelled) setSummary(data);
+      })
+      .catch(() => {
+        if (!cancelled) setSummary(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [documentId]);
+
+  const label = summary ? highlightAvailabilityLabel(summary) : null;
+  if (!label) return null;
+
+  return (
+    <p className="mt-2.5 border-t border-line pt-2 text-meta leading-relaxed text-ink-muted">
+      {label}
+    </p>
+  );
 }
 
 export function DocumentLibrary({ isCollapsed = false }: DocumentLibraryProps) {
@@ -285,6 +327,7 @@ export function DocumentLibrary({ isCollapsed = false }: DocumentLibraryProps) {
                         {doc.totalChunks} indexed passages
                       </p>
                     ) : null}
+                    {isReady ? <DocumentEvidenceNote documentId={doc.id} /> : null}
                   </div>
                 )}
               </li>

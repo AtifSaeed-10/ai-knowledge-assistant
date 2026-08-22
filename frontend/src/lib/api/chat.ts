@@ -1,4 +1,4 @@
-import { Citation } from "@/types";
+import type { Citation } from "@/types/citation";
 import { ProductMode } from "@/types/mode";
 import { API_CONFIG } from "./client";
 import {
@@ -7,7 +7,7 @@ import {
 } from "@/lib/citations/markers";
 import type { EvidenceRegion } from "@/types/citation";
 
-interface ApiSource {
+export interface ApiSource {
   document_id?: string;
   filename?: string;
   page?: number | null;
@@ -23,6 +23,12 @@ interface ApiSource {
   quote_mapping_status?: string | null;
   quote_highlight_available?: boolean | null;
   quote_regions?: EvidenceRegion[] | null;
+  claim_context?: string | null;
+  localization_confidence?: number | null;
+  ui_status?: string | null;
+  content_type?: string | null;
+  evidence_data_available?: boolean | null;
+  highlight_available?: boolean | null;
 }
 
 const CITATIONS_START = "__CITATIONS__";
@@ -65,6 +71,17 @@ export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
             Boolean(region && typeof region === "object" && typeof region.page === "number")
         )
       : [],
+    claimContext:
+      typeof src.claim_context === "string" && src.claim_context.trim()
+        ? src.claim_context.trim()
+        : null,
+    localizationConfidence:
+      typeof src.localization_confidence === "number" &&
+      Number.isFinite(src.localization_confidence)
+        ? src.localization_confidence
+        : null,
+    uiStatus: typeof src.ui_status === "string" ? src.ui_status : null,
+    contentType: typeof src.content_type === "string" ? src.content_type : null,
   };
 }
 

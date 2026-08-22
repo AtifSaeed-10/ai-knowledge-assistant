@@ -79,27 +79,10 @@ class TestFinalizeAnswerCitations(unittest.TestCase):
         self.assertEqual(finalized_answer, "Uses labels.[E1]")
         self.assertEqual(enriched[0]["quote_mapping_status"], "not_in_chunk")
 
-    @patch("claim_validator.enrich_source_with_quote_evidence")
+    @patch("claim_validator.orchestrate_all_claims")
     @patch("claim_validator._chunk_text_for_source")
-    def test_valid_quote_is_preserved(self, chunk_text, enrich):
+    def test_valid_quote_is_preserved(self, chunk_text, orchestrate):
         chunk_text.return_value = "Supervised learning uses labeled examples."
-        enrich.side_effect = lambda source, **kwargs: {
-            **source,
-            "quote": kwargs.get("quote"),
-            "quotes": [kwargs.get("quote")] if kwargs.get("quote") else [],
-            "quote_mapping_status": "exact",
-            "quote_highlight_available": True,
-            "quote_regions": [
-                {
-                    "page": 1,
-                    "x0": 1.0,
-                    "y0": 2.0,
-                    "x1": 3.0,
-                    "y1": 4.0,
-                    "coord_space": "pdf",
-                }
-            ],
-        }
         sources = [
             {
                 "evidence_id": "E1",
@@ -110,15 +93,37 @@ class TestFinalizeAnswerCitations(unittest.TestCase):
                 "relevance": 90,
             }
         ]
+        orchestrate.return_value = (
+            [
+                {
+                    **sources[0],
+                    "quote": "labeled examples",
+                    "quotes": ["labeled examples"],
+                    "quote_mapping_status": "exact",
+                    "quote_highlight_available": True,
+                    "quote_regions": [
+                        {
+                            "page": 1,
+                            "x0": 1.0,
+                            "y0": 2.0,
+                            "x1": 3.0,
+                            "y1": 4.0,
+                            "coord_space": "pdf",
+                        }
+                    ],
+                }
+            ],
+            {},
+        )
         answer = 'Uses labels.[E1:"labeled examples"]'
         finalized_answer, enriched = finalize_answer_citations(
             answer,
             sources,
-            resolve_regions=False,
+            resolve_regions=True,
         )
         self.assertIn('[E1:"labeled examples"]', finalized_answer)
         self.assertEqual(enriched[0]["quote"], "labeled examples")
-        self.assertEqual(enriched[0]["quote_mapping_status"], "none")
+        self.assertEqual(enriched[0]["quote_mapping_status"], "exact")
 
 
 class TestUsedSources(unittest.TestCase):

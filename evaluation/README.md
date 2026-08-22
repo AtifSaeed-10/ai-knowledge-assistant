@@ -21,7 +21,29 @@ It does **not** add hybrid retrieval, BM25, rerankers, CRAG, agents, or chunking
 
 Legacy scripts (`evaluation.py`, `generation_evaluation.py`, `evaluation_data.py`) are left untouched.
 
-## Commands
+## Highlight + claim verification eval
+
+Measures quote→PDF highlight success, claim marker validation, and quote-region cache hits.
+
+| File | Role |
+|------|------|
+| `highlight_benchmark_dataset.py` | Fixed highlight + claim cases |
+| `run_highlight_eval.py` | Offline harness (synthetic PDFs + SQLite evidence) |
+| `results/highlight_latest.json` | Latest machine-readable results |
+
+```bash
+.\.venv\Scripts\python.exe -m evaluation.run_highlight_eval
+.\.venv\Scripts\python.exe -m evaluation.run_highlight_eval --limit 2
+```
+
+Metrics reported:
+- **Claim verification accuracy** — marker quote validation / repair
+- **Evidence localization accuracy** — claim → source span → PDF region
+- **Highlight precision** — highlighted span tightness vs full chunk
+- **Fallback rate** — confident chunk/page only, no fake precision
+- **Unresolved rate** — could not locate supporting text
+- **Cache hit rate** — repeat quote/claim lookup from SQLite cache
+
 
 From the repository root (`c:\document_assistant`), using the project virtualenv:
 

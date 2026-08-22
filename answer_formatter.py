@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 
+from answer_planner import MAX_CITATION_MARKERS
 from citation_resolver import format_citation_marker, split_unclosed_bracket
 
 # Citation markers are preserved verbatim during cleanup.
@@ -17,11 +18,53 @@ _MARKER_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Straight double-quoted spans in prose.
-_PROSE_QUOTE_RE = re.compile(r'"([^"\n]{40,}?)"')
+# Straight or curly double-quoted spans in prose.
+_PROSE_QUOTE_RE = re.compile(r'["“]([^"”\n]{40,}?)["”]')
+_BLOCKQUOTE_LINE_RE = re.compile(r"^\s*>\s+.+$", re.MULTILINE)
 
 _MAX_MARKER_QUOTE_CHARS = 120
 _MIN_PROSE_QUOTE_CHARS = 40
+
+_SMART_QUOTE_MAP = str.maketrans({
+    "\u201c": '"',
+    "\u201d": '"',
+    "\u2018": "'",
+    "\u2019": "'",
+})
+
+
+def normalize_smart_quotes(text: str) -> str:
+    return (text or "").translate(_SMART_QUOTE_MAP)
+
+
+def limit_citation_markers(text: str, max_markers: int = MAX_CITATION_MARKERS) -> str:
+    """Keep only the first N citation markers; strip extras."""
+    if max_markers <= 0:
+        return re.sub(_MARKER_RE, "", text or "")
+
+    seen = 0
+
+    def replace(match: re.Match[str]) -> str:
+        nonlocal seen
+        seen += 1
+        if seen <= max_markers:
+            return match.group(0)
+        return ""
+
+    return _MARKER_RE.sub(replace, text or "")
+
+
+def remove_markdown_blockquote_dumps(text: str) -> str:
+    """Drop markdown blockquote lines the model uses to paste long evidence."""
+    if not text:
+        return ""
+    lines = text.splitlines()
+    kept: list[str] = []
+    for line in lines:
+        if _BLOCKQUOTE_LINE_RE.match(line):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
 
 
 def _truncate_quote(text: str, limit: int = _MAX_MARKER_QUOTE_CHARS) -> str:
@@ -86,8 +129,10 @@ def collapse_blank_lines(text: str) -> str:
 
 def polish_answer_text(text: str) -> str:
     """Apply safe formatting cleanups before citation validation."""
-    complete, hold = split_unclosed_bracket(text or "")
-    polished = remove_prose_quote_dumps(complete)
+    complete, hold = split_unclosed_bracket(normalize_smart_quotes(text or ""))
+    polished = remove_markdown_blockquote_dumps(complete)
+    polished = remove_prose_quote_dumps(polished)
     polished = truncate_marker_quotes(polished)
+    polished = limit_citation_markers(polished)
     polished = collapse_blank_lines(polished)
     return polished + hold

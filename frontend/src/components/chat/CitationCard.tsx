@@ -4,6 +4,11 @@ import React from "react";
 import { ChevronRight } from "lucide-react";
 import { Citation } from "@/types";
 import { useChatStore } from "@/store/useChatStore";
+import { citationsMatch } from "@/lib/citations/markers";
+import {
+  evidencePresentationStatus,
+  evidenceStatusLabel,
+} from "@/lib/citations/evidenceStatus";
 import { cn } from "@/lib/cn";
 
 export function relevancePercent(relevance?: number | null): number | null {
@@ -23,9 +28,12 @@ export const CitationCard = ({
   const setActiveCitation = useChatStore((state) => state.setActiveCitation);
   const activeCitation = useChatStore((state) => state.activeCitation);
 
-  const isActive = activeCitation?.id === citation.id;
+  const isActive = citationsMatch(activeCitation, citation);
   const pageLabel = citation.pageNumber ? `page ${citation.pageNumber}` : "page unknown";
   const preview = (citation.quote || citation.snippet || "").trim();
+  const presentation = evidencePresentationStatus(citation);
+  const statusLabel =
+    presentation === "precise" ? null : evidenceStatusLabel(presentation);
 
   return (
     <button
@@ -61,6 +69,19 @@ export const CitationCard = ({
           <span className="mt-1 inline-flex rounded bg-surface-sunken px-1.5 py-0.5 text-meta font-medium tabular-nums text-ink-muted">
             {citation.pageNumber ? `p. ${citation.pageNumber}` : "page n/a"}
           </span>
+
+          {statusLabel && (
+            <span
+              className={cn(
+                "mt-1 inline-flex rounded px-1.5 py-0.5 text-meta font-medium",
+                presentation === "invalid_quote" || presentation === "missing_metadata"
+                  ? "bg-amber-50 text-amber-800"
+                  : "bg-surface-sunken text-ink-muted"
+              )}
+            >
+              {statusLabel}
+            </span>
+          )}
 
           {preview && (
             <span className="mt-1.5 line-clamp-2 block text-meta leading-relaxed text-ink-muted">

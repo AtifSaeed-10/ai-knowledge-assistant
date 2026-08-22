@@ -8,6 +8,7 @@ import { documentsApi } from "@/lib/api/documents";
 import { fetchChunkEvidence } from "@/lib/api/evidence";
 import { resolveEvidenceView, type ChunkEvidence } from "@/lib/pdf/coords";
 import type { Citation } from "@/types/citation";
+import { evidenceStatusDetail, contentTypeDetail } from "@/lib/citations/evidenceStatus";
 import { pdfFileUrlWithoutHash } from "@/lib/pdf/pdfjs";
 import { relevancePercent } from "./CitationCard";
 import { PdfEvidenceViewer } from "./PdfEvidenceViewer";
@@ -39,11 +40,30 @@ function citationToChunkEvidence(citation: Citation): ChunkEvidence | null {
 }
 
 function mappingStatusMessage(status: string | null | undefined): string | null {
-  if (!status || status === "none" || status === "exact" || status === "normalized") {
+  if (
+    !status ||
+    status === "none" ||
+    status === "exact" ||
+    status === "normalized" ||
+    status === "sentence" ||
+    status === "semantic_span"
+  ) {
     return null;
+  }
+  if (status === "fallback_chunk") {
+    return "Precise highlighting is uncertain for this claim. Showing the cited passage and page instead.";
+  }
+  if (status === "unresolved") {
+    return "Could not locate exact supporting text in the PDF. Showing the cited passage only.";
   }
   if (status === "not_in_chunk") {
     return "The cited quote could not be matched to the retrieved passage.";
+  }
+  if (status === "no_evidence_data") {
+    return "This document was indexed before highlight data was available. Showing the cited page and snippet only.";
+  }
+  if (status === "no_layout") {
+    return "PDF layout data is unavailable for this document.";
   }
   if (status === "not_on_page") {
     return "The quote appears in the passage but could not be located on the PDF page.";
@@ -94,6 +114,8 @@ export const CitationDrawer = () => {
   const snippet = view.snippet || activeCitation?.quote || activeCitation?.snippet || "";
   const showSnippetFallback = evidenceReady && !view.canHighlight;
   const mappingMessage =
+    contentTypeDetail(activeCitation?.contentType) ||
+    evidenceStatusDetail(activeCitation ?? {}) ||
     mappingStatusMessage(activeCitation?.quoteMappingStatus) ||
     mappingStatusMessage(evidence?.quote_mapping_status ?? null);
 
@@ -127,6 +149,7 @@ export const CitationDrawer = () => {
 
     void fetchChunkEvidence(documentId, activeCitation.chunk_id, {
       quote: activeCitation.quote,
+      claim: activeCitation.claimContext,
       signal: controller.signal,
     })
       .then((row) => {

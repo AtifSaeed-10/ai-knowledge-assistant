@@ -410,6 +410,207 @@ def _empty_quote_map(match_type: str = "failed") -> dict[str, Any]:
     }
 
 
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+_CLAUSE_SPLIT_RE = re.compile(r"\s*;\s+|\s+—\s+|\s+-\s+")
+
+
+def spans_for_index_segments(text: str, *, min_chars: int = 12) -> list[dict[str, Any]]:
+    """Sentence spans, with long sentences further split into clause-sized units."""
+    parts: list[dict[str, Any]] = []
+    for sentence_part in split_sentences(text, min_chars=min_chars):
+        sentence = sentence_part["text"]
+        base_start = int(sentence_part["char_start"])
+        if len(sentence) <= 100:
+            parts.append(dict(sentence_part))
+            continue
+        subparts: list[dict[str, Any]] = []
+        cursor = 0
+        for match in _CLAUSE_SPLIT_RE.finditer(sentence):
+            end = match.start()
+            clause = sentence[cursor:end].strip()
+            if len(clause) >= min_chars:
+                subparts.append(
+                    {
+                        "text": clause,
+                        "char_start": base_start + cursor,
+                        "char_end": base_start + end,
+                    }
+                )
+            cursor = match.end()
+        tail = sentence[cursor:].strip()
+        if len(tail) >= min_chars:
+            subparts.append(
+                {
+                    "text": tail,
+                    "char_start": base_start + cursor,
+                    "char_end": base_start + len(sentence),
+                }
+            )
+        if subparts:
+            parts.extend(subparts)
+        else:
+            parts.append(dict(sentence_part))
+    for index, item in enumerate(parts):
+        item["index"] = index
+    return parts
+
+
+def infer_content_type(
+    chunk_text: str,
+    *,
+    highlight_available: bool,
+    layout_source: str,
+    text_engine: str | None = None,
+) -> str:
+    """Classify evidence for UI and orchestrator (not all PDF content is highlightable)."""
+    text = (chunk_text or "").strip()
+    lowered = text.lower()
+    if not highlight_available and layout_source == SOURCE_NONE:
+        if text_engine and "ocr" in str(text_engine).lower():
+            return "scanned_ocr"
+        return "scanned_or_image"
+    if re.search(r"\bfigure\s+\d", lowered) and len(text) < 220:
+        return "figure_caption"
+    if text.count("|") >= 3 or text.count("\t") >= 2:
+        return "table"
+    if not highlight_available:
+        return "low_text_layout"
+    return "native_text"
+
+def split_sentences(text: str, *, min_chars: int = 12) -> list[dict[str, Any]]:
+    """Split chunk text into sentence spans for index-time segment mapping."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return []
+
+    parts: list[dict[str, Any]] = []
+    cursor = 0
+    for match in _SENTENCE_SPLIT_RE.finditer(cleaned):
+        end = match.start()
+        sentence = cleaned[cursor:end].strip()
+        if len(sentence) >= min_chars:
+            parts.append(
+                {
+                    "text": sentence,
+                    "char_start": cursor,
+                    "char_end": end,
+                }
+            )
+        cursor = match.end()
+    tail = cleaned[cursor:].strip()
+    if len(tail) >= min_chars:
+        parts.append(
+            {
+                "text": tail,
+                "char_start": cursor,
+                "char_end": len(cleaned),
+            }
+        )
+    if not parts and len(cleaned) >= min_chars:
+        parts.append({"text": cleaned, "char_start": 0, "char_end": len(cleaned)})
+    for index, item in enumerate(parts):
+        item["index"] = index
+    return parts
+
+
+def build_sentence_segments(
+    chunk_text: str,
+    *,
+    layouts: dict[int, PageLayout],
+    page_start: int,
+    page_end: int,
+    ranges: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Pre-map sentences at index time for tighter quote highlights."""
+    segments: list[dict[str, Any]] = []
+    for part in spans_for_index_segments(chunk_text):
+        sentence = part["text"]
+        mapped = map_quote_to_regions(
+            sentence,
+            chunk_text=chunk_text,
+            layouts=layouts,
+            page_start=page_start,
+            page_end=page_end,
+            ranges=ranges,
+        )
+        highlight = bool(mapped.get("quote_highlight_available"))
+        regions = mapped.get("regions") or []
+        segments.append(
+            {
+                "index": part["index"],
+                "text": sentence,
+                "char_start": part["char_start"],
+                "char_end": part["char_end"],
+                "match_type": mapped.get("match_type") or "failed",
+                "highlight_available": highlight,
+                "regions": regions if highlight else [],
+                "pages": mapped.get("pages") or [],
+            }
+        )
+    return segments
+
+
+def _find_matching_segments(
+    quote: str,
+    segments: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Return pre-indexed segments that contain the quote (compact match)."""
+    if not segments:
+        return []
+    quote_c, _ = compact(quote)
+    if not quote_c:
+        return []
+    matches: list[dict[str, Any]] = []
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        text = segment.get("text") or ""
+        seg_c, _ = compact(text)
+        if not seg_c:
+            continue
+        if quote_c in seg_c or seg_c in quote_c:
+            matches.append(segment)
+    if matches:
+        return matches
+    # Prefer the shortest segment that still contains the quote words.
+    for segment in segments:
+        text = segment.get("text") or ""
+        if compact_contains(text, quote):
+            matches.append(segment)
+    return matches
+
+
+def _regions_from_segments(segments: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str, list[int]]:
+    regions: list[dict[str, Any]] = []
+    match_types: list[str] = []
+    pages: set[int] = set()
+    for segment in segments:
+        if not segment.get("highlight_available"):
+            continue
+        for region in segment.get("regions") or []:
+            if isinstance(region, dict):
+                regions.append(region)
+                page = region.get("page")
+                if page is not None:
+                    try:
+                        pages.add(int(page))
+                    except (TypeError, ValueError):
+                        pass
+        match_types.append(str(segment.get("match_type") or "failed"))
+    if not regions:
+        return [], "failed", []
+    rank = {
+        "failed": 0,
+        "empty_slice": 1,
+        "hyphen_fuzzy": 2,
+        "fuzzy_compact": 3,
+        "normalized": 4,
+        "exact": 5,
+    }
+    overall = min(match_types, key=lambda item: rank.get(item, 0)) if match_types else "failed"
+    return regions, overall, sorted(pages)
+
+
 def _map_slices_to_regions(
     slices: list[dict[str, Any]],
     layouts: dict[int, PageLayout],
@@ -458,6 +659,7 @@ def map_quote_to_regions(
     page_start: int,
     page_end: int,
     ranges: list[dict[str, Any]] | None = None,
+    segments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Map a verbatim quote onto PDF span boxes for one cited chunk.
@@ -468,6 +670,36 @@ def map_quote_to_regions(
     cleaned = re.sub(r"\s+", " ", (quote or "").strip())
     if not cleaned or not compact_contains(chunk_text or "", cleaned):
         return _empty_quote_map("not_in_chunk")
+
+    segment_matches = _find_matching_segments(cleaned, segments)
+    if segment_matches:
+        highlighted = [row for row in segment_matches if row.get("highlight_available")]
+        if highlighted:
+            # Prefer the tightest segment (fewest regions / shortest text).
+            chosen = min(
+                highlighted,
+                key=lambda row: (
+                    len(row.get("regions") or []),
+                    len(row.get("text") or ""),
+                ),
+            )
+            regions = chosen.get("regions") or []
+            if regions:
+                pages = sorted(
+                    {
+                        int(item["page"])
+                        for item in regions
+                        if isinstance(item, dict) and item.get("page") is not None
+                    }
+                )
+                return {
+                    "quote_highlight_available": True,
+                    "regions": regions,
+                    "match_type": str(chosen.get("match_type") or "exact"),
+                    "pages": pages or chosen.get("pages") or [],
+                    "segment_index": chosen.get("index"),
+                }
+
     if not layouts:
         return _empty_quote_map("no_layout")
 
@@ -645,6 +877,19 @@ def map_chunk_to_evidence(
         "ranges": ranges,
         "regions": regions,
         "parts": part_results,
+        "segments": build_sentence_segments(
+            chunk.get("text") or "",
+            layouts=layouts,
+            page_start=min(pages),
+            page_end=max(pages),
+            ranges=ranges,
+        ),
+        "content_type": infer_content_type(
+            chunk.get("text") or "",
+            highlight_available=highlight_available,
+            layout_source=layout_source,
+            text_engine=text_engine,
+        ),
     }
     return record, next_from
 

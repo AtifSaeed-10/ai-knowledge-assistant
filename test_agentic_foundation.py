@@ -72,6 +72,9 @@ class TestAgenticFoundation(unittest.TestCase):
         ) as mock_retrieve, patch(
             "rag.generate_response",
             return_value="Supervised learning uses labels.",
+        ), patch(
+            "index_hygiene.live_searchable_document_ids",
+            return_value=["doc-a", "doc-b"],
         ):
             response = client.post(
                 "/chat",
@@ -84,8 +87,8 @@ class TestAgenticFoundation(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        mock_retrieve.assert_called_once()
-        self.assertEqual(mock_retrieve.call_args.args[1], ["doc-a", "doc-b"])
+        self.assertGreaterEqual(mock_retrieve.call_count, 1)
+        self.assertEqual(mock_retrieve.call_args_list[0].args[1], ["doc-a", "doc-b"])
         delete_conversation(conversation_id)
 
 

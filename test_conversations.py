@@ -104,6 +104,9 @@ class TestConversationPersistence(unittest.TestCase):
         ), patch(
             "rag.generate_response",
             return_value="Supervised learning uses labels.[E1]",
+        ), patch(
+            "index_hygiene.live_searchable_document_ids",
+            return_value=["doc-a"],
         ):
             response = self.client.post(
                 "/chat",

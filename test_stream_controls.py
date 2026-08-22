@@ -16,8 +16,14 @@ class TestStreamStopAndRegenerate(unittest.TestCase):
         self.conversation_id = "test-stream-controls"
         delete_conversation(self.conversation_id)
         self.client = TestClient(app)
+        self._live = patch(
+            "index_hygiene.live_searchable_document_ids",
+            return_value=["doc-a"],
+        )
+        self._live.start()
 
     def tearDown(self):
+        self._live.stop()
         delete_conversation(self.conversation_id)
 
     def _retrieval(self):

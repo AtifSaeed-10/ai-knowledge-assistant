@@ -6,13 +6,17 @@ Pipeline:
     retrieve_dense() ─┐
                       ├─→ fuse_results() → dedupe → RERANK_CANDIDATE_K
     retrieve_bm25()  ─┘              ↓
+                              query-type reserved slots (phrase / front-matter)
+                                     ↓
                               BGE reranker
                                      ↓
-                              final RERANK_TOP_K / TOP_K
+                              recall pool (RECALL_TOP_K)
+                              citation pool = recall ∩ CITATION_MIN_RELEVANCE
 
 Public shape matches legacy retrieve_chunks, plus separated score fields:
 {chunks, distances, metadata, ids, dense_distances, bm25_scores,
- rrf_scores, reranker_scores, relevances, rerank_fallback}
+ rrf_scores, reranker_scores, relevances, rerank_fallback,
+ citation_eligible, recall_fallbacks, recall_fallback, fused_count}
 """
 
 from __future__ import annotations
@@ -21,30 +25,27 @@ from typing import Any
 
 from config import (
     CANDIDATE_K,
+    RECALL_TOP_K,
     RERANK_CANDIDATE_K,
-    RERANK_TOP_K,
     RRF_K,
     TOP_K,
 )
 from bm25_index import bm25_index
+from index_hygiene import chroma_where_for_document_ids, filter_hits_to_documents
+from query_retrieval import (
+    RetrievalQuery,
+    classify_retrieval_query,
+    ensure_typed_hits_in_pool,
+)
 from reranker import (
     RerankerUnavailableError,
     rerank_candidates,
     rrf_fallback_candidates,
 )
-
-
-def _where_for_document_ids(document_ids: list[str] | None) -> dict | None:
-    if not document_ids:
-        return None
-    if len(document_ids) == 1:
-        return {"document_id": document_ids[0]}
-    return {
-        "$or": [
-            {"document_id": doc_id}
-            for doc_id in document_ids
-        ]
-    }
+from rerank_calibration import (
+    pre_llm_rank_diagnostics,
+    zero_result_when_fused,
+)
 
 
 def _empty_chroma_result() -> dict:
@@ -73,6 +74,8 @@ def retrieve_dense(
     candidate_k = k if k is not None else CANDIDATE_K
     if candidate_k <= 0:
         return []
+    if document_ids is not None and len(document_ids) == 0:
+        return []
 
     count = collection.count()
     if count == 0:
@@ -80,7 +83,7 @@ def retrieve_dense(
 
     n_results = min(candidate_k, count)
     question_embedding = list(embedding_model.embed([question]))[0]
-    where = _where_for_document_ids(document_ids)
+    where = chroma_where_for_document_ids(document_ids)
 
     query_kwargs: dict[str, Any] = {
         "query_embeddings": [question_embedding],
@@ -122,7 +125,7 @@ def retrieve_dense(
                 "rank": rank,
             }
         )
-    return hits
+    return filter_hits_to_documents(hits, document_ids)
 
 
 def retrieve_bm25(
@@ -131,16 +134,24 @@ def retrieve_bm25(
     collection,
     document_ids: list[str] | None = None,
     k: int | None = None,
+    phrases: list[str] | None = None,
+    page_min: int | None = None,
+    page_max: int | None = None,
 ) -> list[dict[str, Any]]:
     """
     BM25 lexical retrieval over the Chroma-backed in-memory index.
     """
     candidate_k = k if k is not None else CANDIDATE_K
+    if document_ids is not None and len(document_ids) == 0:
+        return []
     bm25_index.ensure_loaded(collection)
     return bm25_index.search(
         question,
         candidate_k,
         document_ids=document_ids,
+        phrases=phrases,
+        page_min=page_min,
+        page_max=page_max,
     )
 
 
@@ -228,6 +239,118 @@ def _legacy_distance(item: dict[str, Any]) -> float | None:
     return float(dense) if dense is not None else None
 
 
+def _empty_retrieval_result(*, fused_count: int = 0) -> dict[str, Any]:
+    return {
+        "chunks": [],
+        "distances": [],
+        "metadata": [],
+        "ids": [],
+        "dense_distances": [],
+        "bm25_scores": [],
+        "rrf_scores": [],
+        "reranker_scores": [],
+        "relevances": [],
+        "citation_eligible": [],
+        "recall_fallbacks": [],
+        "recall_fallback": False,
+        "fused_count": fused_count,
+        "rerank_fallback": False,
+        "rerank_input_count": fused_count,
+        "rerank_unique_count": fused_count,
+        "rerank_deduped_count": 0,
+        "rank1_id": None,
+        "rank1_page": None,
+        "retrieval_pages": [],
+        "score_gap_12": None,
+        "gating_path": None,
+        "zero_result": False,
+        "query_kind": "default",
+        "query_phrases": [],
+    }
+
+
+def _pack_retrieval_result(
+    selected: list[dict[str, Any]],
+    *,
+    fused_count: int,
+    rerank_fallback: bool,
+    rerank_stats: dict[str, Any],
+    query_profile: RetrievalQuery | None = None,
+) -> dict[str, Any]:
+    recall_flags = [bool(item.get("recall_fallback")) for item in selected]
+    diagnostics = pre_llm_rank_diagnostics(selected)
+    return {
+        "chunks": [item["text"] for item in selected],
+        # Legacy field: dense distance only (never reranker score).
+        "distances": [_legacy_distance(item) for item in selected],
+        "metadata": [item["metadata"] for item in selected],
+        "ids": [item["id"] for item in selected],
+        "dense_distances": [item.get("dense_distance") for item in selected],
+        "bm25_scores": [item.get("bm25_score") for item in selected],
+        "rrf_scores": [item.get("rrf_score") for item in selected],
+        "reranker_scores": [item.get("reranker_score") for item in selected],
+        "relevances": [item.get("relevance") for item in selected],
+        "citation_eligible": [
+            bool(item.get("citation_eligible")) for item in selected
+        ],
+        "recall_fallbacks": recall_flags,
+        "recall_fallback": any(recall_flags),
+        "fused_count": fused_count,
+        "rerank_fallback": rerank_fallback,
+        "rerank_input_count": rerank_stats.get("input_count"),
+        "rerank_unique_count": rerank_stats.get("unique_count"),
+        "rerank_deduped_count": rerank_stats.get("deduped_count"),
+        "rank1_id": diagnostics["rank1_id"],
+        "rank1_page": diagnostics["rank1_page"],
+        "retrieval_pages": diagnostics["retrieval_pages"],
+        "score_gap_12": diagnostics["score_gap_12"],
+        "gating_path": rerank_stats.get("gating_path")
+        or diagnostics.get("gating_path"),
+        "zero_result": zero_result_when_fused(fused_count, len(selected)),
+        "query_kind": (query_profile.kind if query_profile else "default"),
+        "query_phrases": list(query_profile.phrases) if query_profile else [],
+    }
+
+
+def _collect_typed_hits(
+    question: str,
+    profile: RetrievalQuery,
+    *,
+    collection,
+    document_ids: list[str] | None,
+    k: int,
+) -> list[dict[str, Any]]:
+    """Extra BM25 probes for structured query types (does not replace hybrid)."""
+    if profile.kind == "default" and not profile.extra_queries:
+        return []
+
+    hits: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    queries = list(profile.extra_queries)
+    if profile.page_max is not None:
+        queries.append(question)
+    if not queries:
+        return []
+
+    for probe in queries:
+        batch = retrieve_bm25(
+            probe,
+            collection=collection,
+            document_ids=document_ids,
+            k=k,
+            phrases=profile.phrases or None,
+            page_min=profile.page_min,
+            page_max=profile.page_max,
+        )
+        for hit in batch:
+            chunk_id = hit.get("id")
+            if not chunk_id or chunk_id in seen:
+                continue
+            seen.add(chunk_id)
+            hits.append(hit)
+    return hits
+
+
 def retrieve_candidates(
     question: str,
     *,
@@ -238,21 +361,27 @@ def retrieve_candidates(
     rerank_candidate_k: int | None = None,
     top_k: int | None = None,
     rrf_k: int | None = None,
+    retrieval_query: RetrievalQuery | None = None,
 ) -> dict[str, Any]:
     """
     Hybrid + rerank entrypoint.
 
-    Dense + BM25 → RRF (deduped pool) → cross-encoder rerank → top_k.
+    Dense + BM25 → RRF (deduped pool) → query-type reserved slots →
+    cross-encoder rerank → recall pool.
     """
+    profile = retrieval_query or classify_retrieval_query(question)
     k = candidate_k if candidate_k is not None else CANDIDATE_K
+    k = k + int(profile.candidate_k_boost or 0)
     pool_k = (
         rerank_candidate_k
         if rerank_candidate_k is not None
         else RERANK_CANDIDATE_K
     )
-    final_k = top_k if top_k is not None else RERANK_TOP_K
+    final_k = top_k if top_k is not None else RECALL_TOP_K
     if final_k is None:
         final_k = TOP_K
+    if document_ids is not None and len(document_ids) == 0:
+        return _empty_retrieval_result()
 
     dense_hits = retrieve_dense(
         question,
@@ -266,6 +395,7 @@ def retrieve_candidates(
         collection=collection,
         document_ids=document_ids,
         k=k,
+        phrases=profile.phrases or None,
     )
     fused = fuse_results(
         dense_hits,
@@ -273,12 +403,32 @@ def retrieve_candidates(
         rrf_k=rrf_k,
         top_k=pool_k,
     )
+    typed_hits = _collect_typed_hits(
+        question,
+        profile,
+        collection=collection,
+        document_ids=document_ids,
+        k=k,
+    )
+    fused = ensure_typed_hits_in_pool(
+        fused,
+        typed_hits,
+        reserved=int(profile.reserved_slots or 0),
+        limit=pool_k,
+    )
 
     print("\n========== HYBRID RETRIEVAL ==========")
     print("Question:", question)
     print("Document IDs:", document_ids)
+    print(
+        f"Query type: {profile.kind} phrases={profile.phrases[:6]} "
+        f"page_max={profile.page_max}"
+    )
     print(f"Dense hits: {len(dense_hits)} | BM25 hits: {len(bm25_hits)}")
-    print(f"Fused pool (<={pool_k}): {len(fused)}")
+    print(
+        f"Fused pool (<={pool_k}): {len(fused)} "
+        f"(typed extra {len(typed_hits)})"
+    )
 
     fallback = False
     rerank_stats: dict[str, Any] = {
@@ -299,7 +449,10 @@ def retrieve_candidates(
             f"(from {rerank_stats.get('input_count')}, "
             f"exact-text deduped {rerank_stats.get('deduped_count')})"
         )
-        print(f"Model pool -> top {final_k}: {len(selected)}")
+        fallback_note = ""
+        if any(item.get("recall_fallback") for item in selected):
+            fallback_note = " [recall-first: kept slots below evidence floor]"
+        print(f"Model pool -> top {final_k}: {len(selected)}{fallback_note}")
         for item in selected:
             print(
                 f"  {item['id']} rerank={item['reranker_score']:.4f} "
@@ -320,19 +473,30 @@ def retrieve_candidates(
                 f"rel={item['relevance']}"
             )
 
-    return {
-        "chunks": [item["text"] for item in selected],
-        # Legacy field: dense distance only (never reranker score).
-        "distances": [_legacy_distance(item) for item in selected],
-        "metadata": [item["metadata"] for item in selected],
-        "ids": [item["id"] for item in selected],
-        "dense_distances": [item.get("dense_distance") for item in selected],
-        "bm25_scores": [item.get("bm25_score") for item in selected],
-        "rrf_scores": [item.get("rrf_score") for item in selected],
-        "reranker_scores": [item.get("reranker_score") for item in selected],
-        "relevances": [item.get("relevance") for item in selected],
-        "rerank_fallback": fallback,
-        "rerank_input_count": rerank_stats.get("input_count"),
-        "rerank_unique_count": rerank_stats.get("unique_count"),
-        "rerank_deduped_count": rerank_stats.get("deduped_count"),
-    }
+    if fused and not selected:
+        print(
+            "WARNING: recall-first safety net: nonempty fused pool "
+            "produced 0 rerank slots"
+        )
+        selected = rrf_fallback_candidates(
+            fused,
+            top_k=final_k,
+            reason="nonempty fused pool produced 0 rerank slots",
+        )
+
+    diagnostics = pre_llm_rank_diagnostics(selected)
+    print(
+        "Pre-LLM: "
+        f"rank1_page={diagnostics['rank1_page']} "
+        f"gap12={diagnostics['score_gap_12']} "
+        f"gating={diagnostics['gating_path']} "
+        f"zero_result={zero_result_when_fused(len(fused), len(selected))}"
+    )
+
+    return _pack_retrieval_result(
+        selected,
+        fused_count=len(fused),
+        rerank_fallback=fallback,
+        rerank_stats=rerank_stats,
+        query_profile=profile,
+    )
