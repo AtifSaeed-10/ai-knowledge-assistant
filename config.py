@@ -53,6 +53,33 @@ RRF_K = int(
     os.getenv("RRF_K", 60)
 )
 
+# Item 4 — query-type retrieval (front-matter / figure / article / listing).
+FRONT_MATTER_MAX_PAGE = int(
+    os.getenv("FRONT_MATTER_MAX_PAGE", "8")
+)
+PHRASE_BM25_BOOST = float(
+    os.getenv("PHRASE_BM25_BOOST", "2.5")
+)
+QUERY_TYPE_RESERVED_SLOTS = int(
+    os.getenv("QUERY_TYPE_RESERVED_SLOTS", "4")
+)
+QUERY_TYPE_CANDIDATE_BOOST = int(
+    os.getenv("QUERY_TYPE_CANDIDATE_BOOST", "10")
+)
+
+# Item 5 — claim-centric orchestration (document-agnostic lexical rebind).
+CLAIM_REBIND_MARGIN = float(
+    os.getenv("CLAIM_REBIND_MARGIN", "0.12")
+)
+CLAIM_SUPPORT_MIN = float(
+    os.getenv("CLAIM_SUPPORT_MIN", "0.42")
+)
+
+# Item 6 — neighbor radius for cross-chunk stitch (always ±1 in code).
+REANCHOR_NEIGHBOR_RADIUS = int(
+    os.getenv("REANCHOR_NEIGHBOR_RADIUS", "1")
+)
+
 # ========================
 # Phase 3 — Cross-encoder reranking
 # ========================
@@ -89,6 +116,12 @@ RERANK_TOP_K = int(
     os.getenv("RERANK_TOP_K", str(TOP_K))
 )
 
+# LLM recall-pool size (context slots). Defaults to RERANK_TOP_K.
+# Citation/E# assignment is a subset of this pool (CITATION_MIN_RELEVANCE).
+RECALL_TOP_K = int(
+    os.getenv("RECALL_TOP_K", str(RERANK_TOP_K))
+)
+
 # Max characters of each chunk sent to BGE (full text kept for LLM context).
 # Conservative for ~512-token cross-encoder with query + passage.
 RERANK_MAX_CHARS = int(
@@ -101,7 +134,8 @@ RERANK_MIN_SCORE = (
     float(_raw_rerank_min) if _raw_rerank_min else None
 )
 
-# Minimum sigmoid relevance [0, 100] for final evidence slots (LLM context).
+# Preferred sigmoid relevance [0, 100] for recall slots. Below-floor chunks
+# are kept only when the floor would empty a nonempty fused/reranked pool.
 EVIDENCE_MIN_RELEVANCE = int(
     os.getenv("EVIDENCE_MIN_RELEVANCE", "25")
 )
@@ -119,6 +153,25 @@ EVIDENCE_NEAR_DUP_RATIO = float(
 # Raw MiniLM floor for dual-source fallback when relevance filter is empty.
 EVIDENCE_FALLBACK_MIN_RERANK = float(
     os.getenv("EVIDENCE_FALLBACK_MIN_RERANK", "-5.0")
+)
+
+# Held-out MiniLM calibration (audit): entropy true-positive raw ≈ -4.45 must
+# clear citation/evidence floors; World Cup true-negative raw ≈ -5.98 must not.
+# sigmoid(-4.45 + 4.0) ≈ 39%; sigmoid(-5.98 + 4.0) ≈ 12%.
+MINILM_LOGIT_OFFSET = float(
+    os.getenv("MINILM_LOGIT_OFFSET", "4.0")
+)
+
+# Optional extra shift for BGE (default 0 — BGE logits already sit on sigmoid).
+BGE_LOGIT_OFFSET = float(
+    os.getenv("BGE_LOGIT_OFFSET", "0.0")
+)
+
+# Keep a below-floor neighbor when its raw score is within this logit gap of
+# the top chunk. Tight enough that MiniLM entropy vs phone-noise (gap 1.14)
+# stays split; wide enough for near-tied WWI pages (gap ≤ 1.0).
+RERANK_TIE_MARGIN = float(
+    os.getenv("RERANK_TIE_MARGIN", "1.0")
 )
 
 # Legacy dense-distance gate (Phase 1/2). Not applied to reranker scores.

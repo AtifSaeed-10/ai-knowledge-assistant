@@ -8,14 +8,14 @@ from conversation_query import analyze_turn, infer_subject_phrase
 from answer_prompt import build_answer_prompt
 from answer_planner import format_plan_for_prompt, plan_answer
 from evidence_focus import citation_allowlist, format_evidence_notes
-from modes import normalize_mode
+from modes import normalize_mode, insufficient_context_payload
 from config import (
     CHROMA_DB_PATH,
     COLLECTION_NAME,
     TOP_K,
     CANDIDATE_K,
     RERANK_CANDIDATE_K,
-    RERANK_TOP_K,
+    RECALL_TOP_K,
     RRF_K,
     CITATION_MIN_RELEVANCE,
 )
@@ -24,6 +24,7 @@ from reranker import reranker
 from citation_resolver import evidence_id_for_index, resolve_answer
 from claim_validator import finalize_answer_citations, used_sources
 from evidence_mapping import make_snippet
+from index_hygiene import resolve_retrieval_scope
 from hybrid_retrieval import (
     retrieve_dense,
     retrieve_bm25,
@@ -102,6 +103,49 @@ def _build_citation_sources(
     return _dedupe_sources(sources), evidence_ids
 
 
+def _build_recall_candidates(
+    chunks: list,
+    ids: list,
+    metadata: list,
+    relevances: list,
+    evidence_ids: list,
+    citation_eligible: list | None = None,
+) -> list[dict]:
+    """
+    Full retrieval pool for claim orchestration, including non-citeable chunks.
+
+    Full chunk text stays server-side; it is not sent as a client citation.
+    """
+    flags = list(citation_eligible or [])
+    candidates: list[dict] = []
+    for idx, chunk_id in enumerate(ids or []):
+        meta = metadata[idx] if idx < len(metadata) and metadata[idx] else {}
+        if idx < len(relevances) and relevances[idx] is not None:
+            relevance = int(relevances[idx])
+        else:
+            relevance = 0
+        relevance = max(0, min(100, relevance))
+        eligible = bool(flags[idx]) if idx < len(flags) else relevance >= CITATION_MIN_RELEVANCE
+        evidence_id = evidence_ids[idx] if idx < len(evidence_ids) else None
+        chunk_text = chunks[idx] if idx < len(chunks) else ""
+        candidates.append(
+            {
+                "document_id": meta.get("document_id") or "",
+                "filename": meta.get("filename") or "",
+                "page": _citation_page(meta),
+                "chunk_id": chunk_id,
+                "relevance": relevance,
+                "evidence_id": evidence_id,
+                "citation_eligible": eligible,
+                "text": chunk_text if isinstance(chunk_text, str) else "",
+                "snippet": make_snippet(
+                    chunk_text if isinstance(chunk_text, str) else ""
+                ),
+            }
+        )
+    return candidates
+
+
 def _citation_page(meta: dict) -> int | None:
     """
     Use stored chunk page metadata only. Never invent a page number.
@@ -149,7 +193,7 @@ model = TextEmbedding(
 # ========================
 # Hybrid + Rerank Retrieval (Phase 2 + 3)
 # ========================
-# Dense + BM25 → RRF pool → BGE reranker → TOP_K evidence.
+# Dense + BM25 → RRF pool → BGE reranker → recall pool (citations are a subset).
 
 
 def retrieve_candidates(
@@ -175,7 +219,7 @@ def retrieve_candidates(
             if rerank_candidate_k is not None
             else RERANK_CANDIDATE_K
         ),
-        top_k=top_k if top_k is not None else RERANK_TOP_K,
+        top_k=top_k if top_k is not None else RECALL_TOP_K,
         rrf_k=RRF_K,
     )
 
@@ -224,7 +268,8 @@ def _merge_retrieval_results(
         return primary
 
     seen = set(primary.get("ids") or [])
-    merged = {key: list(primary.get(key) or []) for key in (
+    n_primary = len(primary.get("ids") or [])
+    list_fields = (
         "chunks",
         "distances",
         "metadata",
@@ -234,25 +279,31 @@ def _merge_retrieval_results(
         "rrf_scores",
         "reranker_scores",
         "relevances",
-    )}
+        "citation_eligible",
+        "recall_fallbacks",
+    )
+    merged = {key: list(primary.get(key) or []) for key in list_fields}
+    for bool_field in ("citation_eligible", "recall_fallbacks"):
+        while len(merged[bool_field]) < n_primary:
+            merged[bool_field].append(False)
     added = 0
     for idx, chunk_id in enumerate(supplemental.get("ids") or []):
         if chunk_id in seen:
             continue
         seen.add(chunk_id)
         merged["chunks"].append(supplemental["chunks"][idx])
-        for field in (
-            "distances",
-            "metadata",
-            "ids",
-            "dense_distances",
-            "bm25_scores",
-            "rrf_scores",
-            "reranker_scores",
-            "relevances",
-        ):
+        for field in list_fields[1:]:
             values = supplemental.get(field) or []
-            merged[field].append(values[idx] if idx < len(values) else None)
+            if idx < len(values):
+                merged[field].append(values[idx])
+            elif field == "citation_eligible":
+                rels = supplemental.get("relevances") or []
+                relevance = int(rels[idx] or 0) if idx < len(rels) else 0
+                merged[field].append(relevance >= CITATION_MIN_RELEVANCE)
+            elif field == "recall_fallbacks":
+                merged[field].append(bool(supplemental.get("recall_fallback")))
+            else:
+                merged[field].append(None)
         added += 1
         if added >= max_extra:
             break
@@ -263,6 +314,9 @@ def _merge_retrieval_results(
     out = dict(primary)
     for field, values in merged.items():
         out[field] = values
+    out["recall_fallback"] = bool(out.get("recall_fallback")) or any(
+        merged.get("recall_fallbacks") or []
+    )
     return out
 
 
@@ -279,6 +333,9 @@ def _retrieve_with_plan(
         if item and item.strip()
     ]
     if not sub_queries:
+        return primary
+
+    if not (primary.get("chunks") or []):
         return primary
 
     normalized_primary = search_query.strip().lower()
@@ -320,6 +377,10 @@ def ask_question(
     """
 
     product_mode = normalize_mode(mode)
+    scoped_ids, abort_search = resolve_retrieval_scope(product_mode, document_ids)
+    if abort_search:
+        return insufficient_context_payload()
+    document_ids = scoped_ids
 
     # ------------------------
     # Conversational query understanding
@@ -373,6 +434,14 @@ def ask_question(
         ids,
         metadata
                 )
+    print(
+        "Pre-LLM rank: "
+        f"page={retrieval_result.get('rank1_page')} "
+        f"id={retrieval_result.get('rank1_id')} "
+        f"gap12={retrieval_result.get('score_gap_12')} "
+        f"gating={retrieval_result.get('gating_path')} "
+        f"zero_result={retrieval_result.get('zero_result')}"
+    )
 
 
     if not chunks:
@@ -423,6 +492,14 @@ def ask_question(
         search_query,
         analysis,
     )
+    recall_candidates = _build_recall_candidates(
+        chunks,
+        ids,
+        metadata,
+        relevances,
+        evidence_ids,
+        retrieval_result.get("citation_eligible"),
+    )
 
     subject = analysis.subject or infer_subject_phrase(search_query)
     evidence_notes = format_evidence_notes(
@@ -464,10 +541,15 @@ def ask_question(
             "answer": "",
             "sources": sources,
             "prompt": prompt,
+            "recall_candidates": recall_candidates,
         }
 
     answer = resolve_answer(generate_response(prompt), sources)
-    answer, sources = finalize_answer_citations(answer, sources)
+    answer, sources = finalize_answer_citations(
+        answer,
+        sources,
+        recall_candidates=recall_candidates,
+    )
 
     return {
         "answer": answer,

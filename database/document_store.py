@@ -85,6 +85,67 @@ def document_to_dict(document):
         "index_error": document[6] if len(document) > 6 else None,
     }
 
+def list_ready_document_ids() -> list:
+    """Document IDs that are fully indexed and safe to retrieve from."""
+    connection = get_connection()
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT document_id
+        FROM documents
+        WHERE status = 'ready'
+        ORDER BY upload_time DESC
+        """
+    )
+    rows = cursor.fetchall()
+    connection.close()
+    return [row[0] for row in rows if row and row[0]]
+
+
+def list_active_index_document_ids() -> list:
+    """IDs that may legitimately have Chroma rows (ready or in-flight)."""
+    connection = get_connection()
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT document_id, status
+        FROM documents
+        """
+    )
+    rows = cursor.fetchall()
+    connection.close()
+    keep = {"ready", "uploaded", "extracting", "chunking", "embedding", "indexing"}
+    return [row[0] for row in rows if row and row[0] and row[1] in keep]
+
+
+def count_documents_with_filename(filename: str, *, exclude_document_id: str | None = None) -> int:
+    if not filename:
+        return 0
+    connection = get_connection()
+    cursor = connection.cursor()
+    if exclude_document_id:
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM documents
+            WHERE filename = ? AND document_id != ?
+            """,
+            (filename, exclude_document_id),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM documents
+            WHERE filename = ?
+            """,
+            (filename,),
+        )
+    row = cursor.fetchone()
+    connection.close()
+    return int(row[0] or 0) if row else 0
+
+
 def get_all_documents():
 
     connection = get_connection()
@@ -138,7 +199,7 @@ def delete_document(document_id):
 
     cursor = connection.cursor()
 
-    for table in ("chunk_evidence", "page_layouts"):
+    for table in ("quote_region_cache", "chunk_evidence", "page_layouts"):
         try:
             cursor.execute(
                 f"DELETE FROM {table} WHERE document_id = ?",

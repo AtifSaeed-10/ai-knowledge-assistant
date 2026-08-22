@@ -1,0 +1,4 @@
+{
+  "description": "Adjudicated real-PDF cases for held-out evaluation. Place PDFs in evaluation/real_pdfs/ or use absolute pdf_path.",
+  "cases": []
+}

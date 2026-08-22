@@ -268,6 +268,9 @@ class TestNativePdfIntegration(unittest.TestCase):
         self.assertLessEqual(first["page_start"], first["page_end"])
         pages = {region["page"] for region in first["regions"]}
         self.assertTrue(pages <= {1, 2})
+        segments = first.get("segments") or []
+        self.assertGreaterEqual(len(segments), 1)
+        self.assertTrue(any(row.get("highlight_available") for row in segments))
 
     def test_multi_page_native_pdf_chunk(self):
         path = os.path.join(self.tmp, "two-page.pdf")

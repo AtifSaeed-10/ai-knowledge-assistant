@@ -291,7 +291,7 @@ class TestMatrixUnsupportedScopeCitations(unittest.TestCase):
                 generate=True,
             )
         mock_rewrite.assert_not_called()
-        self.assertEqual(mock_retrieve.call_args.args[0], "What is a red card in football?")
+        self.assertEqual(mock_retrieve.call_args_list[0].args[0], "What is a red card in football?")
         self.assertNotIn("SHOULD NOT BE USED", result["prompt"])
 
     def test_k_super_focused_forbids_outside_knowledge(self):

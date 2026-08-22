@@ -143,9 +143,10 @@ class TestIndexPdfPipeline(unittest.TestCase):
         self.document_ids.append(document_id)
         return document_id
 
+    @patch("indexer.purge_document_index")
     @patch("indexer.chromadb.PersistentClient")
     @patch("indexer.model")
-    def test_indexing_failure_status(self, mock_model, mock_client):
+    def test_indexing_failure_status(self, mock_model, mock_client, mock_purge):
         path = os.path.join(self.tmp, "empty-index.pdf")
         _write_blank_pdf(path)
         document_id = self._track_document("empty-index.pdf")
@@ -159,10 +160,12 @@ class TestIndexPdfPipeline(unittest.TestCase):
         self.assertEqual(record["index_error"], INDEX_FAILURE_NO_TEXT)
         mock_model.embed.assert_not_called()
         mock_client.assert_not_called()
+        mock_purge.assert_called()
 
+    @patch("indexer.purge_chroma_document")
     @patch("indexer.chromadb.PersistentClient")
     @patch("indexer.model")
-    def test_indexing_success_after_extraction(self, mock_model, mock_client):
+    def test_indexing_success_after_extraction(self, mock_model, mock_client, mock_purge):
         path = os.path.join(self.tmp, "ready.pdf")
         long_page = ("Matter is made of particles. " * 25).strip()
         _write_text_pdf(path, [long_page, long_page])
@@ -182,6 +185,7 @@ class TestIndexPdfPipeline(unittest.TestCase):
         self.assertGreater(record["total_chunks"], 0)
         mock_collection.add.assert_called()
         mock_model.embed.assert_called()
+        mock_purge.assert_called()
 
     def test_mark_document_index_failed_persists_message(self):
         document_id = self._track_document("failed-marker.pdf")

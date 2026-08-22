@@ -20,8 +20,12 @@ from citation_resolver import (
     valid_ids_from_sources,
 )
 from document_paths import document_pdf_path
+from database.evidence_store import get_chunk_evidence
 from evidence_mapping import compact_contains
-from quote_evidence import resolve_quote_evidence
+from quote_evidence import resolve_claim_evidence, resolve_quote_evidence
+from claim_localizer import extract_claim_near_marker
+from claim_orchestrator import orchestrate_all_claims
+from evidence_trace import _markers_in_answer, build_evidence_trace, log_evidence_trace, ui_status_for_source
 from answer_formatter import polish_answer_text
 
 # Marker with optional quote — used for repair passes.
@@ -83,9 +87,10 @@ def enrich_source_with_quote_evidence(
     source: dict[str, Any],
     *,
     quote: str | None,
+    claim_text: str | None = None,
     pdf_path: str | None = None,
 ) -> dict[str, Any]:
-    """Validate quote and attach pre-resolved highlight metadata to one source."""
+    """Validate quote/claim and attach pre-resolved highlight metadata to one source."""
     item = dict(source)
     cleaned = sanitize_quote(quote) if quote else None
     item["quote"] = cleaned
@@ -93,9 +98,8 @@ def enrich_source_with_quote_evidence(
     item["quote_mapping_status"] = "none"
     item["quote_highlight_available"] = False
     item["quote_regions"] = []
-
-    if not cleaned:
-        return item
+    item["localization_confidence"] = 0.0
+    item["source_spans"] = []
 
     chunk_id = str(item.get("chunk_id") or "")
     document_id = str(item.get("document_id") or "")
@@ -104,16 +108,21 @@ def enrich_source_with_quote_evidence(
         return item
 
     chunk_text = _chunk_text_for_source(item)
-    if not validate_quote_against_chunk(cleaned, chunk_text):
+    claim = re.sub(r"\s+", " ", (claim_text or "").strip())
+
+    if cleaned and not validate_quote_against_chunk(cleaned, chunk_text):
+        cleaned = None
         item["quote"] = None
         item["quotes"] = []
-        item["quote_mapping_status"] = "not_in_chunk"
+
+    if not cleaned and not claim:
         return item
 
     path = pdf_path if pdf_path is not None else document_pdf_path(document_id)
-    resolved = resolve_quote_evidence(
+    resolved = resolve_claim_evidence(
         document_id=document_id,
         chunk_id=chunk_id,
+        claim_text=claim,
         quote=cleaned,
         pdf_path=path,
     )
@@ -125,8 +134,12 @@ def enrich_source_with_quote_evidence(
     item["quote_mapping_status"] = status
     item["quote_highlight_available"] = bool(resolved.get("quote_highlight_available"))
     item["quote_regions"] = _public_regions(resolved.get("quote_regions"))
+    item["localization_confidence"] = float(resolved.get("localization_confidence") or 0.0)
+    item["source_spans"] = list(resolved.get("source_spans") or [])
     if resolved.get("quote"):
         item["quote"] = resolved["quote"]
+        if resolved["quote"] not in (item.get("quotes") or []):
+            item["quotes"] = [resolved["quote"]]
     page_start = resolved.get("page_start")
     if isinstance(page_start, int) and page_start >= 1:
         item["page"] = page_start
@@ -176,74 +189,119 @@ def attach_all_quotes_to_sources(
     return attached
 
 
-def finalize_answer_citations(
-    answer: str,
+def annotate_source_evidence_availability(
     sources: list[dict[str, Any]] | None,
-    *,
-    resolve_regions: bool = True,
-) -> tuple[str, list[dict[str, Any]]]:
-    """
-    Validate quotes, repair answer markers, enrich sources with mapping status
-    and optional pre-resolved PDF regions.
-    """
-    valid_ids = valid_ids_from_sources(sources)
-    cleaned = polish_answer_text(answer or "")
-    resolved = resolve_evidence_markers(cleaned, valid_ids)
-    with_quotes = attach_all_quotes_to_sources(sources, resolved)
-    repaired = repair_answer_markers(resolved, with_quotes)
-    by_id = _source_by_evidence_id(with_quotes)
+) -> list[dict[str, Any]]:
+    """Flag whether SQLite provenance exists for each cited chunk."""
+    annotated: list[dict[str, Any]] = []
+    for source in sources or []:
+        item = dict(source)
+        chunk_id = str(item.get("chunk_id") or "")
+        row = get_chunk_evidence(chunk_id) if chunk_id else None
+        item["evidence_data_available"] = bool(row)
+        item["highlight_available"] = bool(row and row.get("highlight_available"))
+        annotated.append(item)
+    return annotated
 
-    enriched: list[dict[str, Any]] = []
-    pdf_cache: dict[str, str | None] = {}
 
-    for source in with_quotes:
-        evidence_id = _normalize_token(str(source.get("evidence_id") or ""))
-        quote_list = list(source.get("quotes") or [])
+def _apply_quote_validation_status(
+    sources: list[dict[str, Any]],
+    repaired_answer: str,
+) -> list[dict[str, Any]]:
+    """Mark invalid LLM quotes without running PDF region resolution."""
+    quotes_by_id = quotes_by_evidence_id(repaired_answer)
+    out: list[dict[str, Any]] = []
+    for source in sources:
+        item = dict(source)
+        evidence_id = _normalize_token(str(item.get("evidence_id") or ""))
+        quote_list = quotes_by_id.get(evidence_id) or list(item.get("quotes") or [])
         primary_quote = quote_list[0] if quote_list else None
-
-        document_id = str(source.get("document_id") or "")
-        pdf_path: str | None = None
-        if resolve_regions and document_id:
-            if document_id not in pdf_cache:
-                pdf_cache[document_id] = document_pdf_path(document_id)
-            pdf_path = pdf_cache[document_id]
-
         if primary_quote:
-            chunk_text = _chunk_text_for_source(source)
+            chunk_text = _chunk_text_for_source(item)
             if not validate_quote_against_chunk(primary_quote, chunk_text):
-                item = dict(source)
                 item["quote"] = None
                 item["quotes"] = []
                 item["quote_mapping_status"] = "not_in_chunk"
                 item["quote_highlight_available"] = False
                 item["quote_regions"] = []
-            elif resolve_regions:
-                item = enrich_source_with_quote_evidence(
-                    source,
-                    quote=primary_quote,
-                    pdf_path=pdf_path,
-                )
-                item["quotes"] = quote_list
-                if len(quote_list) > 1:
-                    item["additional_quotes"] = quote_list[1:]
+                item["localization_confidence"] = 0.0
             else:
-                item = dict(source)
                 item["quote"] = primary_quote
                 item["quotes"] = quote_list
-                item["quote_mapping_status"] = "none"
-                item["quote_highlight_available"] = False
-                item["quote_regions"] = []
-        else:
-            item = dict(source)
-            item.setdefault("quotes", quote_list)
-            item.setdefault("quote_mapping_status", "none")
-            item.setdefault("quote_highlight_available", False)
-            item.setdefault("quote_regions", [])
+        out.append(item)
+    return out
 
-        enriched.append(item)
+
+def finalize_answer_citations(
+    answer: str,
+    sources: list[dict[str, Any]] | None,
+    *,
+    resolve_regions: bool = True,
+    emit_trace: bool = False,
+    conversation_id: str | None = None,
+    question: str | None = None,
+    recall_candidates: list[dict[str, Any]] | None = None,
+) -> tuple[str, list[dict[str, Any]]] | tuple[str, list[dict[str, Any]], dict[str, Any]]:
+    """
+    Validate quotes, repair answer markers, orchestrate claim evidence across
+    the recall pool, enrich sources with mapping status and PDF regions.
+    """
+    retrieved_sources = list(sources or [])
+    valid_ids = valid_ids_from_sources(sources)
+    cleaned = polish_answer_text(answer or "")
+    resolved = resolve_evidence_markers(cleaned, valid_ids)
+    with_quotes = attach_all_quotes_to_sources(sources, resolved)
+    repaired = repair_answer_markers(resolved, with_quotes)
+
+    claim_texts: dict[str, str] = {}
+    quotes_by_id = quotes_by_evidence_id(repaired)
+    for source in with_quotes:
+        evidence_id = _normalize_token(str(source.get("evidence_id") or ""))
         if evidence_id:
-            by_id[evidence_id] = item
+            claim_texts[evidence_id] = extract_claim_near_marker(repaired, evidence_id)
 
+    pdf_cache: dict[str, str | None] = {}
+    if resolve_regions:
+        orchestrated, orchestration_meta = orchestrate_all_claims(
+            repaired,
+            with_quotes,
+            claim_texts=claim_texts,
+            quotes_by_id=quotes_by_id,
+            pdf_cache=pdf_cache,
+            resolve_regions=True,
+            recall_candidates=recall_candidates,
+        )
+        repaired = repair_answer_markers(repaired, orchestrated)
+        enriched = annotate_source_evidence_availability(orchestrated)
+    else:
+        orchestration_meta = {}
+        validated = _apply_quote_validation_status(with_quotes, repaired)
+        enriched = annotate_source_evidence_availability(validated)
+
+    markers_in_answer = set(_markers_in_answer(repaired))
+    for item in enriched:
+        evidence_id = _normalize_token(str(item.get("evidence_id") or ""))
+        item["ui_status"] = ui_status_for_source(
+            item,
+            evidence_id in markers_in_answer,
+        )
+
+    trace_payload: dict[str, Any] = {}
+    if emit_trace:
+        final_for_trace = used_sources(enriched, repaired)
+        trace = build_evidence_trace(
+            repaired,
+            retrieved_sources,
+            enriched,
+            final_for_trace,
+            claim_texts=claim_texts,
+            orchestration_meta=orchestration_meta,
+        )
+        log_evidence_trace(trace, conversation_id=conversation_id, question=question)
+        trace_payload = trace.to_dict()
+
+    if emit_trace:
+        return repaired, enriched, trace_payload
     return repaired, enriched
 
 

@@ -6,6 +6,7 @@ import {
   toDisplayCitationText,
   usedCitations,
   withAnswerQuotes,
+  citationsMatch,
 } from "./markers";
 
 describe("quoted evidence markers", () => {
@@ -137,5 +138,15 @@ describe("answer quotes vs retrieved evidence", () => {
       "E3",
       "E1",
     ]);
+  });
+});
+
+describe("citation identity", () => {
+  it("matches citations by quote-specific identity", () => {
+    const left = { id: "c1", chunk_id: "doc_0", quote: "labeled examples" };
+    const right = { id: "c1", chunk_id: "doc_0", quote: "labeled examples" };
+    const different = { id: "c1", chunk_id: "doc_0", quote: "classification tasks" };
+    expect(citationsMatch(left, right)).toBe(true);
+    expect(citationsMatch(left, different)).toBe(false);
   });
 });

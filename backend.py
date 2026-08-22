@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from citation_resolver import iter_resolved_stream
 from claim_validator import finalize_answer_citations, used_sources
+from evidence_trace import attach_trace_dict_to_sources
 from rag import ask_question
 from llm_service import generate_response_stream
 from indexer import index_pdf
@@ -32,19 +33,23 @@ from database.document_service import (
     get_document_details,
     remove_document
 )
-from quote_evidence import resolve_quote_evidence
-from document_paths import pdf_path_for_filename
+from quote_evidence import resolve_claim_evidence, resolve_quote_evidence
+from database.evidence_store import document_evidence_summary
+from document_paths import document_pdf_path, stored_pdf_path
+from index_hygiene import reconcile_index, resolve_retrieval_scope
 from config import DATA_DIR
 from modes import (
-    MODE_SUPER_FOCUSED,
     insufficient_context_payload,
-    resolve_document_scope,
 )
 from agent_foundation import effective_mode
 
 app = FastAPI()
 
 init_db()
+try:
+    reconcile_index()
+except Exception:
+    print("index reconcile failed; continuing startup")
 
 app.add_middleware(
     CORSMiddleware,
@@ -102,19 +107,20 @@ def _prepare_chat_history(request: ChatRequest) -> list:
 
 def _scoped_document_ids(request: ChatRequest) -> tuple[list[str] | None, dict | None]:
     """
-    Apply product mode to the existing document_ids retrieval filter.
-    Returns (scoped_ids, early_response). early_response is set when Super
-    Focused has no selected document — do not retrieve other uploads.
+    Apply product mode and live-corpus isolation to retrieval.
+    Super Focused with no ready selected document aborts without search.
+    Normal mode receives an explicit ready-id list (empty = search nothing).
     """
     mode = effective_mode(request.mode)
-
-    scoped = resolve_document_scope(mode, request.document_ids)
-    if mode == MODE_SUPER_FOCUSED and not scoped:
+    scoped, abort = resolve_retrieval_scope(mode, request.document_ids)
+    if abort:
         return None, insufficient_context_payload()
     return scoped, None
 
 
 def _document_pdf_path(filename: str) -> str | None:
+    from document_paths import pdf_path_for_filename
+
     return pdf_path_for_filename(filename)
 
 @app.get("/health")
@@ -287,8 +293,22 @@ def chat_stream(request: ChatRequest):
         if completed:
 
             answer = "".join(answer_parts)
-            answer, enriched_sources = finalize_answer_citations(answer, sources)
+            finalize_result = finalize_answer_citations(
+                answer,
+                sources,
+                recall_candidates=response.get("recall_candidates"),
+                emit_trace=True,
+                conversation_id=request.conversation_id,
+                question=request.question,
+            )
+            trace_payload: dict | None = None
+            if len(finalize_result) == 3:
+                answer, enriched_sources, trace_payload = finalize_result
+            else:
+                answer, enriched_sources = finalize_result
             final_sources = used_sources(enriched_sources, answer)
+            if trace_payload:
+                final_sources = attach_trace_dict_to_sources(final_sources, trace_payload)
 
             if is_valid_response(answer):
 
@@ -378,10 +398,11 @@ def upload_pdf(
 
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    file_path = os.path.join(
-        DATA_DIR,
-        file.filename
-    )
+    original_name = os.path.basename(file.filename or "upload.pdf")
+    document_id = create_document(original_name)
+    file_path = stored_pdf_path(document_id, must_exist=False)
+    if file_path is None:
+        raise HTTPException(status_code=400, detail="Could not store uploaded file.")
 
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(
@@ -389,20 +410,12 @@ def upload_pdf(
             buffer
         )
 
-
-    # Create database record immediately
-    document_id = create_document(
-        file.filename
-    )
-
-
     # Start indexing in background
     background_tasks.add_task(
         index_pdf,
         file_path,
         document_id
     )
-
 
     return {
         "document_id": document_id,
@@ -440,7 +453,7 @@ def document_file(document_id: str):
         raise HTTPException(status_code=404, detail="Document not found")
 
     filename = document.get("filename") or ""
-    path = _document_pdf_path(filename)
+    path = document_pdf_path(document_id)
     if path is None:
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -457,24 +470,41 @@ def document_file(document_id: str):
 
 
 @app.get("/documents/{document_id}/chunks/{chunk_id}/evidence")
-def chunk_evidence(document_id: str, chunk_id: str, quote: str | None = None):
-    """Return Phase 1 chunk_evidence, optionally narrowed to a verbatim quote."""
+def chunk_evidence(document_id: str, chunk_id: str, quote: str | None = None, claim: str | None = None):
+    """Return chunk evidence, localized to a quote and/or paraphrased claim."""
 
     document = get_document_details(document_id)
     if not document or document.get("error"):
         raise HTTPException(status_code=404, detail="Document not found")
 
-    filename = document.get("filename") or ""
-    path = _document_pdf_path(filename)
-    payload = resolve_quote_evidence(
-        document_id=document_id,
-        chunk_id=chunk_id,
-        quote=quote,
-        pdf_path=path,
-    )
+    path = document_pdf_path(document_id)
+    if claim and str(claim).strip():
+        payload = resolve_claim_evidence(
+            document_id=document_id,
+            chunk_id=chunk_id,
+            claim_text=str(claim).strip(),
+            quote=quote,
+            pdf_path=path,
+        )
+    else:
+        payload = resolve_quote_evidence(
+            document_id=document_id,
+            chunk_id=chunk_id,
+            quote=quote,
+            pdf_path=path,
+        )
     if payload is None:
         raise HTTPException(status_code=404, detail="Evidence not found")
     return payload
+
+
+@app.get("/documents/{document_id}/evidence-summary")
+def document_evidence_summary_api(document_id: str):
+    """Highlight availability summary for indexed chunk evidence."""
+    document = get_document_details(document_id)
+    if not document or document.get("error"):
+        raise HTTPException(status_code=404, detail="Document not found")
+    return document_evidence_summary(document_id)
 
 
 @app.delete("/documents/{document_id}")

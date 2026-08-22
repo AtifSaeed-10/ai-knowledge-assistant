@@ -1,0 +1,13 @@
+{
+  "generated_at": "2026-08-22T13:24:05.620084+00:00",
+  "case_count": 0,
+  "skipped": 0,
+  "claim_verification_rate": 0.0,
+  "evidence_localization_rate": 0.0,
+  "highlight_precision_rate": 0.0,
+  "wrong_page_rate": 0.0,
+  "false_precise_rate": 0.0,
+  "ui_dropout_rate": 0.0,
+  "unsupported_claim_rate": 0.0,
+  "cases": []
+}
