@@ -1,128 +1,71 @@
 import { describe, expect, it } from "vitest";
-import { incompleteBracketLength } from "@/lib/citations/markers";
-import { mapSourceToCitation } from "./chat";
+import type { Citation } from "@/types/citation";
+import { createStreamParser, mapSourceToCitation } from "./chat";
 
 const CITATIONS_START = "__CITATIONS__";
 const CITATIONS_FINAL_START = "__CITATIONS_FINAL__";
 const CITATIONS_END = "__END_CITATIONS__";
+const ANSWER_FINAL_START = "__ANSWER_FINAL__";
+const ANSWER_FINAL_END = "__END_ANSWER_FINAL__";
 
-function partialMarkerLength(value: string, marker: string): number {
-  const max = Math.min(value.length, marker.length - 1);
-  for (let size = max; size > 0; size -= 1) {
-    if (value.endsWith(marker.slice(0, size))) return size;
-  }
-  return 0;
-}
-
-function tryParseCitations(payload: string): ReturnType<typeof mapSourceToCitation>[] {
-  try {
-    const raw = JSON.parse(payload) as Parameters<typeof mapSourceToCitation>[0][];
-    return raw.map(mapSourceToCitation);
-  } catch {
-    return [];
-  }
-}
-
-function stripControlMarkers(buffer: string): {
-  buffer: string;
-  citations: ReturnType<typeof mapSourceToCitation>[] | null;
-} {
-  for (const start of [CITATIONS_FINAL_START, CITATIONS_START]) {
-    const begin = buffer.indexOf(start);
-    const end = buffer.indexOf(CITATIONS_END);
-    if (begin !== -1 && end !== -1 && end > begin) {
-      const payload = buffer.slice(begin + start.length, end);
-      const citations = tryParseCitations(payload);
-      const next = buffer.slice(0, begin) + buffer.slice(end + CITATIONS_END.length);
-      return { buffer: next, citations };
-    }
-  }
-  return { buffer, citations: null };
-}
-
+/** Feed raw server chunks through the real parser the app uses. */
 function parseStream(chunks: string[]): {
-  citations: ReturnType<typeof mapSourceToCitation>[];
+  citations: Citation[];
   answer: string;
+  finalAnswers: string[];
 } {
-  let buffer = "";
-  let citationsSent = false;
   let answer = "";
-  let citations: ReturnType<typeof mapSourceToCitation>[] = [];
+  let citations: Citation[] = [];
+  const finalAnswers: string[] = [];
 
-  const consume = (done = false) => {
-    while (true) {
-      const parsed = stripControlMarkers(buffer);
-      buffer = parsed.buffer;
-      if (!parsed.citations) break;
-      citations = parsed.citations;
-      citationsSent = true;
-    }
+  const parser = createStreamParser({
+    onChunk: (chunk) => {
+      answer += chunk;
+    },
+    onCitations: (next) => {
+      citations = next;
+    },
+    onFinalAnswer: (next) => {
+      finalAnswers.push(next);
+      answer = next;
+    },
+  });
 
-    let emitUpTo = buffer.length;
-    if (!citationsSent) {
-      const start = buffer.indexOf(CITATIONS_START);
-      emitUpTo =
-        start !== -1
-          ? start
-          : buffer.length - partialMarkerLength(buffer, CITATIONS_START);
-    } else {
-      const finalStart = buffer.indexOf(CITATIONS_FINAL_START);
-      if (finalStart !== -1) {
-        emitUpTo = finalStart;
-      } else {
-        emitUpTo =
-          buffer.length - partialMarkerLength(buffer, CITATIONS_FINAL_START);
-      }
-      emitUpTo = Math.min(emitUpTo, buffer.length - incompleteBracketLength(buffer));
-    }
+  for (const chunk of chunks) parser.push(chunk);
+  parser.close();
 
-    if (emitUpTo > 0) {
-      answer += buffer.slice(0, emitUpTo);
-      buffer = buffer.slice(emitUpTo);
-    }
-
-    if (done && buffer.length > 0) {
-      const hold = citationsSent ? incompleteBracketLength(buffer) : 0;
-      if (hold < buffer.length) {
-        answer += buffer.slice(0, buffer.length - hold);
-      }
-    }
-  };
-
-  for (const chunk of chunks) {
-    buffer += chunk;
-    consume();
-  }
-  consume(true);
-  return { citations, answer };
+  return { citations, answer, finalAnswers };
 }
+
+const SOURCES = [
+  {
+    document_id: "doc-a",
+    filename: "ml.pdf",
+    page: 17,
+    chunk_id: "doc-a_38",
+    relevance: 100,
+    evidence_id: "E1",
+    snippet: "A training set of examples with the correct responses.",
+    quote: null,
+    evidence_state: "citeable",
+    citation_eligible: true,
+  },
+  {
+    document_id: "doc-a",
+    filename: "ml.pdf",
+    page: 19,
+    chunk_id: "doc-a_42",
+    relevance: 100,
+    evidence_id: "E2",
+    snippet: "Consider teaching a dog a new trick.",
+    quote: null,
+  },
+];
 
 describe("citation JSON through the stream", () => {
   it("keeps citation JSON and quoted markers intact", () => {
-    const sources = [
-      {
-        document_id: "doc-a",
-        filename: "ml.pdf",
-        page: 17,
-        chunk_id: "doc-a_38",
-        relevance: 100,
-        evidence_id: "E1",
-        snippet: "A training set of examples with the correct responses.",
-        quote: null,
-      },
-      {
-        document_id: "doc-a",
-        filename: "ml.pdf",
-        page: 19,
-        chunk_id: "doc-a_42",
-        relevance: 100,
-        evidence_id: "E2",
-        snippet: "Consider teaching a dog a new trick.",
-        quote: null,
-      },
-    ];
     const { citations, answer } = parseStream([
-      `${CITATIONS_START}${JSON.stringify(sources)}${CITATIONS_END}`,
+      `${CITATIONS_START}${JSON.stringify(SOURCES)}${CITATIONS_END}`,
       "Supervised learning uses labeled examples.",
       '[E1:"A training set of examples with the correct responses."]',
       " Extra retrieved material is not cited.",
@@ -130,6 +73,8 @@ describe("citation JSON through the stream", () => {
 
     expect(citations).toHaveLength(2);
     expect(citations[0].evidenceId).toBe("E1");
+    expect(citations[0].evidenceState).toBe("citeable");
+    expect(citations[0].citationEligible).toBe(true);
     expect(citations[0].snippet).toBe("A training set of examples with the correct responses.");
     expect(citations[0].quote).toBeNull();
     expect(citations[1].evidenceId).toBe("E2");
@@ -157,15 +102,13 @@ describe("citation JSON through the stream", () => {
         quote: "A training set of examples.",
         quote_mapping_status: "exact",
         quote_highlight_available: true,
-        quote_regions: [
-          { page: 17, x0: 1, y0: 2, x1: 3, y1: 4, coord_space: "pdf" },
-        ],
+        quote_regions: [{ page: 17, x0: 1, y0: 2, x1: 3, y1: 4, coord_space: "pdf" }],
       },
     ];
     const { citations, answer } = parseStream([
       `${CITATIONS_START}${JSON.stringify(initial)}${CITATIONS_END}`,
       'Answer text.[E1:"A training set of examples."]',
-      `__CITATIONS_FINAL__${JSON.stringify(final)}__END_CITATIONS__`,
+      `${CITATIONS_FINAL_START}${JSON.stringify(final)}${CITATIONS_END}`,
     ]);
 
     expect(answer).toBe('Answer text.[E1:"A training set of examples."]');
@@ -173,5 +116,70 @@ describe("citation JSON through the stream", () => {
     expect(citations[0].quote).toBe("A training set of examples.");
     expect(citations[0].quoteHighlightAvailable).toBe(true);
     expect(citations[0].quoteRegions).toHaveLength(1);
+  });
+});
+
+describe("repaired final answer replaces the streamed draft", () => {
+  const REFUSAL = "I couldn't find that in the provided document.";
+  const REPAIRED =
+    "The provided passages discuss this. Supporting excerpt:\n\nEither party may terminate " +
+    "the agreement by giving thirty days written notice. [E1]";
+
+  it("replaces a streamed refusal with the repaired answer", () => {
+    const { answer, finalAnswers } = parseStream([
+      `${CITATIONS_START}${JSON.stringify(SOURCES)}${CITATIONS_END}`,
+      REFUSAL,
+      `${ANSWER_FINAL_START}${JSON.stringify(REPAIRED)}${ANSWER_FINAL_END}`,
+      `${CITATIONS_FINAL_START}${JSON.stringify(SOURCES)}${CITATIONS_END}`,
+    ]);
+
+    expect(finalAnswers).toEqual([REPAIRED]);
+    expect(answer).toBe(REPAIRED);
+    expect(answer).not.toContain("couldn't find");
+  });
+
+  it("survives a frame split across reads and never shows marker text", () => {
+    const frame = `${ANSWER_FINAL_START}${JSON.stringify(REPAIRED)}${ANSWER_FINAL_END}`;
+    const cut = Math.floor(frame.length / 2);
+    const { answer, finalAnswers } = parseStream([
+      `${CITATIONS_START}${JSON.stringify(SOURCES)}${CITATIONS_END}`,
+      "I couldn't find ",
+      "that in the provided document.",
+      frame.slice(0, cut),
+      frame.slice(cut),
+    ]);
+
+    expect(finalAnswers).toEqual([REPAIRED]);
+    expect(answer).toBe(REPAIRED);
+    expect(answer).not.toContain("__ANSWER_FINAL__");
+    expect(answer).not.toContain("__END_ANSWER_FINAL__");
+  });
+
+  it("drops draft tokens that share a read with the replacement frame", () => {
+    const { answer } = parseStream([
+      `${CITATIONS_START}${JSON.stringify(SOURCES)}${CITATIONS_END}`,
+      `${REFUSAL}${ANSWER_FINAL_START}${JSON.stringify(REPAIRED)}${ANSWER_FINAL_END}`,
+    ]);
+
+    expect(answer).toBe(REPAIRED);
+  });
+
+  it("leaves the streamed answer alone when no replacement is sent", () => {
+    const { answer, finalAnswers } = parseStream([
+      `${CITATIONS_START}${JSON.stringify(SOURCES)}${CITATIONS_END}`,
+      "Supervised learning uses labeled examples.",
+      `${CITATIONS_FINAL_START}${JSON.stringify(SOURCES)}${CITATIONS_END}`,
+    ]);
+
+    expect(finalAnswers).toEqual([]);
+    expect(answer).toBe("Supervised learning uses labeled examples.");
+  });
+});
+
+describe("source mapping", () => {
+  it("keeps a missing page as null instead of guessing", () => {
+    const citation = mapSourceToCitation({ chunk_id: "c1", filename: "a.pdf" }, 0);
+    expect(citation.pageNumber).toBeNull();
+    expect(citation.documentName).toBe("a.pdf");
   });
 });

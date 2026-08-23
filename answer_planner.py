@@ -14,8 +14,10 @@ from conversation_query import (
     INTENT_EXAMPLE,
     INTENT_EXPLANATION,
     INTENT_HOW,
+    INTENT_KEY_POINTS,
     INTENT_LISTING,
     INTENT_MIXED,
+    INTENT_SUMMARY,
     INTENT_WHY,
     TurnAnalysis,
 )
@@ -73,6 +75,22 @@ _COMPONENT_LIBRARY: dict[str, list[AnswerComponent]] = {
     INTENT_MIXED: [
         AnswerComponent("parts", "each supported part of the request", required=True, max_sentences=4),
     ],
+    INTENT_SUMMARY: [
+        AnswerComponent(
+            "summary",
+            "synthesize a short summary from the passages in context — do not look for a heading titled Summary",
+            required=True,
+            max_sentences=6,
+        ),
+    ],
+    INTENT_KEY_POINTS: [
+        AnswerComponent(
+            "key_points",
+            "3-5 bullets synthesized from the passages in context — do not look for a pre-written key-points list",
+            required=True,
+            max_sentences=5,
+        ),
+    ],
 }
 
 
@@ -92,6 +110,8 @@ def plan_answer(
         INTENT_EXPLANATION,
         INTENT_MIXED,
         INTENT_COMPARISON,
+        INTENT_SUMMARY,
+        INTENT_KEY_POINTS,
     }
 
     sub_queries: list[str] = []
@@ -104,6 +124,8 @@ def plan_answer(
             "process": f"How does {subject} work step by step?",
             "reason": f"Why is {subject} used?",
             "overview": f"Explain {subject}",
+            "summary": f"Overview of {subject}",
+            "key_points": f"Key points of {subject}",
         }
         for component in components:
             query = role_queries.get(component.role)

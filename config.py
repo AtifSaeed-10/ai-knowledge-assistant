@@ -117,7 +117,7 @@ RERANK_TOP_K = int(
 )
 
 # LLM recall-pool size (context slots). Defaults to RERANK_TOP_K.
-# Citation/E# assignment is a subset of this pool (CITATION_MIN_RELEVANCE).
+# Every recall slot gets an E#. Citeable vs page_only uses CITATION_MIN_RELEVANCE.
 RECALL_TOP_K = int(
     os.getenv("RECALL_TOP_K", str(RERANK_TOP_K))
 )
@@ -140,7 +140,8 @@ EVIDENCE_MIN_RELEVANCE = int(
     os.getenv("EVIDENCE_MIN_RELEVANCE", "25")
 )
 
-# Minimum relevance shown in citations (can be stricter than evidence floor).
+# Minimum relevance for citeable evidence_state (stricter than the evidence floor).
+# Below this, chunks still receive an E# and may surface as page_only.
 CITATION_MIN_RELEVANCE = int(
     os.getenv("CITATION_MIN_RELEVANCE", "30")
 )

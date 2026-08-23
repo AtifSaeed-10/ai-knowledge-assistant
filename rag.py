@@ -22,8 +22,10 @@ from config import (
 from bm25_index import bm25_index
 from reranker import reranker
 from citation_resolver import evidence_id_for_index, resolve_answer
-from claim_validator import finalize_answer_citations, used_sources
+from claim_validator import finalize_answer_citations
 from evidence_mapping import make_snippet
+from evidence_state import evidence_state_for_chunk, visible_sources
+from grounding_verifier import verify_and_repair_refusal
 from index_hygiene import resolve_retrieval_scope
 from hybrid_retrieval import (
     retrieve_dense,
@@ -55,12 +57,16 @@ def _build_citation_sources(
     relevances: list,
     search_query: str,
     analysis,
+    citation_eligible: list | None = None,
 ) -> tuple[list[dict], list[str | None]]:
     """
-    Assign stable E1..En ids to citeable retrieved chunks in retrieval order.
-    Distinct chunks on the same page keep separate ids.
+    Assign stable E1..En ids to every unique recall-pool chunk.
+
+    Citeability is a separate evidence_state. The relevance floor and
+    allowlist decide citeable vs page_only; they do not drop the E#.
     """
     allowed_citations = citation_allowlist(chunks, search_query, analysis)
+    flags = list(citation_eligible or [])
     sources: list[dict] = []
     evidence_ids: list[str | None] = [None] * len(chunks)
     seen_chunk_ids: set[str] = set()
@@ -71,11 +77,12 @@ def _build_citation_sources(
         else:
             relevance = 0
         relevance = max(0, min(100, relevance))
-
-        if relevance < CITATION_MIN_RELEVANCE:
-            continue
-        if allowed_citations is not None and idx not in allowed_citations:
-            continue
+        eligible = (
+            bool(flags[idx])
+            if idx < len(flags)
+            else relevance >= CITATION_MIN_RELEVANCE
+        )
+        allowlisted = allowed_citations is None or idx in allowed_citations
         if chunk_id in seen_chunk_ids:
             continue
         seen_chunk_ids.add(chunk_id)
@@ -85,6 +92,11 @@ def _build_citation_sources(
         evidence_id = evidence_id_for_index(len(sources) + 1)
         evidence_ids[idx] = evidence_id
         chunk_text = chunks[idx] if idx < len(chunks) else ""
+        state = evidence_state_for_chunk(
+            relevance=relevance,
+            citation_eligible=eligible,
+            allowlisted=allowlisted,
+        )
         sources.append(
             {
                 "document_id": meta.get("document_id") or "",
@@ -93,6 +105,8 @@ def _build_citation_sources(
                 "chunk_id": chunk_id,
                 "relevance": relevance,
                 "evidence_id": evidence_id,
+                "citation_eligible": state == "citeable",
+                "evidence_state": state,
                 "snippet": make_snippet(
                     chunk_text if isinstance(chunk_text, str) else ""
                 ),
@@ -491,6 +505,7 @@ def ask_question(
         relevances,
         search_query,
         analysis,
+        retrieval_result.get("citation_eligible"),
     )
     recall_candidates = _build_recall_candidates(
         chunks,
@@ -542,12 +557,27 @@ def ask_question(
             "sources": sources,
             "prompt": prompt,
             "recall_candidates": recall_candidates,
+            "analysis": analysis,
         }
 
     answer = resolve_answer(generate_response(prompt), sources)
+    answer, _grounding = verify_and_repair_refusal(
+        answer,
+        question=question,
+        prompt=prompt,
+        sources=sources,
+        recall_candidates=recall_candidates,
+        analysis=analysis,
+        generate_fn=generate_response,
+    )
     answer, sources = finalize_answer_citations(
         answer,
         sources,
+        recall_candidates=recall_candidates,
+    )
+    sources = visible_sources(
+        sources,
+        answer,
         recall_candidates=recall_candidates,
     )
 

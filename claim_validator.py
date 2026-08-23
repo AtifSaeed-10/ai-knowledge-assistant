@@ -25,7 +25,13 @@ from evidence_mapping import compact_contains
 from quote_evidence import resolve_claim_evidence, resolve_quote_evidence
 from claim_localizer import extract_claim_near_marker
 from claim_orchestrator import orchestrate_all_claims
-from evidence_trace import _markers_in_answer, build_evidence_trace, log_evidence_trace, ui_status_for_source
+from evidence_trace import (
+    _markers_in_answer,
+    build_evidence_trace,
+    log_evidence_trace,
+    ui_status_for_source,
+)
+from evidence_state import visible_sources
 from answer_formatter import polish_answer_text
 
 # Marker with optional quote — used for repair passes.
@@ -288,7 +294,11 @@ def finalize_answer_citations(
 
     trace_payload: dict[str, Any] = {}
     if emit_trace:
-        final_for_trace = used_sources(enriched, repaired)
+        final_for_trace = visible_sources(
+            enriched,
+            repaired,
+            recall_candidates=recall_candidates,
+        )
         trace = build_evidence_trace(
             repaired,
             retrieved_sources,

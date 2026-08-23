@@ -7,10 +7,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from citation_resolver import iter_resolved_stream
-from claim_validator import finalize_answer_citations, used_sources
+from claim_validator import finalize_answer_citations
+from evidence_state import visible_sources
 from evidence_trace import attach_trace_dict_to_sources
 from rag import ask_question
-from llm_service import generate_response_stream
+from llm_service import generate_response, generate_response_stream
+from grounding_verifier import verify_and_repair_refusal
 from indexer import index_pdf
 from fastapi import UploadFile, File
 import shutil
@@ -75,6 +77,10 @@ class Source(BaseModel):
     quote_mapping_status: Optional[str] = None
     quote_highlight_available: Optional[bool] = None
     quote_regions: Optional[List[dict]] = None
+    evidence_state: Optional[str] = None
+    citation_eligible: Optional[bool] = None
+    ui_status: Optional[str] = None
+    content_type: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -178,7 +184,7 @@ def chat(request: ChatRequest):
             request.conversation_id,
             "assistant",
             answer,
-            citations=used_sources(response.get("sources") or [], answer),
+            citations=visible_sources(response.get("sources") or [], answer),
                 )
 
 
@@ -292,7 +298,17 @@ def chat_stream(request: ChatRequest):
 
         if completed:
 
-            answer = "".join(answer_parts)
+            streamed_answer = "".join(answer_parts)
+            answer, grounding = verify_and_repair_refusal(
+                streamed_answer,
+                question=request.question,
+                prompt=prompt,
+                sources=sources,
+                recall_candidates=response.get("recall_candidates"),
+                analysis=response.get("analysis"),
+                generate_fn=generate_response,
+            )
+            repaired = grounding.get("action") in {"retry", "extractive"}
             finalize_result = finalize_answer_citations(
                 answer,
                 sources,
@@ -306,7 +322,11 @@ def chat_stream(request: ChatRequest):
                 answer, enriched_sources, trace_payload = finalize_result
             else:
                 answer, enriched_sources = finalize_result
-            final_sources = used_sources(enriched_sources, answer)
+            final_sources = visible_sources(
+                enriched_sources,
+                answer,
+                recall_candidates=response.get("recall_candidates"),
+            )
             if trace_payload:
                 final_sources = attach_trace_dict_to_sources(final_sources, trace_payload)
 
@@ -317,6 +337,13 @@ def chat_stream(request: ChatRequest):
                     "assistant",
                     answer,
                     citations=final_sources,
+                )
+
+            # A repaired refusal invalidates the tokens already on screen.
+            # Send the saved answer so the client can replace them.
+            if repaired and answer != streamed_answer:
+                yield (
+                    f"__ANSWER_FINAL__{json.dumps(answer)}__END_ANSWER_FINAL__"
                 )
 
             yield f"__CITATIONS_FINAL__{json.dumps(final_sources)}__END_CITATIONS__"

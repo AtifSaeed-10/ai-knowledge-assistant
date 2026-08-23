@@ -16,6 +16,7 @@ export function evidencePresentationStatus(
     | "uiStatus"
     | "pageNumber"
     | "contentType"
+    | "evidenceState"
   >
 ): EvidencePresentationStatus {
   const ui = citation.uiStatus?.toLowerCase();
@@ -28,6 +29,9 @@ export function evidencePresentationStatus(
   const status = (citation.quoteMappingStatus || "").toLowerCase();
   if (citation.quoteHighlightAvailable) {
     return "precise";
+  }
+  if ((citation.evidenceState || "").toLowerCase() === "page_only") {
+    return citation.pageNumber ? "page_only" : "passage_only";
   }
   if (status === "not_in_chunk" || status === "rejected") {
     return "invalid_quote";
@@ -44,10 +48,14 @@ export function evidencePresentationStatus(
     return citation.pageNumber ? "page_only" : "unavailable";
   }
   const contentType = (citation.contentType || "").toLowerCase();
-  if (contentType === "figure_caption") {
-    return "passage_only";
+  if (contentType === "figure_caption" || contentType === "table") {
+    return citation.pageNumber ? "page_only" : "passage_only";
   }
-  if (contentType === "scanned_or_image" || contentType === "scanned_ocr") {
+  if (
+    contentType === "scanned_or_image" ||
+    contentType === "scanned_ocr" ||
+    contentType === "low_text_layout"
+  ) {
     return citation.pageNumber ? "page_only" : "unavailable";
   }
   if (citation.pageNumber) {
@@ -79,10 +87,10 @@ export function evidenceStatusLabel(status: EvidencePresentationStatus): string 
 export function contentTypeDetail(contentType: string | null | undefined): string | null {
   const kind = (contentType || "").toLowerCase();
   if (kind === "figure_caption") {
-    return "This evidence refers to a figure. Text highlighting may be limited to the caption.";
+    return "This evidence refers to a figure. The page is shown; text highlighting is limited to caption text when it can be located.";
   }
   if (kind === "table") {
-    return "Table content may not map to a single continuous text highlight.";
+    return "This evidence refers to a table. The page is shown; cell text is highlighted only when a tight region can be located.";
   }
   if (kind === "scanned_or_image" || kind === "scanned_ocr") {
     return "This page has little or no native text layer. Precise text highlighting is not available.";

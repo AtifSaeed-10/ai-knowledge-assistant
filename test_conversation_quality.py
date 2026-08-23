@@ -391,15 +391,17 @@ class TestCitationDedupeAndGrounding(unittest.TestCase):
         ):
             result = ask_question("What is entropy?", None, ["doc-a"], generate=True)
 
-        self.assertEqual(len(result["sources"]), 2)
-        self.assertEqual(result["sources"][0]["evidence_id"], "E1")
-        self.assertEqual(result["sources"][1]["evidence_id"], "E2")
-        self.assertEqual(result["sources"][0]["chunk_id"], "doc-a_1")
-        self.assertEqual(result["sources"][1]["chunk_id"], "doc-a_2")
-        self.assertEqual(result["sources"][0]["page"], 4)
-        self.assertEqual(result["sources"][0]["document_id"], "doc-a")
+        self.assertIn("[E1]", result["prompt"])
+        self.assertIn("[E2]", result["prompt"])
         self.assertIn("Strong evidence about entropy.", result["prompt"])
         self.assertIn("Weaker nearby sentence.", result["prompt"])
+        self.assertGreaterEqual(len(result["sources"]), 1)
+        self.assertEqual(result["sources"][0]["evidence_id"], "E1")
+        self.assertEqual(result["sources"][0]["chunk_id"], "doc-a_1")
+        self.assertEqual(result["sources"][0]["page"], 4)
+        self.assertEqual(result["sources"][0]["document_id"], "doc-a")
+        pages = {source["page"] for source in result["sources"]}
+        self.assertEqual(pages, {4})
 
 
 def _history_without_subject():

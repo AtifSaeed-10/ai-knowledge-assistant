@@ -138,6 +138,56 @@ class TestUsedSources(unittest.TestCase):
         self.assertEqual([item["evidence_id"] for item in kept], ["E2", "E1"])
 
 
+class TestVisibleSources(unittest.TestCase):
+    def test_refusal_attaches_nothing(self):
+        from evidence_state import visible_sources
+
+        sources = [
+            {
+                "evidence_id": "E1",
+                "chunk_id": "h1",
+                "snippet": "Notice must be given in writing.",
+                "relevance": 22,
+                "page": 7,
+            }
+        ]
+        kept = visible_sources(
+            sources,
+            "I couldn't find that in the provided document.",
+        )
+        self.assertEqual(kept, [])
+
+    def test_grounded_answer_without_markers_keeps_overlapping_page_only(self):
+        from evidence_state import visible_sources
+
+        sources = [
+            {
+                "evidence_id": "E1",
+                "chunk_id": "h1",
+                "snippet": "Either party may end the contract with thirty days written notice.",
+                "relevance": 18,
+                "page": 7,
+                "evidence_state": "page_only",
+            },
+            {
+                "evidence_id": "E2",
+                "chunk_id": "h2",
+                "snippet": "The office kitchen stocks tea and coffee.",
+                "relevance": 12,
+                "page": 40,
+                "evidence_state": "page_only",
+            },
+        ]
+        kept = visible_sources(
+            sources,
+            "The contract may be ended with thirty days written notice.",
+        )
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0]["chunk_id"], "h1")
+        self.assertEqual(kept[0]["evidence_state"], "page_only")
+        self.assertEqual(kept[0]["page"], 7)
+
+
 class TestAttachQuotesToSources(unittest.TestCase):
     def test_quotes_array_is_populated(self):
         sources = [{"evidence_id": "E1"}]

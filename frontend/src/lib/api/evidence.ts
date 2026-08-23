@@ -56,6 +56,7 @@ function parseEvidence(payload: unknown): ChunkEvidence | null {
     quote_regions: quoteRegions,
     quote_mapping_status:
       typeof item.quote_mapping_status === "string" ? item.quote_mapping_status : null,
+    content_type: typeof item.content_type === "string" ? item.content_type : null,
   };
 }
 
