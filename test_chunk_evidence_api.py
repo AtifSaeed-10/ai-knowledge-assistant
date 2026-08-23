@@ -342,7 +342,7 @@ class TestQuoteEvidenceApi(unittest.TestCase):
             "quote_evidence.extract_page_layouts",
             return_value=self.layouts,
         ), patch(
-            "backend._document_pdf_path",
+            "backend.document_pdf_path",
             return_value="C:\\fake-quote-evidence.pdf",
         ):
             return self.client.get(
@@ -396,6 +396,61 @@ class TestQuoteEvidenceApi(unittest.TestCase):
         self.assertEqual(body["quote_regions"], [])
         self.assertEqual(len(body["regions"]), 4)
         self.assertEqual(body["quote_mapping_status"], "none")
+
+
+class TestVisualChunkEvidenceApi(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        self.document_id = create_document("visual-evidence.pdf")
+
+    def tearDown(self):
+        delete_document(self.document_id)
+
+    def test_figure_caption_does_not_paint_chunk_wide_boxes(self):
+        chunk_id = f"{self.document_id}_fig"
+        replace_document_evidence(
+            self.document_id,
+            {
+                "pages": [
+                    {
+                        "page_number": 6,
+                        "width": 612.0,
+                        "height": 792.0,
+                        "source": SOURCE_NATIVE,
+                        "engine": PRIMARY_ENGINE,
+                        "span_count": 4,
+                    }
+                ],
+                "chunks": [
+                    _chunk(
+                        self.document_id,
+                        chunk_id,
+                        page_start=6,
+                        page_end=6,
+                        snippet="Figure 2. Overview of the training pipeline.",
+                        highlight_available=True,
+                        regions=[
+                            {
+                                "page": 6,
+                                "x0": 40.0,
+                                "y0": 80.0,
+                                "x1": 560.0,
+                                "y1": 720.0,
+                                "coord_space": "pdf",
+                            }
+                        ],
+                    )
+                ],
+            },
+        )
+        body = self.client.get(
+            f"/documents/{self.document_id}/chunks/{chunk_id}/evidence"
+        ).json()
+        self.assertEqual(body["content_type"], "figure_caption")
+        self.assertFalse(body["highlight_available"])
+        self.assertFalse(body["quote_highlight_available"])
+        self.assertEqual(body["quote_regions"], [])
+        self.assertEqual(body["page_start"], 6)
 
 
 if __name__ == "__main__":

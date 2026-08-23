@@ -160,7 +160,9 @@ export const useChatStore = create<ChatState>((set, get) => {
         (citations) => patchMessage(assistantId, { citations }),
         mode,
         signal,
-        regenerate
+        regenerate,
+        // The server corrected the streamed draft; show the saved answer instead.
+        (finalAnswer) => patchMessage(assistantId, { content: finalAnswer })
       );
 
       patchMessage(assistantId, { status: 'ok' });

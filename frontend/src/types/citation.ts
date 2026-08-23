@@ -26,4 +26,6 @@ export interface Citation {
   localizationConfidence?: number | null;
   uiStatus?: string | null;
   contentType?: string | null;
+  evidenceState?: string | null;
+  citationEligible?: boolean | null;
 }

@@ -197,10 +197,12 @@ def citation_allowlist(
     analysis: TurnAnalysis | None,
 ) -> set[int] | None:
     """
-    Extra citation filter on top of CITATION_MIN_RELEVANCE.
+    Extra filter on top of CITATION_MIN_RELEVANCE.
 
-    None: leave threshold-only behavior unchanged.
-    Empty set: do not cite (related-but-wrong / missing example).
+    Affects citeable vs page_only evidence_state, not whether an E# is assigned.
+    None: leave threshold-only citeability unchanged.
+    Empty set: no chunk is citeable (related-but-wrong / missing example);
+    chunks still receive page_only E# ids.
     """
     if not analysis or not chunks:
         return None

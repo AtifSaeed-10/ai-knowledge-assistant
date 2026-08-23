@@ -367,3 +367,51 @@ describe("zoom/resize repositioning", () => {
     expect(jsAtTwo[0]).toEqual({ left: 200, top: 100, width: 200, height: 40 });
   });
 });
+
+describe("visual evidence overlay policy", () => {
+  it("does not paint chunk-wide boxes for figures or tables", () => {
+    const figure = evidence({
+      content_type: "figure_caption",
+      highlight_available: true,
+      regions: [region({ y0: 80, y1: 700 })],
+    });
+    expect(canDrawHighlights(figure)).toBe(false);
+    expect(overlayRectsForPage(figure, 1, PAGE_VIEW, viewportAt(1))).toEqual([]);
+
+    const table = evidence({
+      content_type: "table",
+      highlight_available: true,
+      regions: [region({ y0: 80, y1: 700 })],
+    });
+    expect(canDrawHighlights(table)).toBe(false);
+  });
+
+  it("paints a tight caption quote when mapping succeeded", () => {
+    const packed = evidence({
+      content_type: "figure_caption",
+      highlight_available: false,
+      regions: [region({ y0: 80, y1: 700 })],
+      quote: "Figure 2. Overview of the training pipeline.",
+      quote_highlight_available: true,
+      quote_regions: [region({ y0: 640, y1: 656 })],
+    });
+    expect(canDrawHighlights(packed)).toBe(true);
+    expect(overlayRectsForPage(packed, 1, PAGE_VIEW, viewportAt(1))).toEqual([
+      { left: 100, top: 640, width: 100, height: 16 },
+    ]);
+  });
+
+  it("shows the page without overlays for scans", () => {
+    const packed = evidence({
+      content_type: "scanned_or_image",
+      highlight_available: true,
+      regions: [region({ page: 4 })],
+      page_start: 4,
+      page_end: 4,
+    });
+    const view = resolveEvidenceView({ citationPage: 4, evidence: packed });
+    expect(view.canHighlight).toBe(false);
+    expect(view.page).toBe(4);
+    expect(overlayRectsForPage(packed, 4, PAGE_VIEW, viewportAt(1))).toEqual([]);
+  });
+});

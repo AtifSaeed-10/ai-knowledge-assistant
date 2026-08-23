@@ -30,9 +30,10 @@ from claim_localizer import (
     score_text_support,
 )
 from config import CLAIM_REBIND_MARGIN, CLAIM_SUPPORT_MIN
-from evidence_mapping import compact_contains, infer_content_type, make_snippet, SOURCE_NONE
+from evidence_mapping import compact_contains, infer_content_type, make_snippet
 from document_paths import document_pdf_path
 from quote_evidence import resolve_claim_evidence
+from visual_evidence import apply_visual_highlight_policy
 
 # Combined ranking: distinctive claim coverage outweighs retrieval rank so a
 # related-but-wrong rank-1 chunk cannot lock the citation.
@@ -205,9 +206,23 @@ def _merge_resolved_into_source(
     item["content_type"] = infer_content_type(
         _candidate_text(item) or _chunk_text_from_index(str(item.get("chunk_id") or "")),
         highlight_available=bool(resolved.get("highlight_available")),
-        layout_source=row_source if row_source else SOURCE_NONE,
+        layout_source=row_source,
         text_engine=str(resolved.get("text_engine") or ""),
     )
+    item["highlight_available"] = bool(resolved.get("highlight_available"))
+    policy = apply_visual_highlight_policy(
+        {
+            "content_type": item["content_type"],
+            "highlight_available": item.get("highlight_available"),
+            "quote_highlight_available": item.get("quote_highlight_available"),
+            "quote_regions": item.get("quote_regions") or [],
+            "quote_mapping_status": item.get("quote_mapping_status"),
+        }
+    )
+    item["highlight_available"] = policy["highlight_available"]
+    item["quote_highlight_available"] = policy["quote_highlight_available"]
+    item["quote_regions"] = policy["quote_regions"]
+    item["quote_mapping_status"] = policy["quote_mapping_status"]
     return item
 
 
@@ -339,7 +354,7 @@ def orchestrate_claim_for_evidence(
             "coverage": round(coverage, 4),
             "quote_hit": quote_hit,
             "page": candidate.get("page"),
-            "citation_eligible": bool(candidate.get("citation_eligible") or candidate.get("evidence_id")),
+            "citation_eligible": bool(candidate.get("citation_eligible")),
         }
         scored_rows.append(row)
         if cid == retrieval_chunk_id:

@@ -13,8 +13,10 @@ from __future__ import annotations
 from conversation_query import (
     INTENT_EXAMPLE,
     INTENT_HOW,
+    INTENT_KEY_POINTS,
     INTENT_LISTING,
     INTENT_MIXED,
+    INTENT_SUMMARY,
     INTENT_WHY,
     RELATION_TRANSFORM,
     TurnAnalysis,
@@ -51,8 +53,16 @@ _STYLE_HINTS = {
     ),
     "simplification": "Use beginner-friendly language. Keep the same facts. Do not add new claims.",
     "elaboration": "Go deeper using available evidence only. Do not invent extra detail.",
-    "summary": "Compress the supported material. Do not introduce new points.",
-    "key_points": "Use a short structured list of supported points only.",
+    "summary": (
+        "Compress the supported material from the passages in context. "
+        "Do not look for a heading or section titled Summary. "
+        "Do not introduce new points."
+    ),
+    "key_points": (
+        "Use a short structured list of supported points synthesized from the passages. "
+        "Do not look for a pre-written key-points or summary section. "
+        "Do not introduce new points."
+    ),
     "comparison": "Compare only attributes present in the evidence. Mark missing sides explicitly.",
     "example": (
         "If the evidence contains an example, use it, explain it naturally, "
@@ -194,6 +204,12 @@ def _style_rules(analysis: TurnAnalysis | None) -> str:
         extra.append(
             "If only some requested parts are supported, answer those and "
             "state which parts were not found."
+        )
+    if analysis.intent in {INTENT_SUMMARY, INTENT_KEY_POINTS}:
+        extra.append(
+            "Synthesize from the passages that are already in context. "
+            "Do not refuse because the document lacks a section titled "
+            "Summary, Overview, or Key Points."
         )
     return hint + ((" " + " ".join(extra)) if extra else "")
 

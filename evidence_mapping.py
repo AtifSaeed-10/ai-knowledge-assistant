@@ -56,6 +56,21 @@ class PageLayout:
     spans: list[Span]
     source: str
     engine: str
+    image_count: int = 0
+
+
+# PDF text often uses these instead of ASCII. Mapping keeps compact indices
+# aligned to the original string (ligatures expand to two compact chars).
+_PDF_CHAR_MAP = {
+    "\u00a0": " ",  # nbsp
+    "\u202f": " ",
+    "\u2018": "'",
+    "\u2019": "'",
+    "\u201c": '"',
+    "\u201d": '"',
+    "\ufb01": "fi",
+    "\ufb02": "fl",
+}
 
 
 def compact(text: str, drop_hyphens: bool = False) -> tuple[str, list[int]]:
@@ -63,12 +78,16 @@ def compact(text: str, drop_hyphens: bool = False) -> tuple[str, list[int]]:
     chars: list[str] = []
     orig: list[int] = []
     for index, char in enumerate(text):
-        if char.isspace():
+        if char == "\u00ad":  # soft hyphen
             continue
-        if drop_hyphens and char == "-":
-            continue
-        chars.append(char)
-        orig.append(index)
+        mapped = _PDF_CHAR_MAP.get(char, char)
+        for piece in mapped:
+            if piece.isspace():
+                continue
+            if drop_hyphens and piece == "-":
+                continue
+            chars.append(piece)
+            orig.append(index)
     return "".join(chars), orig
 
 
@@ -154,14 +173,22 @@ def extract_page_layouts(
                 continue
             page = document.load_page(index)
             spans = extract_spans(page)
+            plain = page.get_text("text") or ""
+            if not plain.strip():
+                plain = "".join(span.text for span in spans)
+            try:
+                image_count = len(page.get_images(full=True) or [])
+            except Exception:
+                image_count = 0
             layouts[page_number] = PageLayout(
                 page_number=page_number,
                 width=float(page.rect.width),
                 height=float(page.rect.height),
-                plain=(page.get_text("text") or "").strip(),
+                plain=plain,
                 spans=spans,
                 source=SOURCE_NATIVE if spans else SOURCE_NONE,
                 engine=PRIMARY_ENGINE,
+                image_count=image_count,
             )
     finally:
         document.close()
@@ -398,7 +425,12 @@ def _regions_for_page(page_number: int, boxes: list[list[float]]) -> list[dict[s
 def compact_contains(haystack: str, needle: str) -> bool:
     hay_c, _ = compact(haystack or "")
     needle_c, _ = compact(needle or "")
-    return bool(needle_c) and needle_c in hay_c
+    if needle_c and needle_c in hay_c:
+        return True
+    # Line-end hyphenation: "exam-\nples" vs "examples"
+    hay_h, _ = compact(haystack or "", drop_hyphens=True)
+    needle_h, _ = compact(needle or "", drop_hyphens=True)
+    return bool(needle_h) and needle_h in hay_h
 
 
 def _empty_quote_map(match_type: str = "failed") -> dict[str, Any]:
@@ -455,22 +487,50 @@ def spans_for_index_segments(text: str, *, min_chars: int = 12) -> list[dict[str
     return parts
 
 
+_FIGURE_LABEL_RE = re.compile(
+    r"\b(?:figure|fig\.?|illustration|plate|diagram)\s*\.?\s*\d",
+    re.IGNORECASE,
+)
+_FIGURE_LEAD_RE = re.compile(
+    r"^(?:figure|fig\.?|illustration|plate|diagram)\b",
+    re.IGNORECASE,
+)
+_TABLE_LABEL_RE = re.compile(
+    r"\b(?:table|tbl\.?)\s*\.?\s*\d",
+    re.IGNORECASE,
+)
+
+
 def infer_content_type(
     chunk_text: str,
     *,
     highlight_available: bool,
     layout_source: str,
     text_engine: str | None = None,
+    image_count: int = 0,
+    span_count: int | None = None,
 ) -> str:
     """Classify evidence for UI and orchestrator (not all PDF content is highlightable)."""
     text = (chunk_text or "").strip()
-    lowered = text.lower()
     if not highlight_available and layout_source == SOURCE_NONE:
         if text_engine and "ocr" in str(text_engine).lower():
             return "scanned_ocr"
         return "scanned_or_image"
-    if re.search(r"\bfigure\s+\d", lowered) and len(text) < 220:
+    # Image-heavy page with almost no native text — still a scan, not a figure.
+    if (
+        not highlight_available
+        and image_count >= 1
+        and span_count is not None
+        and span_count < 8
+        and len(text) < 80
+    ):
+        return "scanned_or_image"
+    if _FIGURE_LABEL_RE.search(text) and len(text) < 280:
         return "figure_caption"
+    if _FIGURE_LEAD_RE.search(text) and len(text) < 180:
+        return "figure_caption"
+    if _TABLE_LABEL_RE.search(text) and len(text) < 400:
+        return "table"
     if text.count("|") >= 3 or text.count("\t") >= 2:
         return "table"
     if not highlight_available:
@@ -628,7 +688,9 @@ def _map_slices_to_regions(
             if slice_text.strip():
                 nonempty_slices += 1
             continue
-        mapped = map_slice_to_spans(slice_text, layout.spans, layout.plain)
+        mapped = map_slice_to_spans(
+            slice_text, layout.spans, _layout_search_text(layout)
+        )
         match_type = mapped["match_type"]
         match_types.append(match_type)
         page_regions = _regions_for_page(page_number, mapped.get("regions") or [])
@@ -649,6 +711,75 @@ def _map_slices_to_regions(
     if nonempty_slices == 0 or nonempty_success != nonempty_slices or not regions:
         return [], overall if overall in SUCCESS_MATCH_TYPES else "failed"
     return regions, overall
+
+
+def _layout_search_text(layout: PageLayout) -> str:
+    """Text used to locate a quote on a page. Prefer span text (source of boxes)."""
+    span_text = "".join(span.text for span in (layout.spans or []))
+    if span_text.strip():
+        return span_text
+    return layout.plain or ""
+
+
+def _hyphen_compact_span(window: str, quote: str) -> tuple[int, int] | None:
+    hay_h, hay_orig = compact(window, drop_hyphens=True)
+    needle_h, _ = compact(quote, drop_hyphens=True)
+    if not needle_h:
+        return None
+    at = hay_h.find(needle_h)
+    if at == -1:
+        return None
+    return hay_orig[at], hay_orig[at + len(needle_h) - 1] + 1
+
+
+def _region_area(regions: list[dict[str, Any]]) -> float:
+    area = 0.0
+    for item in regions:
+        try:
+            area += max(0.0, float(item["x1"]) - float(item["x0"])) * max(
+                0.0, float(item["y1"]) - float(item["y0"])
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    return area
+
+
+def _map_quote_via_page_spans(
+    quote: str,
+    layouts: dict[int, PageLayout],
+    page_start: int,
+    page_end: int,
+) -> dict[str, Any]:
+    """
+    Last resort: map the full quote onto each page's dict spans.
+
+    Uses real span boxes only. Prefers the single page with the smallest
+    matching area so a quote that lives on one page is not painted elsewhere.
+    """
+    hits: list[tuple[int, str, list[dict[str, Any]]]] = []
+    for page_number in range(int(page_start), int(page_end) + 1):
+        layout = layouts.get(page_number)
+        if layout is None or not layout.spans:
+            continue
+        search = _layout_search_text(layout)
+        if not compact_contains(search, quote):
+            continue
+        mapped = map_slice_to_spans(quote, layout.spans, search)
+        page_regions = _regions_for_page(page_number, mapped.get("regions") or [])
+        match_type = str(mapped.get("match_type") or "failed")
+        if match_type in SUCCESS_MATCH_TYPES and page_regions:
+            hits.append((page_number, match_type, page_regions))
+    if not hits:
+        return _empty_quote_map("not_on_page")
+    hits.sort(key=lambda item: (_region_area(item[2]), len(item[2]), item[0]))
+    _, match_type, regions = hits[0]
+    pages = sorted({int(item["page"]) for item in regions})
+    return {
+        "quote_highlight_available": True,
+        "regions": regions,
+        "match_type": match_type,
+        "pages": pages,
+    }
 
 
 def map_quote_to_regions(
@@ -721,16 +852,21 @@ def map_quote_to_regions(
             if end > start:
                 text = layout.plain[start:end]
             else:
-                text = layout.plain
+                text = _layout_search_text(layout)
+            if not text.strip():
+                text = _layout_search_text(layout)
             if text.strip():
                 page_rows.append({"page_number": page_number, "text": text})
     if not page_rows:
         for page_number in range(int(page_start), int(page_end) + 1):
             layout = layouts.get(page_number)
-            if layout and layout.plain.strip():
-                page_rows.append({"page_number": page_number, "text": layout.plain})
+            if not layout:
+                continue
+            text = _layout_search_text(layout)
+            if text.strip():
+                page_rows.append({"page_number": page_number, "text": text})
     if not page_rows:
-        return _empty_quote_map("no_layout")
+        return _map_quote_via_page_spans(cleaned, layouts, page_start, page_end)
 
     window, page_spans = build_document_text(page_rows)
     slices, _, _, fully = locate_chunk_slices(cleaned, window, page_spans, 0)
@@ -740,16 +876,22 @@ def map_quote_to_regions(
         needle_c, _ = compact(cleaned)
         at = hay_c.find(needle_c) if needle_c else -1
         if at == -1:
-            return _empty_quote_map("not_on_page")
-        start = hay_orig[at]
-        end = hay_orig[at + len(needle_c) - 1] + 1
+            hyphen_span = _hyphen_compact_span(window, cleaned)
+            if hyphen_span is None:
+                return _map_quote_via_page_spans(
+                    cleaned, layouts, page_start, page_end
+                )
+            start, end = hyphen_span
+        else:
+            start = hay_orig[at]
+            end = hay_orig[at + len(needle_c) - 1] + 1
         slices = split_range_by_pages(start, end, page_spans, window)
         if not slices:
-            return _empty_quote_map("not_on_page")
+            return _map_quote_via_page_spans(cleaned, layouts, page_start, page_end)
 
     regions, match_type = _map_slices_to_regions(slices, layouts)
     if not regions:
-        return _empty_quote_map(match_type)
+        return _map_quote_via_page_spans(cleaned, layouts, page_start, page_end)
     pages = sorted({int(item["page"]) for item in regions})
     return {
         "quote_highlight_available": True,
@@ -862,6 +1004,10 @@ def map_chunk_to_evidence(
     else:
         layout_source = SOURCE_NONE
 
+    primary_layout = layouts.get(min(pages)) if pages else None
+    image_count = int(getattr(primary_layout, "image_count", 0) or 0)
+    span_count = len(primary_layout.spans) if primary_layout is not None else None
+
     record = {
         "chunk_id": chunk["chunk_id"],
         "document_id": document_id,
@@ -889,6 +1035,8 @@ def map_chunk_to_evidence(
             highlight_available=highlight_available,
             layout_source=layout_source,
             text_engine=text_engine,
+            image_count=image_count,
+            span_count=span_count,
         ),
     }
     return record, next_from

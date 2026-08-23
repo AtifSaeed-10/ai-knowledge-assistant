@@ -19,6 +19,7 @@ export type ChunkEvidence = {
   quote_highlight_available?: boolean;
   quote_regions?: EvidenceRegion[];
   quote_mapping_status?: string | null;
+  content_type?: string | null;
 };
 
 export type OverlayRect = {
@@ -75,8 +76,18 @@ function usableQuoteRegions(evidence: ChunkEvidence): EvidenceRegion[] {
   return (evidence.quote_regions || []).filter(isUsableRegion).sort(compareRegions);
 }
 
+const VISUAL_CONTENT_TYPES = new Set([
+  "figure_caption",
+  "table",
+  "scanned_or_image",
+  "scanned_ocr",
+  "low_text_layout",
+]);
+
 function usableChunkRegions(evidence: ChunkEvidence): EvidenceRegion[] {
   if (evidence.highlight_available !== true) return [];
+  const kind = (evidence.content_type || "").toLowerCase();
+  if (VISUAL_CONTENT_TYPES.has(kind)) return [];
   return (evidence.regions || []).filter(isUsableRegion).sort(compareRegions);
 }
 

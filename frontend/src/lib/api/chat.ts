@@ -29,11 +29,17 @@ export interface ApiSource {
   content_type?: string | null;
   evidence_data_available?: boolean | null;
   highlight_available?: boolean | null;
+  evidence_state?: string | null;
+  citation_eligible?: boolean | null;
 }
 
 const CITATIONS_START = "__CITATIONS__";
 const CITATIONS_FINAL_START = "__CITATIONS_FINAL__";
 const CITATIONS_END = "__END_CITATIONS__";
+const ANSWER_FINAL_START = "__ANSWER_FINAL__";
+const ANSWER_FINAL_END = "__END_ANSWER_FINAL__";
+
+const FRAME_STARTS = [CITATIONS_FINAL_START, CITATIONS_START, ANSWER_FINAL_START];
 
 export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
   const rawPage = src.page ?? src.page_number;
@@ -82,6 +88,9 @@ export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
         : null,
     uiStatus: typeof src.ui_status === "string" ? src.ui_status : null,
     contentType: typeof src.content_type === "string" ? src.content_type : null,
+    evidenceState: typeof src.evidence_state === "string" ? src.evidence_state : null,
+    citationEligible:
+      typeof src.citation_eligible === "boolean" ? src.citation_eligible : null,
   };
 }
 
@@ -106,32 +115,146 @@ function tryParseCitations(payload: string): Citation[] {
   }
 }
 
-function stripControlMarkers(buffer: string): {
+function tryParseAnswer(payload: string): string | null {
+  try {
+    const raw = JSON.parse(payload);
+    return typeof raw === "string" ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+type ControlEvent =
+  | { kind: "citations"; citations: Citation[]; final: boolean }
+  | { kind: "answer"; answer: string };
+
+/** Remove the first complete control frame from the buffer, if there is one. */
+function takeControlFrame(buffer: string): {
   buffer: string;
-  citations: Citation[] | null;
-  marker: "initial" | "final" | null;
+  event: ControlEvent | null;
+  consumed: boolean;
 } {
-  for (const [start, kind] of [
-    [CITATIONS_FINAL_START, "final"],
-    [CITATIONS_START, "initial"],
+  const answerBegin = buffer.indexOf(ANSWER_FINAL_START);
+  if (answerBegin !== -1) {
+    const from = answerBegin + ANSWER_FINAL_START.length;
+    const answerEnd = buffer.indexOf(ANSWER_FINAL_END, from);
+    if (answerEnd !== -1) {
+      const answer = tryParseAnswer(buffer.slice(from, answerEnd));
+      const next =
+        buffer.slice(0, answerBegin) + buffer.slice(answerEnd + ANSWER_FINAL_END.length);
+      return {
+        buffer: next,
+        event: answer === null ? null : { kind: "answer", answer },
+        consumed: true,
+      };
+    }
+  }
+
+  for (const [start, final] of [
+    [CITATIONS_FINAL_START, true],
+    [CITATIONS_START, false],
   ] as const) {
     const begin = buffer.indexOf(start);
     const end = buffer.indexOf(CITATIONS_END);
     if (begin !== -1 && end !== -1 && end > begin) {
-      const payload = buffer.slice(begin + start.length, end);
-      const citations = tryParseCitations(payload);
+      const citations = tryParseCitations(buffer.slice(begin + start.length, end));
       const next = buffer.slice(0, begin) + buffer.slice(end + CITATIONS_END.length);
-      return { buffer: next, citations, marker: kind };
+      return { buffer: next, event: { kind: "citations", citations, final }, consumed: true };
     }
   }
-  return { buffer, citations: null, marker: null };
+
+  return { buffer, event: null, consumed: false };
+}
+
+export interface StreamHandlers {
+  onChunk: (chunk: string) => void;
+  onCitations: (citations: Citation[]) => void;
+  /** Server-validated answer that supersedes every token streamed so far. */
+  onFinalAnswer?: (answer: string) => void;
+}
+
+/**
+ * Incremental reader for the /chat/stream protocol.
+ *
+ * Answer tokens are emitted as they arrive, minus any text that could still
+ * turn out to be a split control marker.
+ */
+export function createStreamParser(handlers: StreamHandlers) {
+  let buffer = "";
+  let citationsSent = false;
+  let answerReplaced = false;
+
+  const drainFrames = () => {
+    while (true) {
+      const parsed = takeControlFrame(buffer);
+      buffer = parsed.buffer;
+      if (!parsed.consumed) break;
+      if (!parsed.event) continue;
+      if (parsed.event.kind === "answer") {
+        answerReplaced = true;
+        handlers.onFinalAnswer?.(parsed.event.answer);
+        continue;
+      }
+      if (parsed.event.final || !citationsSent) {
+        handlers.onCitations(parsed.event.citations);
+        citationsSent = true;
+      }
+    }
+  };
+
+  /** How much of the buffer is safe to show as answer text right now. */
+  const emitLimit = () => {
+    // The replacement answer supersedes the draft, including any tokens that
+    // arrived in the same read as the frame.
+    if (answerReplaced) return 0;
+    let limit = buffer.length;
+    for (const start of FRAME_STARTS) {
+      const index = buffer.indexOf(start);
+      limit = Math.min(
+        limit,
+        index !== -1 ? index : buffer.length - partialMarkerLength(buffer, start)
+      );
+    }
+    if (citationsSent) {
+      limit = Math.min(limit, buffer.length - incompleteBracketLength(buffer));
+    }
+    return limit;
+  };
+
+  return {
+    push(text: string) {
+      buffer += text;
+      drainFrames();
+      const limit = emitLimit();
+      if (limit > 0) {
+        handlers.onChunk(buffer.slice(0, limit));
+        buffer = buffer.slice(limit);
+      }
+    },
+
+    close() {
+      drainFrames();
+      if (!answerReplaced && buffer.length > 0) {
+        const hold = citationsSent ? incompleteBracketLength(buffer) : 0;
+        if (hold < buffer.length) {
+          handlers.onChunk(buffer.slice(0, buffer.length - hold));
+        }
+      }
+      buffer = "";
+      if (!citationsSent) {
+        handlers.onCitations([]);
+        citationsSent = true;
+      }
+    },
+  };
 }
 
 export const chatApi = {
   /**
    * POST /chat/stream
    * The server sends `__CITATIONS__[...]__END_CITATIONS__` first, then answer tokens,
-   * then optional `__CITATIONS_FINAL__[...]__END_CITATIONS__` with validated citations.
+   * then optional `__ANSWER_FINAL__"..."__END_ANSWER_FINAL__` when the streamed text
+   * was corrected, then optional `__CITATIONS_FINAL__[...]__END_CITATIONS__`.
    */
   async streamMessage(
     content: string,
@@ -141,7 +264,8 @@ export const chatApi = {
     onCitations: (citations: Citation[]) => void,
     mode: ProductMode = "normal",
     signal?: AbortSignal,
-    regenerate: boolean = false
+    regenerate: boolean = false,
+    onFinalAnswer?: (answer: string) => void
   ): Promise<void> {
     const response = await fetch(`${API_CONFIG.baseUrl}/chat/stream`, {
       method: "POST",
@@ -170,71 +294,14 @@ export const chatApi = {
     }
 
     const decoder = new TextDecoder();
-    let buffer = "";
-    let citationsSent = false;
+    const parser = createStreamParser({ onChunk, onCitations, onFinalAnswer });
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      while (true) {
-        const parsed = stripControlMarkers(buffer);
-        buffer = parsed.buffer;
-        if (!parsed.citations) break;
-        if (parsed.marker === "initial" && !citationsSent) {
-          onCitations(parsed.citations);
-          citationsSent = true;
-        } else if (parsed.marker === "final") {
-          onCitations(parsed.citations);
-          citationsSent = true;
-        }
-      }
-
-      let emitUpTo = buffer.length;
-      if (!citationsSent) {
-        const start = buffer.indexOf(CITATIONS_START);
-        emitUpTo =
-          start !== -1
-            ? start
-            : buffer.length - partialMarkerLength(buffer, CITATIONS_START);
-      } else {
-        const finalStart = buffer.indexOf(CITATIONS_FINAL_START);
-        if (finalStart !== -1) {
-          emitUpTo = finalStart;
-        } else {
-          emitUpTo =
-            buffer.length - partialMarkerLength(buffer, CITATIONS_FINAL_START);
-        }
-        emitUpTo = Math.min(emitUpTo, buffer.length - incompleteBracketLength(buffer));
-      }
-
-      if (emitUpTo > 0) {
-        onChunk(buffer.slice(0, emitUpTo));
-        buffer = buffer.slice(emitUpTo);
-      }
+      parser.push(decoder.decode(value, { stream: true }));
     }
 
-    while (true) {
-      const parsed = stripControlMarkers(buffer);
-      buffer = parsed.buffer;
-      if (!parsed.citations) break;
-      if (parsed.marker === "final" || (parsed.marker === "initial" && !citationsSent)) {
-        onCitations(parsed.citations);
-        citationsSent = true;
-      }
-    }
-
-    if (buffer.length > 0) {
-      const hold = citationsSent ? incompleteBracketLength(buffer) : 0;
-      if (hold < buffer.length) {
-        onChunk(buffer.slice(0, buffer.length - hold));
-      }
-    }
-
-    if (!citationsSent) {
-      onCitations([]);
-    }
+    parser.close();
   },
 };

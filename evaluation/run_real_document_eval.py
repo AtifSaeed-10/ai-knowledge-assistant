@@ -19,7 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from claim_validator import finalize_answer_citations, used_sources
+from claim_validator import finalize_answer_citations
+from evidence_state import visible_sources
 
 ROOT = Path(__file__).resolve().parent
 CASES_PATH = ROOT / "real_document_cases.json"
@@ -115,7 +116,7 @@ def evaluate_case(case: RealDocumentCase) -> dict[str, Any]:
         [source],
         resolve_regions=True,
     )
-    final = used_sources(enriched, finalized_answer)
+    final = visible_sources(enriched, finalized_answer)
     row = final[0] if final else enriched[0] if enriched else {}
     regions = row.get("quote_regions") or []
     pages = sorted(

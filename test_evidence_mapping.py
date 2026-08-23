@@ -69,6 +69,10 @@ class TestCompactAndSnippet(unittest.TestCase):
         self.assertEqual(kept, "learn-ing")
         self.assertEqual(dropped, "learning")
 
+    def test_compact_normalizes_pdf_punctuation(self):
+        text, _ = compact("ﬁrst\u00a0step")
+        self.assertEqual(text, "firststep")
+
     def test_snippet_collapses_whitespace(self):
         snippet = make_snippet("Supervised   learning\nis labeled.")
         self.assertEqual(snippet, "Supervised learning is labeled.")
@@ -536,6 +540,54 @@ class TestQuoteMapping(unittest.TestCase):
         self.assertEqual(first["regions"][0]["y0"], 24.0)
         self.assertEqual(second["regions"][0]["y0"], 56.0)
         self.assertNotEqual(first["regions"], second["regions"])
+
+    def test_line_end_hyphenation_maps_to_real_span(self):
+        hyphenated = "Supervised learn-\ning uses labeled examples."
+        layouts = {
+            1: _layout(
+                hyphenated,
+                [
+                    Span(
+                        "Supervised learn-",
+                        (10.0, 24.0, 120.0, 36.0),
+                        (10.0, 24.0, 120.0, 36.0),
+                    ),
+                    Span(
+                        "ing uses labeled examples.",
+                        (10.0, 38.0, 220.0, 50.0),
+                        (10.0, 38.0, 220.0, 50.0),
+                    ),
+                ],
+                1,
+            )
+        }
+        mapped = self._map(
+            "Supervised learning uses labeled examples.",
+            chunk_text=hyphenated,
+            layouts=layouts,
+        )
+        self.assertTrue(mapped["quote_highlight_available"])
+        self.assertEqual(len(mapped["regions"]), 2)
+        self.assertEqual(
+            sorted(item["y0"] for item in mapped["regions"]),
+            [24.0, 38.0],
+        )
+
+    def test_empty_plain_still_maps_from_spans(self):
+        quote = "Supervised learning uses labeled examples."
+        layouts = {
+            1: _layout(
+                "",
+                [
+                    Span(quote, (10.0, 24.0, 220.0, 36.0), (10.0, 24.0, 220.0, 36.0)),
+                ],
+                1,
+            )
+        }
+        mapped = self._map(quote, chunk_text=quote, layouts=layouts)
+        self.assertTrue(mapped["quote_highlight_available"])
+        self.assertEqual(len(mapped["regions"]), 1)
+        self.assertEqual(mapped["regions"][0]["y0"], 24.0)
 
 
 if __name__ == "__main__":

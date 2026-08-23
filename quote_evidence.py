@@ -20,6 +20,7 @@ from database.evidence_store import (
     get_quote_region_cache,
     upsert_quote_region_cache,
 )
+from document_paths import document_pdf_path
 from evidence_mapping import (
     compact_contains,
     extract_page_layouts,
@@ -28,6 +29,7 @@ from evidence_mapping import (
     map_quote_to_regions,
     SOURCE_NONE,
 )
+from visual_evidence import apply_visual_highlight_policy
 
 
 def _chunk_record_from_chroma(chunk_id: str) -> tuple[str | None, dict[str, Any]]:
@@ -96,6 +98,72 @@ def _public_regions(rows: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     return out
 
 
+def _page_size_from_layouts(
+    layouts: dict[Any, Any] | None,
+    payload: dict[str, Any],
+) -> tuple[float | None, float | None]:
+    if not layouts:
+        return None, None
+    layout = None
+    page = payload.get("page_start") or payload.get("page")
+    if page is not None:
+        try:
+            layout = layouts.get(int(page))
+        except (TypeError, ValueError, AttributeError):
+            layout = None
+    if layout is None:
+        layout = next(iter(layouts.values()), None)
+    if layout is None:
+        return None, None
+    try:
+        return float(layout.width), float(layout.height)
+    except (TypeError, ValueError, AttributeError):
+        return None, None
+
+
+def _infer_content_type(
+    row: dict[str, Any],
+    *,
+    chunk_text: str | None = None,
+    layouts: dict[Any, Any] | None = None,
+) -> str:
+    image_count = 0
+    span_count: int | None = None
+    if layouts:
+        page = row.get("page_start") or row.get("page")
+        layout = None
+        if page is not None:
+            try:
+                layout = layouts.get(int(page))
+            except (TypeError, ValueError, AttributeError):
+                layout = None
+        if layout is None:
+            layout = next(iter(layouts.values()), None)
+        if layout is not None:
+            image_count = int(getattr(layout, "image_count", 0) or 0)
+            span_count = len(getattr(layout, "spans", []) or [])
+    return infer_content_type(
+        chunk_text or row.get("snippet") or "",
+        highlight_available=bool(row.get("highlight_available")),
+        layout_source=str(row.get("source") or SOURCE_NONE),
+        text_engine=str(row.get("text_engine") or ""),
+        image_count=image_count,
+        span_count=span_count,
+    )
+
+
+def _with_visual_policy(
+    payload: dict[str, Any],
+    layouts: dict[Any, Any] | None = None,
+) -> dict[str, Any]:
+    width, height = _page_size_from_layouts(layouts, payload)
+    return apply_visual_highlight_policy(
+        payload,
+        page_width=width,
+        page_height=height,
+    )
+
+
 def _payload_from_cache(
     row: dict[str, Any],
     cleaned: str,
@@ -110,7 +178,7 @@ def _payload_from_cache(
         payload["page_start"] = int(cached["page_start"])
     if cached.get("page_end") is not None:
         payload["page_end"] = int(cached["page_end"])
-    return payload
+    return _with_visual_policy(payload)
 
 
 def _cache_quote_result(
@@ -139,14 +207,22 @@ def _cache_quote_result(
         pass
 
 
+def _load_page_layouts(
+    document_id: str,
+    pdf_path: str | None,
+    pages: set[int],
+) -> dict[int, Any]:
+    path = pdf_path or document_pdf_path(document_id)
+    if not path or not pages:
+        return {}
+    try:
+        return extract_page_layouts(path, page_numbers=pages)
+    except Exception:
+        return {}
+
+
 def public_chunk_evidence(row: dict[str, Any]) -> dict[str, Any]:
-    content_type = infer_content_type(
-        row.get("snippet") or "",
-        highlight_available=bool(row.get("highlight_available")),
-        layout_source=str(row.get("source") or SOURCE_NONE),
-        text_engine=str(row.get("text_engine") or ""),
-    )
-    return {
+    payload = {
         "chunk_id": row["chunk_id"],
         "document_id": row["document_id"],
         "page_start": row["page_start"],
@@ -158,8 +234,11 @@ def public_chunk_evidence(row: dict[str, Any]) -> dict[str, Any]:
         "quote_highlight_available": False,
         "quote_regions": [],
         "quote_mapping_status": row.get("quote_mapping_status") or "none",
-        "content_type": content_type,
+        "content_type": _infer_content_type(row),
+        "source": str(row.get("source") or SOURCE_NONE),
+        "text_engine": str(row.get("text_engine") or ""),
     }
+    return _with_visual_policy(payload)
 
 
 def _fallback_chunk_evidence(
@@ -184,10 +263,16 @@ def _fallback_chunk_evidence(
         "quote_highlight_available": False,
         "quote_regions": [],
         "quote_mapping_status": "no_evidence_data",
+        "content_type": infer_content_type(
+            chunk_text,
+            highlight_available=False,
+            layout_source=SOURCE_NONE,
+            text_engine="",
+        ),
     }
     if quote and not compact_contains(chunk_text, quote):
         payload["quote_mapping_status"] = "not_in_chunk"
-    return payload
+    return _with_visual_policy(payload)
 
 
 def resolve_quote_evidence(
@@ -235,7 +320,7 @@ def resolve_quote_evidence(
     payload["quote"] = cleaned
     if raw_quote and not cleaned:
         payload["quote_mapping_status"] = "rejected"
-        return payload
+        return _with_visual_policy(payload)
     if not cleaned:
         return payload
 
@@ -252,12 +337,10 @@ def resolve_quote_evidence(
             except (TypeError, ValueError):
                 continue
 
-    layouts = {}
-    if pdf_path:
-        try:
-            layouts = extract_page_layouts(pdf_path, page_numbers=pages)
-        except Exception:
-            layouts = {}
+    layouts = _load_page_layouts(document_id, pdf_path, pages)
+    payload["content_type"] = _infer_content_type(
+        row, chunk_text=chunk_text, layouts=layouts
+    )
 
     mapped = map_quote_to_regions(
         cleaned,
@@ -286,6 +369,9 @@ def resolve_quote_evidence(
     if mapped_ok and mapped.get("pages"):
         payload["page_start"] = min(mapped["pages"])
         payload["page_end"] = max(mapped["pages"])
+
+    payload = _with_visual_policy(payload, layouts)
+    mapped_ok = bool(payload.get("quote_highlight_available") and payload.get("quote_regions"))
 
     _cache_quote_result(
         chunk_id=chunk_id,
@@ -318,7 +404,7 @@ def _payload_from_localization(
         payload["page"] = localized.page_start
     if localized.page_end is not None:
         payload["page_end"] = localized.page_end
-    return payload
+    return _with_visual_policy(payload)
 
 
 def _int_page(value: Any) -> int | None:
@@ -464,15 +550,10 @@ def resolve_claim_evidence(
                 payload["page"] = int(cached["page_start"])
             if cached.get("page_end") is not None:
                 payload["page_end"] = int(cached["page_end"])
-            return payload
+            return _with_visual_policy(payload)
 
     pages = _pages_for_windows(windows, row)
-    layouts: dict[Any, Any] = {}
-    if pdf_path and pages:
-        try:
-            layouts = extract_page_layouts(pdf_path, page_numbers=pages)
-        except Exception:
-            layouts = {}
+    layouts: dict[Any, Any] = _load_page_layouts(document_id, pdf_path, pages)
 
     result = reanchor_claim(
         claim_text,
@@ -497,6 +578,11 @@ def resolve_claim_evidence(
         cleaned_quote=cleaned_quote,
     )
     payload["chunk_id"] = result.chunk_id
+    payload["content_type"] = _infer_content_type(
+        owner_row,
+        chunk_text=_chunk_text_from_chroma(result.chunk_id) or chunk_text,
+        layouts=layouts,
+    )
     if result.page is not None:
         payload["page_start"] = result.page
         payload["page"] = result.page
@@ -507,13 +593,16 @@ def resolve_claim_evidence(
     if result.source_spans and not payload.get("source_spans"):
         payload["source_spans"] = list(result.source_spans)
 
+    payload = _with_visual_policy(payload, layouts)
+    mapped_ok = bool(payload.get("quote_highlight_available") and payload.get("quote_regions"))
+
     if cache_text:
         _cache_quote_result(
             chunk_id=result.chunk_id,
             document_id=document_id,
             cleaned=cache_text,
-            mapped_ok=bool(result.localization.quote_highlight_available),
-            status=result.localization.localization_status,
+            mapped_ok=mapped_ok,
+            status=str(payload.get("quote_mapping_status") or STATUS_UNRESOLVED),
             quote_regions=payload["quote_regions"],
             page_start=payload.get("page_start"),
             page_end=payload.get("page_end"),

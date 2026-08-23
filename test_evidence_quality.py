@@ -49,11 +49,14 @@ class TestCitationFiltering(unittest.TestCase):
                 generate=True,
             )
 
-        self.assertEqual(len(result["sources"]), 1)
-        self.assertEqual(result["sources"][0]["chunk_id"], "docA_1")
-        self.assertGreaterEqual(result["sources"][0]["relevance"], 30)
+        self.assertIn("[E1]", result["prompt"])
+        self.assertIn("[E2]", result["prompt"])
         self.assertIn("Strong supervised learning evidence.", result["prompt"])
         self.assertIn("Marginal but usable context.", result["prompt"])
+        self.assertEqual(len(result["sources"]), 1)
+        self.assertEqual(result["sources"][0]["chunk_id"], "docA_1")
+        self.assertEqual(result["sources"][0]["evidence_state"], "page_only")
+        self.assertGreaterEqual(result["sources"][0]["relevance"], 30)
 
     def test_unanswerable_returns_no_weak_citations(self):
         retrieval = {
@@ -166,7 +169,7 @@ class TestCitationFiltering(unittest.TestCase):
             all(int(rel or 0) < 30 for rel in result["relevances"])
         )
 
-    def test_recall_fallback_context_is_prompted_without_e_ids(self):
+    def test_recall_fallback_grounded_answer_keeps_page_only_evidence(self):
         retrieval = {
             "chunks": [
                 "Nanking is also spelled Nanjing in later scholarship."
@@ -203,7 +206,11 @@ class TestCitationFiltering(unittest.TestCase):
                 generate=True,
             )
 
-        self.assertEqual(result["sources"], [])
+        self.assertEqual(len(result["sources"]), 1)
+        self.assertEqual(result["sources"][0]["evidence_state"], "page_only")
+        self.assertEqual(result["sources"][0]["evidence_id"], "E1")
+        self.assertEqual(result["sources"][0]["page"], 19)
+        self.assertIn("[E1]", result["prompt"])
         self.assertIn("Nanjing", result["prompt"])
         self.assertNotIn("No relevant information", result["answer"])
 
