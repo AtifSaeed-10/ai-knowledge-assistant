@@ -1,5 +1,5 @@
 import { Document, DocumentEvidenceSummary, DocumentStatus } from '@/types';
-import { API_CONFIG, delay } from './client';
+import { API_CONFIG, apiFetch, apiJson, delay } from './client';
 
 interface ApiDocument {
   document_id: string;
@@ -49,16 +49,11 @@ export const documentsApi = {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch(`${API_CONFIG.baseUrl}/upload`, {
+    const data = await apiJson<UploadApiResponse>('/upload', {
       method: 'POST',
       body: formData,
+      errorMessage: 'Upload failed. Please try again',
     });
-
-    if (!response.ok) {
-      throw new Error(`Upload failed (${response.status}). Please try again.`);
-    }
-
-    const data = (await response.json()) as UploadApiResponse;
 
     return {
       id: data.document_id,
@@ -75,13 +70,9 @@ export const documentsApi = {
       return [];
     }
 
-    const response = await fetch(`${API_CONFIG.baseUrl}/documents`);
-
-    if (!response.ok) {
-      throw new Error(`Could not load your documents (${response.status}).`);
-    }
-
-    const data = (await response.json()) as ApiDocument[];
+    const data = await apiJson<ApiDocument[]>('/documents', {
+      errorMessage: 'Could not load your documents',
+    });
     return data.map(mapApiDocumentToDocument);
   },
 
@@ -98,13 +89,10 @@ export const documentsApi = {
       };
     }
 
-    const response = await fetch(`${API_CONFIG.baseUrl}/documents/${encodeURIComponent(id)}`);
-
-    if (!response.ok) {
-      throw new Error(`Could not read processing status (${response.status}).`);
-    }
-
-    const data = (await response.json()) as ApiDocument;
+    const data = await apiJson<ApiDocument>(
+      `/documents/${encodeURIComponent(id)}`,
+      { errorMessage: 'Could not read processing status' }
+    );
     return mapApiDocumentToDocument(data);
   },
 
@@ -115,13 +103,10 @@ export const documentsApi = {
       return { success: true, id };
     }
 
-    const response = await fetch(`${API_CONFIG.baseUrl}/documents/${encodeURIComponent(id)}`, {
+    await apiFetch(`/documents/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      errorMessage: 'Could not delete the document',
     });
-
-    if (!response.ok) {
-      throw new Error(`Could not delete the document (${response.status}).`);
-    }
 
     return { success: true, id };
   },
@@ -152,14 +137,9 @@ export const documentsApi = {
       };
     }
 
-    const response = await fetch(
-      `${API_CONFIG.baseUrl}/documents/${encodeURIComponent(documentId)}/evidence-summary`
+    return apiJson<DocumentEvidenceSummary>(
+      `/documents/${encodeURIComponent(documentId)}/evidence-summary`,
+      { errorMessage: 'Could not load highlight data' }
     );
-
-    if (!response.ok) {
-      throw new Error(`Could not load highlight data (${response.status}).`);
-    }
-
-    return (await response.json()) as DocumentEvidenceSummary;
   },
 };

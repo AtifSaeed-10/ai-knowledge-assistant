@@ -306,7 +306,10 @@ class TestEvidencePersistence(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self._tmpdir.name, "evidence.db")
-        self._db_patch = patch("database.db.SQLITE_DB_PATH", self.db_path)
+        # database.connection is the single resolver for the database location.
+        self._db_patch = patch(
+            "database.connection.database_path", return_value=self.db_path
+        )
         self._db_patch.start()
         init_db()
 

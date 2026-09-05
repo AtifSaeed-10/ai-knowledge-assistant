@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { Document, DocumentStatus } from '@/types';
 import { documentsApi } from '@/lib/api/documents';
-import { toUserMessage } from '@/lib/api/client';
+import { QuotaExceededError, toUserMessage } from '@/lib/api/client';
+import { useAuthStore } from './useAuthStore';
 import { notify } from './useToastStore';
 
 /** Poll cadence, and the point at which a silent backend is treated as a failure. */
@@ -182,9 +183,14 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
 
         set((state) => ({ documents: [newDoc, ...state.documents] }));
         startPolling(newDoc.id);
+        void useAuthStore.getState().refreshUsage();
 
         return true;
       } catch (error) {
+        // A spent allowance already opened the signup modal; a toast on top
+        // of it would just repeat the same sentence.
+        if (error instanceof QuotaExceededError) return false;
+
         notify.error(
           `Upload failed for “${file.name}”`,
           toUserMessage(error, 'The file could not be uploaded.')
@@ -205,6 +211,8 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
           selectedDocumentId:
             state.selectedDocumentId === id ? null : state.selectedDocumentId,
         }));
+        // Deleting frees an upload slot.
+        void useAuthStore.getState().refreshUsage();
 
         return true;
       } catch (error) {

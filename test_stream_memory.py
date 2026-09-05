@@ -7,7 +7,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+from test_support import api_client
 
 from backend import app
 from memory.store import delete_conversation, load_conversation
@@ -38,7 +38,7 @@ class TestStreamMemoryPersistence(unittest.TestCase):
     def setUp(self):
         self.conversation_id = "test-stream-memory-regression"
         delete_conversation(self.conversation_id)
-        self.client = TestClient(app)
+        self.client = api_client(app)
         self._live = patch(
             "index_hygiene.live_searchable_document_ids",
             return_value=["doc-a", "doc-b"],
@@ -192,7 +192,7 @@ class TestUnanswerableMiniLMPath(unittest.TestCase):
     def test_stream_unanswerable_returns_citations_protocol(self):
         self.conversation_id = "test-stream-unanswerable"
         delete_conversation(self.conversation_id)
-        client = TestClient(app)
+        client = api_client(app)
 
         retrieval = {
             "chunks": [],

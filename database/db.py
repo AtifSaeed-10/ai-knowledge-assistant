@@ -1,20 +1,14 @@
 import os
 import sqlite3
 
-from config import SQLITE_DB_PATH
+from database.connection import get_connection as _open_connection
+
+_MIGRATIONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "migrations")
 
 
 def get_connection():
 
-    parent = os.path.dirname(os.path.abspath(SQLITE_DB_PATH))
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-
-    connection = sqlite3.connect(
-        SQLITE_DB_PATH
-    )
-
-    return connection
+    return _open_connection()
 
 
 
@@ -183,6 +177,39 @@ def init_db():
     )
 
 
+    _add_missing_columns(cursor)
+    _run_sql_migrations(cursor)
+
     connection.commit()
 
     connection.close()
+
+
+# (table, column, definition) — SQLite has no ADD COLUMN IF NOT EXISTS.
+_OWNERSHIP_COLUMNS = (
+    ("documents", "owner_type", "TEXT"),
+    ("documents", "owner_id", "TEXT"),
+    ("conversations", "owner_type", "TEXT"),
+    ("conversations", "owner_id", "TEXT"),
+)
+
+
+def _add_missing_columns(cursor):
+    """Attach ownership columns to pre-existing tables."""
+    for table, column, definition in _OWNERSHIP_COLUMNS:
+        try:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        except sqlite3.OperationalError:
+            pass
+
+
+def _run_sql_migrations(cursor):
+    """Apply idempotent .sql files in name order."""
+    if not os.path.isdir(_MIGRATIONS_DIR):
+        return
+    for name in sorted(os.listdir(_MIGRATIONS_DIR)):
+        if not name.endswith(".sql"):
+            continue
+        path = os.path.join(_MIGRATIONS_DIR, name)
+        with open(path, "r", encoding="utf-8") as handle:
+            cursor.executescript(handle.read())

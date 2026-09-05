@@ -3,8 +3,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
+import { SignupModal } from "@/components/auth/SignupModal";
 import { Toaster } from "@/components/ui/Toaster";
+import { useAuthStore } from "@/store/useAuthStore";
 import { useChatStore } from "@/store/useChatStore";
+import { useSupabaseSession } from "@/lib/supabase/useSupabaseSession";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -13,8 +16,17 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const initializeConversations = useChatStore((state) => state.initializeConversations);
+  const initSession = useAuthStore((state) => state.initSession);
 
   const closeSidebar = useCallback(() => setIsSidebarOpen(false), []);
+
+  // Establish identity (guest id or restored token) before anything else, so
+  // the first API call already carries it.
+  useSupabaseSession();
+
+  useEffect(() => {
+    initSession();
+  }, [initSession]);
 
   // Chat history belongs to the workspace, not to the chat surface: the
   // sidebar must be correct even before any document exists.
@@ -45,6 +57,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         </main>
       </div>
 
+      <SignupModal />
       <Toaster />
     </div>
   );

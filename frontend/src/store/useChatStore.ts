@@ -5,6 +5,7 @@ import { ConversationSummary } from '@/types/conversation';
 import { chatApi, mapSourceToCitation } from '@/lib/api/chat';
 import { conversationsApi } from '@/lib/api/conversations';
 import { toUserMessage } from '@/lib/api/client';
+import { useAuthStore } from './useAuthStore';
 import { useDocumentStore } from './useDocumentStore';
 import { notify } from './useToastStore';
 
@@ -167,6 +168,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       patchMessage(assistantId, { status: 'ok' });
       void get().refreshConversations();
+      void useAuthStore.getState().refreshUsage();
     } catch (error) {
       const aborted =
         signal.aborted ||

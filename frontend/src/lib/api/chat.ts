@@ -1,6 +1,6 @@
 import type { Citation } from "@/types/citation";
 import { ProductMode } from "@/types/mode";
-import { API_CONFIG } from "./client";
+import { apiFetch } from "./client";
 import {
   displayNumberFromEvidenceId,
   incompleteBracketLength,
@@ -267,7 +267,7 @@ export const chatApi = {
     regenerate: boolean = false,
     onFinalAnswer?: (answer: string) => void
   ): Promise<void> {
-    const response = await fetch(`${API_CONFIG.baseUrl}/chat/stream`, {
+    const response = await apiFetch("/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -278,15 +278,9 @@ export const chatApi = {
         regenerate,
       }),
       signal,
+      errorMessage:
+        "The server could not generate an answer. Please try again",
     });
-
-    if (!response.ok) {
-      throw new Error(
-        response.status >= 500
-          ? "The server could not generate an answer. Please try again."
-          : `The request was rejected (${response.status}).`
-      );
-    }
 
     const reader = response.body?.getReader();
     if (!reader) {

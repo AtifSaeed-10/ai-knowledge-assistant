@@ -4,23 +4,24 @@ import React, { useCallback, useRef, useState } from "react";
 import { AlertCircle, FileUp, Loader2 } from "lucide-react";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { useChatStore } from "@/store/useChatStore";
+import { uploadsExhausted, useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/lib/cn";
 
-const MAX_FILE_BYTES = 50 * 1024 * 1024;
+const DEFAULT_MAX_FILE_MB = 25;
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-function rejectionReason(file: File): string | null {
+function rejectionReason(file: File, maxFileMb: number): string | null {
   const isPdf =
     file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 
   if (!isPdf) return "Only PDF files can be indexed.";
   if (file.size === 0) return "This file is empty.";
-  if (file.size > MAX_FILE_BYTES) {
-    return `Too large (${formatBytes(file.size)}). The limit is 50 MB.`;
+  if (file.size > maxFileMb * 1024 * 1024) {
+    return `Too large (${formatBytes(file.size)}). The limit is ${maxFileMb} MB.`;
   }
   return null;
 }
@@ -33,6 +34,11 @@ interface DocumentUploaderProps {
 export const DocumentUploader = ({ onComplete }: DocumentUploaderProps = {}) => {
   const uploadDocument = useDocumentStore((state) => state.uploadDocument);
   const setActiveCitation = useChatStore((state) => state.setActiveCitation);
+  const usage = useAuthStore((state) => state.usage);
+  const openSignup = useAuthStore((state) => state.openSignup);
+
+  const slotsFull = uploadsExhausted(usage);
+  const maxFileMb = usage?.maxPdfMb ?? DEFAULT_MAX_FILE_MB;
 
   const [isDragging, setIsDragging] = useState(false);
   const [rejected, setRejected] = useState<{ name: string; reason: string }[]>([]);
@@ -51,7 +57,7 @@ export const DocumentUploader = ({ onComplete }: DocumentUploaderProps = {}) => 
       const problems: { name: string; reason: string }[] = [];
 
       files.forEach((file) => {
-        const reason = rejectionReason(file);
+        const reason = rejectionReason(file, maxFileMb);
         if (reason) problems.push({ name: file.name, reason });
         else accepted.push(file);
       });
@@ -76,7 +82,7 @@ export const DocumentUploader = ({ onComplete }: DocumentUploaderProps = {}) => 
 
       if (results.every(Boolean)) onComplete?.();
     },
-    [uploadDocument, setActiveCitation, onComplete]
+    [uploadDocument, setActiveCitation, onComplete, maxFileMb]
   );
 
   return (
@@ -97,9 +103,12 @@ export const DocumentUploader = ({ onComplete }: DocumentUploaderProps = {}) => 
 
       <button
         type="button"
-        onClick={() => inputRef.current?.click()}
+        // With no slot left, explain the limit instead of starting an upload
+        // the server would reject.
+        onClick={() => (slotsFull ? openSignup(null) : inputRef.current?.click())}
         onDragEnter={(event) => {
           event.preventDefault();
+          if (slotsFull) return;
           dragDepth.current += 1;
           setIsDragging(true);
         }}
@@ -113,29 +122,49 @@ export const DocumentUploader = ({ onComplete }: DocumentUploaderProps = {}) => 
           event.preventDefault();
           dragDepth.current = 0;
           setIsDragging(false);
+          if (slotsFull) {
+            openSignup(null);
+            return;
+          }
           void processFiles(event.dataTransfer.files);
         }}
         className={cn(
           "flex w-full flex-col items-center justify-center rounded-xl border border-dashed px-6 py-9 text-center transition-colors",
           isDragging
             ? "border-olive bg-olive-soft"
-            : "border-line-strong bg-surface hover:border-sage hover:bg-surface-muted"
+            : slotsFull
+              ? "border-line bg-surface-muted"
+              : "border-line-strong bg-surface hover:border-sage hover:bg-surface-muted"
         )}
       >
         <span
           className={cn(
             "mb-3 flex h-10 w-10 items-center justify-center rounded-full transition-colors",
-            isDragging ? "bg-olive text-white" : "bg-olive-soft text-olive"
+            isDragging
+              ? "bg-olive text-white"
+              : slotsFull
+                ? "bg-surface-sunken text-ink-icon"
+                : "bg-olive-soft text-olive"
           )}
         >
           <FileUp size={18} strokeWidth={1.75} />
         </span>
 
         <span className="text-body font-semibold tracking-[-0.01em] text-ink">
-          {isDragging ? "Drop to upload" : "Drop PDFs here, or browse"}
+          {isDragging
+            ? "Drop to upload"
+            : slotsFull
+              ? usage?.tier === "guest"
+                ? "Sign in to add more documents"
+                : "Document limit reached"
+              : "Drop PDFs here, or browse"}
         </span>
         <span className="mt-1 text-meta text-ink-muted">
-          PDF only · up to 50 MB each · multiple files supported
+          {slotsFull
+            ? usage?.tier === "guest"
+              ? `The trial covers ${usage?.pdfsLimit ?? 1} document — signing in is free`
+              : "Delete a document to free a slot"
+            : `PDF only · up to ${maxFileMb} MB each · multiple files supported`}
         </span>
       </button>
 

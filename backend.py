@@ -44,6 +44,16 @@ from modes import (
     insufficient_context_payload,
 )
 from agent_foundation import effective_mode
+from app_platform import errors, settings as platform_settings
+from app_platform.auth.context import ACTOR_GUEST, RequestContext
+from app_platform.auth.dependency import get_request_context
+from app_platform.auth.guest import normalize_session_id
+from app_platform.guards import ownership
+from app_platform.quotas import service as quotas
+from database.document_store import reassign_documents
+from database.guest_store import get_guest_session, mark_guest_migrated
+from memory.store import reassign_conversations
+from fastapi import Depends, Header
 
 app = FastAPI()
 
@@ -55,9 +65,7 @@ except Exception:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000"
-    ],
+    allow_origins=platform_settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -111,17 +119,28 @@ def _prepare_chat_history(request: ChatRequest) -> list:
     return history
 
 
-def _scoped_document_ids(request: ChatRequest) -> tuple[list[str] | None, dict | None]:
+def _scoped_document_ids(
+    request: ChatRequest,
+    context: RequestContext,
+) -> tuple[list[str] | None, dict | None]:
     """
-    Apply product mode and live-corpus isolation to retrieval.
+    Apply ownership, product mode, and live-corpus isolation to retrieval.
     Super Focused with no ready selected document aborts without search.
     Normal mode receives an explicit ready-id list (empty = search nothing).
     """
     mode = effective_mode(request.mode)
-    scoped, abort = resolve_retrieval_scope(mode, request.document_ids)
+    requested = [doc_id for doc_id in (request.document_ids or []) if doc_id]
+    visible_requested = ownership.visible_document_ids(context, requested)
+
+    # Asking only about someone else's documents searches nothing, rather
+    # than silently widening to the whole corpus.
+    if requested and not visible_requested:
+        return None, insufficient_context_payload()
+
+    scoped, abort = resolve_retrieval_scope(mode, visible_requested)
     if abort:
         return None, insufficient_context_payload()
-    return scoped, None
+    return ownership.visible_document_ids(context, scoped), None
 
 
 def _document_pdf_path(filename: str) -> str | None:
@@ -129,30 +148,103 @@ def _document_pdf_path(filename: str) -> str | None:
 
     return pdf_path_for_filename(filename)
 
+
+def _owner_fields(context: RequestContext) -> dict:
+    """Owner kwargs for store writes, so new rows are bound to this actor."""
+    return {"owner_type": context.actor_type, "owner_id": context.actor_id}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
-@app.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest):
+@app.get("/me/usage")
+def me_usage(context: RequestContext = Depends(get_request_context)):
+    """Usage and limits for the current actor, for the usage meter."""
+    return quotas.usage_summary(context)
 
+
+@app.post("/auth/migrate-guest")
+def migrate_guest(
+    context: RequestContext = Depends(get_request_context),
+    x_guest_session: str | None = Header(default=None),
+):
+    """
+    Move a finished trial's work to the account that just signed in.
+
+    The signed-in token identifies the destination; the guest header names
+    the trial to claim. A trial can only be claimed once.
+    """
+    if not context.is_user:
+        raise errors.auth_required("Sign in before moving your trial work.")
+
+    session_id = normalize_session_id(x_guest_session)
+    if not session_id:
+        return {
+            "documents_moved": 0,
+            "conversations_moved": 0,
+            "already_migrated": False,
+        }
+
+    session = get_guest_session(session_id)
+    if not session or session.get("migrated_to_user_id"):
+        return {
+            "documents_moved": 0,
+            "conversations_moved": 0,
+            "already_migrated": bool(session),
+        }
+
+    documents_moved = reassign_documents(
+        ACTOR_GUEST, session_id, context.actor_type, context.actor_id
+    )
+    conversations_moved = reassign_conversations(
+        ACTOR_GUEST, session_id, context.actor_type, context.actor_id
+    )
+    mark_guest_migrated(session_id, context.actor_id)
+
+    # Trial questions already asked count against the new monthly allowance,
+    # so signing in cannot be used to reset the counter repeatedly.
+    for _ in range(int(session.get("question_count") or 0)):
+        quotas.record_question(context)
+
+    return {
+        "documents_moved": documents_moved,
+        "conversations_moved": conversations_moved,
+        "already_migrated": False,
+    }
+
+
+@app.post("/chat", response_model=ChatResponse)
+def chat(
+    request: ChatRequest,
+    context: RequestContext = Depends(get_request_context),
+):
+
+    ownership.assert_conversation_owner(context, request.conversation_id)
+    # Regenerating replaces an answer the user already paid for.
+    if not request.regenerate:
+        quotas.check_question_allowed(context)
+
+    owner = _owner_fields(context)
     history = _prepare_chat_history(request)
 
-    scoped_ids, early = _scoped_document_ids(request)
+    scoped_ids, early = _scoped_document_ids(request, context)
     if early is not None:
         if not request.regenerate:
             save_message(
                 request.conversation_id,
                 "user",
-                request.question
+                request.question,
+                **owner,
             )
         answer = early["answer"]
         if is_valid_response(answer):
             save_message(
                 request.conversation_id,
                 "assistant",
-                answer
+                answer,
+                **owner,
             )
         return early
 
@@ -170,8 +262,10 @@ def chat(request: ChatRequest):
         save_message(
             request.conversation_id,
             "user",
-            request.question
+            request.question,
+            **owner,
                 )
+        quotas.record_question(context)
 
 
     # 4. Save assistant response only if valid
@@ -185,26 +279,38 @@ def chat(request: ChatRequest):
             "assistant",
             answer,
             citations=visible_sources(response.get("sources") or [], answer),
+            **owner,
                 )
 
 
     return response
  
 @app.post("/chat/stream")
-def chat_stream(request: ChatRequest):
+def chat_stream(
+    request: ChatRequest,
+    context: RequestContext = Depends(get_request_context),
+):
 
+    # Reject before the stream opens so the client gets a real status code
+    # instead of an error embedded in a 200 response body.
+    ownership.assert_conversation_owner(context, request.conversation_id)
+    if not request.regenerate:
+        quotas.check_question_allowed(context)
+
+    owner = _owner_fields(context)
 
     def generate():
 
         history = _prepare_chat_history(request)
 
-        scoped_ids, early = _scoped_document_ids(request)
+        scoped_ids, early = _scoped_document_ids(request, context)
         if early is not None:
             if not request.regenerate:
                 save_message(
                     request.conversation_id,
                     "user",
                     request.question,
+                    **owner,
                 )
             answer = early.get("answer") or (
                 "No relevant information found in the document."
@@ -215,6 +321,7 @@ def chat_stream(request: ChatRequest):
                     "assistant",
                     answer,
                     citations=[],
+                    **owner,
                 )
             yield f"__CITATIONS__{json.dumps([])}__END_CITATIONS__"
             yield answer
@@ -237,7 +344,9 @@ def chat_stream(request: ChatRequest):
                 request.conversation_id,
                 "user",
                 request.question,
+                **owner,
             )
+            quotas.record_question(context)
 
 
         sources = response.get(
@@ -268,6 +377,7 @@ def chat_stream(request: ChatRequest):
                     "assistant",
                     answer,
                     citations=sources,
+                    **owner,
                 )
 
             yield answer
@@ -337,6 +447,7 @@ def chat_stream(request: ChatRequest):
                     "assistant",
                     answer,
                     citations=final_sources,
+                    **owner,
                 )
 
             # A repaired refusal invalidates the tokens already on screen.
@@ -356,7 +467,12 @@ def chat_stream(request: ChatRequest):
     )
 
 @app.delete("/memory/{conversation_id}")
-def delete_memory(conversation_id: str):
+def delete_memory(
+    conversation_id: str,
+    context: RequestContext = Depends(get_request_context),
+):
+
+    ownership.assert_conversation_owner(context, conversation_id)
 
     delete_conversation(conversation_id)
 
@@ -374,18 +490,32 @@ class ConversationRenameRequest(BaseModel):
 
 
 @app.get("/conversations")
-def conversations():
-    return list_conversations()
+def conversations(context: RequestContext = Depends(get_request_context)):
+    return list_conversations(
+        owner_type=context.actor_type,
+        owner_id=context.actor_id,
+    )
 
 
 @app.post("/conversations")
-def conversation_create(request: ConversationCreateRequest | None = None):
+def conversation_create(
+    request: ConversationCreateRequest | None = None,
+    context: RequestContext = Depends(get_request_context),
+):
     title = request.title if request else None
-    return create_conversation(title)
+    return create_conversation(
+        title,
+        owner_type=context.actor_type,
+        owner_id=context.actor_id,
+    )
 
 
 @app.get("/conversations/{conversation_id}")
-def conversation_detail(conversation_id: str):
+def conversation_detail(
+    conversation_id: str,
+    context: RequestContext = Depends(get_request_context),
+):
+    ownership.assert_conversation_owner(context, conversation_id)
     record = get_conversation(conversation_id)
     if not record:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -396,7 +526,9 @@ def conversation_detail(conversation_id: str):
 def conversation_rename(
     conversation_id: str,
     request: ConversationRenameRequest,
+    context: RequestContext = Depends(get_request_context),
 ):
+    ownership.assert_conversation_owner(context, conversation_id)
     record = rename_conversation(conversation_id, request.title)
     if not record:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -409,7 +541,11 @@ def conversation_rename(
 
 
 @app.delete("/conversations/{conversation_id}")
-def conversation_delete(conversation_id: str):
+def conversation_delete(
+    conversation_id: str,
+    context: RequestContext = Depends(get_request_context),
+):
+    ownership.assert_conversation_owner(context, conversation_id)
     delete_conversation(conversation_id)
     return {
         "message": f"Conversation '{conversation_id}' cleared."
@@ -418,15 +554,23 @@ def conversation_delete(conversation_id: str):
 @app.post("/upload")
 def upload_pdf(
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    context: RequestContext = Depends(get_request_context),
 ):
 
     print("========== UPLOAD ENDPOINT CALLED ==========")
 
+    quotas.check_upload_allowed(context)
+    quotas.check_upload_size(getattr(file, "size", None))
+
     os.makedirs(DATA_DIR, exist_ok=True)
 
     original_name = os.path.basename(file.filename or "upload.pdf")
-    document_id = create_document(original_name)
+    document_id = create_document(
+        original_name,
+        owner_type=context.actor_type,
+        owner_id=context.actor_id,
+    )
     file_path = stored_pdf_path(document_id, must_exist=False)
     if file_path is None:
         raise HTTPException(status_code=400, detail="Could not store uploaded file.")
@@ -450,12 +594,20 @@ def upload_pdf(
     }
 
 @app.get("/documents")
-def documents():
+def documents(context: RequestContext = Depends(get_request_context)):
 
-    return list_documents()
+    return list_documents(
+        owner_type=context.actor_type,
+        owner_id=context.actor_id,
+    )
 
 @app.get("/documents/{document_id}")
-def document_details(document_id: str):
+def document_details(
+    document_id: str,
+    context: RequestContext = Depends(get_request_context),
+):
+
+    ownership.assert_document_owner(context, document_id)
 
     document = get_document_details(
         document_id
@@ -472,8 +624,13 @@ def document_details(document_id: str):
 
 
 @app.get("/documents/{document_id}/file")
-def document_file(document_id: str):
+def document_file(
+    document_id: str,
+    context: RequestContext = Depends(get_request_context),
+):
     """Serve the original uploaded PDF for in-app page preview."""
+
+    ownership.assert_document_owner(context, document_id)
 
     document = get_document_details(document_id)
     if not document or document.get("error"):
@@ -497,8 +654,16 @@ def document_file(document_id: str):
 
 
 @app.get("/documents/{document_id}/chunks/{chunk_id}/evidence")
-def chunk_evidence(document_id: str, chunk_id: str, quote: str | None = None, claim: str | None = None):
+def chunk_evidence(
+    document_id: str,
+    chunk_id: str,
+    quote: str | None = None,
+    claim: str | None = None,
+    context: RequestContext = Depends(get_request_context),
+):
     """Return chunk evidence, localized to a quote and/or paraphrased claim."""
+
+    ownership.assert_document_owner(context, document_id)
 
     document = get_document_details(document_id)
     if not document or document.get("error"):
@@ -526,8 +691,12 @@ def chunk_evidence(document_id: str, chunk_id: str, quote: str | None = None, cl
 
 
 @app.get("/documents/{document_id}/evidence-summary")
-def document_evidence_summary_api(document_id: str):
+def document_evidence_summary_api(
+    document_id: str,
+    context: RequestContext = Depends(get_request_context),
+):
     """Highlight availability summary for indexed chunk evidence."""
+    ownership.assert_document_owner(context, document_id)
     document = get_document_details(document_id)
     if not document or document.get("error"):
         raise HTTPException(status_code=404, detail="Document not found")
@@ -535,7 +704,12 @@ def document_evidence_summary_api(document_id: str):
 
 
 @app.delete("/documents/{document_id}")
-def delete_document_api(document_id: str):
+def delete_document_api(
+    document_id: str,
+    context: RequestContext = Depends(get_request_context),
+):
+
+    ownership.assert_document_owner(context, document_id)
 
     deleted = remove_document(
         document_id

@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+from test_support import api_client
 
 from backend import app
 from database.document_store import create_document, delete_document
@@ -43,7 +43,7 @@ def _chunk(
 
 class TestChunkEvidenceApi(unittest.TestCase):
     def setUp(self):
-        self.client = TestClient(app)
+        self.client = api_client(app)
         self.document_id = create_document("phase2b-evidence.pdf")
         self.other_id = create_document("phase2b-other.pdf")
 
@@ -231,7 +231,7 @@ class TestChunkEvidenceApi(unittest.TestCase):
 
 class TestQuoteEvidenceApi(unittest.TestCase):
     def setUp(self):
-        self.client = TestClient(app)
+        self.client = api_client(app)
         self.document_id = create_document("quote-evidence.pdf")
         self.chunk_id = f"{self.document_id}_0"
         self.plain = (
@@ -400,7 +400,7 @@ class TestQuoteEvidenceApi(unittest.TestCase):
 
 class TestVisualChunkEvidenceApi(unittest.TestCase):
     def setUp(self):
-        self.client = TestClient(app)
+        self.client = api_client(app)
         self.document_id = create_document("visual-evidence.pdf")
 
     def tearDown(self):

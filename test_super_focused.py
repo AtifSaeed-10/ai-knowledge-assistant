@@ -6,7 +6,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+from test_support import api_client
 
 from backend import app, _document_pdf_path
 from memory.store import delete_conversation
@@ -61,7 +61,7 @@ class TestSuperFocusedChat(unittest.TestCase):
     def setUp(self):
         self.conversation_id = "test-super-focused"
         delete_conversation(self.conversation_id)
-        self.client = TestClient(app)
+        self.client = api_client(app)
         self._live = patch(
             "index_hygiene.live_searchable_document_ids",
             return_value=["doc-a", "doc-b", "football-doc"],
@@ -268,7 +268,7 @@ class TestAskQuestionCitations(unittest.TestCase):
 
 class TestDocumentPdfEndpoint(unittest.TestCase):
     def setUp(self):
-        self.client = TestClient(app)
+        self.client = api_client(app)
 
     def test_unknown_document_404(self):
         response = self.client.get("/documents/not-a-real-id/file")

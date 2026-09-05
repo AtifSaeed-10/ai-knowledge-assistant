@@ -1,11 +1,15 @@
 from database.document_store import (
     get_all_documents,
     get_document,
+    get_documents_for_owner,
 )
 from index_hygiene import remove_document_completely
 
 
-def list_documents():
+def list_documents(owner_type=None, owner_id=None):
+    """Library listing. Scoped to one actor when an owner is supplied."""
+    if owner_type and owner_id:
+        return get_documents_for_owner(owner_type, owner_id)
     return get_all_documents()
 
 

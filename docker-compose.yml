@@ -1,0 +1,28 @@
+# Backend deployment for a single always-free VM (Oracle 2 OCPU / 12 GB).
+#
+# The three stateful directories are bind-mounted so a container rebuild or a
+# VM restart never loses a user's PDFs, embeddings, or accounts.
+services:
+  api:
+    build: .
+    image: docusage-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./chroma_db:/app/chroma_db
+      # Model weights are large; caching them survives restarts.
+      - model_cache:/root/.cache
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 30s
+      timeout: 10s
+      # First boot downloads the embedding and reranker models.
+      start_period: 300s
+      retries: 3
+
+volumes:
+  model_cache:
