@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from fastapi.testclient import TestClient
+from test_support import api_client
 
 from backend import app
 from memory.store import (
@@ -16,7 +16,7 @@ from memory.store import (
 
 class TestConversationPersistence(unittest.TestCase):
     def setUp(self):
-        self.client = TestClient(app)
+        self.client = api_client(app)
         self.ids: list[str] = []
 
     def tearDown(self):

@@ -1,5 +1,7 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
+import { sessionHeaders } from "@/lib/guestSession";
+
 let workerReady = false;
 
 export async function loadPdfjs() {
@@ -15,6 +17,8 @@ export async function loadPdfDocument(url: string): Promise<PDFDocumentProxy> {
   const pdfjs = await loadPdfjs();
   const task = pdfjs.getDocument({
     url,
+    // The PDF route is owner-guarded, so the fetch needs the session identity.
+    httpHeaders: sessionHeaders(),
     withCredentials: false,
     isEvalSupported: false,
   });

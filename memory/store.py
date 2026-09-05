@@ -41,6 +41,8 @@ def _parse_citations(raw: str | None) -> list[dict[str, Any]] | None:
 def ensure_conversation(
     conversation_id: str,
     title: str | None = None,
+    owner_type: str | None = None,
+    owner_id: str | None = None,
 ) -> dict[str, Any]:
     """Create a conversation row if missing; return its record."""
     cid = (conversation_id or "").strip() or new_conversation_id()
@@ -69,11 +71,11 @@ def ensure_conversation(
     cursor.execute(
         """
         INSERT INTO conversations (
-            conversation_id, title, created_at, updated_at
+            conversation_id, title, created_at, updated_at, owner_type, owner_id
         )
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (cid, resolved_title, created, created),
+        (cid, resolved_title, created, created, owner_type, owner_id),
     )
     connection.commit()
     connection.close()
@@ -89,15 +91,71 @@ def new_conversation_id() -> str:
     return f"conv-{uuid.uuid4().hex[:12]}"
 
 
-def create_conversation(title: str | None = None) -> dict[str, Any]:
-    return ensure_conversation(new_conversation_id(), title=title)
+def create_conversation(
+    title: str | None = None,
+    owner_type: str | None = None,
+    owner_id: str | None = None,
+) -> dict[str, Any]:
+    return ensure_conversation(
+        new_conversation_id(),
+        title=title,
+        owner_type=owner_type,
+        owner_id=owner_id,
+    )
 
 
-def list_conversations() -> list[dict[str, Any]]:
+def conversation_owner(conversation_id: str) -> tuple[str | None, str | None] | None:
+    """Return (owner_type, owner_id), or None when the conversation is absent."""
     connection = get_connection()
     cursor = connection.cursor()
     cursor.execute(
         """
+        SELECT owner_type, owner_id
+        FROM conversations
+        WHERE conversation_id = ?
+        """,
+        (conversation_id,),
+    )
+    row = cursor.fetchone()
+    connection.close()
+    if not row:
+        return None
+    return row[0], row[1]
+
+
+def reassign_conversations(
+    from_owner_type: str,
+    from_owner_id: str,
+    to_owner_type: str,
+    to_owner_id: str,
+) -> int:
+    """Move every conversation from one actor to another."""
+    connection = get_connection()
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        UPDATE conversations
+        SET owner_type = ?, owner_id = ?
+        WHERE owner_type = ? AND owner_id = ?
+        """,
+        (to_owner_type, to_owner_id, from_owner_type, from_owner_id),
+    )
+    moved = cursor.rowcount
+    connection.commit()
+    connection.close()
+    return max(0, moved)
+
+
+def list_conversations(
+    owner_type: str | None = None,
+    owner_id: str | None = None,
+) -> list[dict[str, Any]]:
+    connection = get_connection()
+    cursor = connection.cursor()
+    scoped = bool(owner_type and owner_id)
+    owner_clause = "WHERE c.owner_type = ? AND c.owner_id = ?" if scoped else ""
+    cursor.execute(
+        f"""
         SELECT
             c.conversation_id,
             c.title,
@@ -112,8 +170,10 @@ def list_conversations() -> list[dict[str, Any]]:
                 LIMIT 1
             ) AS preview
         FROM conversations c
+        {owner_clause}
         ORDER BY c.updated_at DESC
-        """
+        """,
+        (owner_type, owner_id) if scoped else (),
     )
     rows = cursor.fetchall()
     connection.close()
@@ -204,11 +264,13 @@ def save_message(
     role: str,
     content: str,
     citations: list[dict[str, Any]] | None = None,
+    owner_type: str | None = None,
+    owner_id: str | None = None,
 ):
     """
     Store one message. Creates the conversation if needed.
     """
-    ensure_conversation(conversation_id)
+    ensure_conversation(conversation_id, owner_type=owner_type, owner_id=owner_id)
     connection = get_connection()
     cursor = connection.cursor()
     created = _now()

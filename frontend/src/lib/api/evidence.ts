@@ -1,4 +1,4 @@
-import { API_CONFIG } from "./client";
+import { API_CONFIG, apiFetch } from "./client";
 import type { ChunkEvidence, EvidenceRegion } from "@/lib/pdf/coords";
 
 function asNumber(value: unknown): number | null {
@@ -73,14 +73,16 @@ export async function fetchChunkEvidence(
   if (quote) params.set("quote", quote);
   if (claim) params.set("claim", claim);
   const query = params.toString();
-  const response = await fetch(
-    `${API_CONFIG.baseUrl}/documents/${encodeURIComponent(documentId)}/chunks/${encodeURIComponent(chunkId)}/evidence${query ? `?${query}` : ""}`,
-    { signal: options?.signal }
-  );
-
-  if (response.status === 404) return null;
-  if (!response.ok) {
-    throw new Error(`Could not load evidence (${response.status}).`);
+  let response: Response;
+  try {
+    response = await apiFetch(
+      `/documents/${encodeURIComponent(documentId)}/chunks/${encodeURIComponent(chunkId)}/evidence${query ? `?${query}` : ""}`,
+      { signal: options?.signal, errorMessage: "Could not load evidence" }
+    );
+  } catch (error) {
+    // A missing chunk is a normal "no highlight" outcome, not a failure.
+    if (error instanceof Error && error.message.includes("(404)")) return null;
+    throw error;
   }
 
   return parseEvidence(await response.json());

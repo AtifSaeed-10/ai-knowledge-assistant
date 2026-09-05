@@ -7,7 +7,7 @@ import re
 import unittest
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+from test_support import api_client
 
 from answer_prompt import MISSING_IN_DOCUMENT_PHRASE
 from backend import app
@@ -59,7 +59,7 @@ class TestStreamFinalAnswerFrame(unittest.TestCase):
     def setUp(self):
         self.conversation_id = "test-stream-final-answer"
         delete_conversation(self.conversation_id)
-        self.client = TestClient(app)
+        self.client = api_client(app)
         self._live = patch(
             "index_hygiene.live_searchable_document_ids",
             return_value=["handbook"],

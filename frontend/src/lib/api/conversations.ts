@@ -1,4 +1,4 @@
-import { API_CONFIG } from "./client";
+import { apiFetch, apiJson } from "./client";
 import {
   ConversationDetail,
   ConversationSummary,
@@ -6,57 +6,43 @@ import {
 
 export const conversationsApi = {
   async list(): Promise<ConversationSummary[]> {
-    const response = await fetch(`${API_CONFIG.baseUrl}/conversations`);
-    if (!response.ok) {
-      throw new Error("Failed to list conversations");
-    }
-    return response.json();
+    return apiJson<ConversationSummary[]>("/conversations", {
+      errorMessage: "Failed to list conversations",
+    });
   },
 
   async create(title?: string): Promise<ConversationSummary> {
-    const response = await fetch(`${API_CONFIG.baseUrl}/conversations`, {
+    return apiJson<ConversationSummary>("/conversations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: title || null }),
+      errorMessage: "Failed to create conversation",
     });
-    if (!response.ok) {
-      throw new Error("Failed to create conversation");
-    }
-    return response.json();
   },
 
   async get(id: string): Promise<ConversationDetail> {
-    const response = await fetch(
-      `${API_CONFIG.baseUrl}/conversations/${encodeURIComponent(id)}`
+    return apiJson<ConversationDetail>(
+      `/conversations/${encodeURIComponent(id)}`,
+      { errorMessage: "Failed to load conversation" }
     );
-    if (!response.ok) {
-      throw new Error("Failed to load conversation");
-    }
-    return response.json();
   },
 
   async rename(id: string, title: string): Promise<ConversationSummary> {
-    const response = await fetch(
-      `${API_CONFIG.baseUrl}/conversations/${encodeURIComponent(id)}`,
+    return apiJson<ConversationSummary>(
+      `/conversations/${encodeURIComponent(id)}`,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title }),
+        errorMessage: "Failed to rename conversation",
       }
     );
-    if (!response.ok) {
-      throw new Error("Failed to rename conversation");
-    }
-    return response.json();
   },
 
   async remove(id: string): Promise<void> {
-    const response = await fetch(
-      `${API_CONFIG.baseUrl}/conversations/${encodeURIComponent(id)}`,
-      { method: "DELETE" }
-    );
-    if (!response.ok) {
-      throw new Error("Failed to delete conversation");
-    }
+    await apiFetch(`/conversations/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      errorMessage: "Failed to delete conversation",
+    });
   },
 };

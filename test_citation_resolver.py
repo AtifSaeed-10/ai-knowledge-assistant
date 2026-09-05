@@ -6,7 +6,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+from test_support import api_client
 
 from backend import app
 from citation_resolver import (
@@ -372,7 +372,7 @@ class TestStreamProtocolWithCitations(unittest.TestCase):
     def setUp(self):
         self.conversation_id = "test-stream-evidence-ids"
         delete_conversation(self.conversation_id)
-        self.client = TestClient(app)
+        self.client = api_client(app)
         self._live = patch(
             "index_hygiene.live_searchable_document_ids",
             return_value=["doc-a"],

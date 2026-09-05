@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+from test_support import api_client
 
 from agent_foundation import (
     TOOL_DOCUMENT_QA,
@@ -50,7 +50,7 @@ class TestAgenticFoundation(unittest.TestCase):
     def test_agentic_api_mode_does_not_invent_agent_behavior(self):
         conversation_id = "test-agentic-fallback"
         delete_conversation(conversation_id)
-        client = TestClient(app)
+        client = api_client(app)
         retrieval = {
             "chunks": ["Supervised learning uses labeled data."],
             "distances": [0.2],

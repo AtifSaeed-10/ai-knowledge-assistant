@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+from test_support import api_client
 
 from backend import app
 from memory.store import delete_conversation, load_conversation
@@ -15,7 +15,7 @@ class TestStreamStopAndRegenerate(unittest.TestCase):
     def setUp(self):
         self.conversation_id = "test-stream-controls"
         delete_conversation(self.conversation_id)
-        self.client = TestClient(app)
+        self.client = api_client(app)
         self._live = patch(
             "index_hygiene.live_searchable_document_ids",
             return_value=["doc-a"],

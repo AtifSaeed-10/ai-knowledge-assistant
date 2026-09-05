@@ -1,5 +1,6 @@
 "use client";
 
+import { questionsExhausted, useAuthStore } from "@/store/useAuthStore";
 import { useChatStore } from "@/store/useChatStore";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import type { Document } from "@/types";
@@ -28,6 +29,7 @@ export function useChatScope(): ChatScope {
   const mode = useChatStore((state) => state.productMode);
   const documents = useDocumentStore((state) => state.documents);
   const selectedDocumentId = useDocumentStore((state) => state.selectedDocumentId);
+  const usage = useAuthStore((state) => state.usage);
 
   const readyDocuments = documents.filter((doc) => doc.status === "ready");
   const processingCount = documents.filter(
@@ -40,7 +42,8 @@ export function useChatScope(): ChatScope {
   const selectedIsReady = selectedDocument?.status === "ready";
 
   const focusedReady = mode === "super_focused" ? selectedIsReady : true;
-  const canAsk = readyDocuments.length > 0 && focusedReady;
+  const outOfQuestions = questionsExhausted(usage);
+  const canAsk = readyDocuments.length > 0 && focusedReady && !outOfQuestions;
 
   let blockedReason: string | null = null;
   if (readyDocuments.length === 0) {
@@ -50,6 +53,12 @@ export function useChatScope(): ChatScope {
         : "Add a PDF to start asking questions.";
   } else if (!focusedReady) {
     blockedReason = "Pick a ready document in the sidebar, or search all documents.";
+  } else if (outOfQuestions) {
+    // Say this before the request, so the user is not left waiting on a 402.
+    blockedReason =
+      usage?.tier === "guest"
+        ? "You have used all your free trial questions. Sign in to continue — still free."
+        : "You have used all your questions for this month.";
   }
 
   const scopeLabel =
