@@ -82,7 +82,7 @@ QUOTA_MAX_PDF_MB = _env_int("QUOTA_MAX_PDF_MB", 25)
 
 def auth_enabled() -> bool:
     """True when signed-in users are supported by this deployment."""
-    return AUTH_PROVIDER == "supabase" and bool(SUPABASE_JWT_SECRET)
+    return AUTH_PROVIDER == "supabase" and bool(SUPABASE_JWT_SECRET or SUPABASE_URL)
 
 
 def max_pdf_bytes() -> int:

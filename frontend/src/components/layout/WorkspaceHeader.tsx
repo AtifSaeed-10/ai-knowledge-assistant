@@ -4,6 +4,7 @@ import React from "react";
 import { Download, Menu, SquarePen } from "lucide-react";
 import { LogoMark } from "@/components/ui/Logo";
 import { UsageMeter } from "@/components/auth/UsageMeter";
+import { UserMenu } from "@/components/auth/UserMenu";
 import { useChatStore } from "@/store/useChatStore";
 import {
   conversationToMarkdown,
@@ -87,6 +88,8 @@ export function WorkspaceHeader({ onOpenSidebar }: WorkspaceHeaderProps) {
           <span className="hidden sm:inline">New chat</span>
           <span className="sr-only sm:hidden">New chat</span>
         </button>
+
+        <UserMenu />
       </div>
     </header>
   );

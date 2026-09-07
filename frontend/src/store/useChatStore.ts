@@ -5,11 +5,12 @@ import { ConversationSummary } from '@/types/conversation';
 import { chatApi, mapSourceToCitation } from '@/lib/api/chat';
 import { conversationsApi } from '@/lib/api/conversations';
 import { toUserMessage } from '@/lib/api/client';
+import { ensureGuestSession } from '@/lib/guestSession';
 import { useAuthStore } from './useAuthStore';
 import { useDocumentStore } from './useDocumentStore';
 import { notify } from './useToastStore';
 
-const ACTIVE_CONVERSATION_KEY = 'docusage_active_conversation';
+const ACTIVE_CONVERSATION_PREFIX = 'docusage_active_conversation';
 const MODE_KEY = 'docusage_product_mode';
 
 function readStored(key: string): string | null {
@@ -28,6 +29,28 @@ function writeStored(key: string, value: string | null) {
     else window.localStorage.setItem(key, value);
   } catch {
     /* storage unavailable (private mode) — non-fatal */
+  }
+}
+
+function workspaceConversationKey(): string {
+  const userId = useAuthStore.getState().user?.id;
+  if (userId) return `${ACTIVE_CONVERSATION_PREFIX}:user:${userId}`;
+  return `${ACTIVE_CONVERSATION_PREFIX}:guest:${ensureGuestSession()}`;
+}
+
+function readActiveConversation(): string | null {
+  const scoped = readStored(workspaceConversationKey());
+  if (scoped) return scoped;
+  if (!useAuthStore.getState().user) {
+    return readStored(ACTIVE_CONVERSATION_PREFIX);
+  }
+  return null;
+}
+
+function writeActiveConversation(id: string | null) {
+  writeStored(workspaceConversationKey(), id);
+  if (useAuthStore.getState().user) {
+    writeStored(ACTIVE_CONVERSATION_PREFIX, null);
   }
 }
 
@@ -89,6 +112,8 @@ interface ChatState {
   requestComposerFocus: () => void;
 
   initializeConversations: () => Promise<void>;
+  reloadConversations: () => Promise<void>;
+  beginIdentitySwitch: () => void;
   refreshConversations: () => Promise<void>;
   startNewConversation: () => void;
   selectConversation: (id: string) => Promise<void>;
@@ -103,6 +128,7 @@ interface ChatState {
 export const useChatStore = create<ChatState>((set, get) => {
   let abortController: AbortController | null = null;
   let stoppedByUser = false;
+  let hydrateGeneration = 0;
 
   const abortInFlight = () => {
     if (abortController) {
@@ -202,6 +228,53 @@ export const useChatStore = create<ChatState>((set, get) => {
     }
   };
 
+  const hydrateConversations = async () => {
+    const generation = ++hydrateGeneration;
+    set({ isHydrating: true });
+
+    const storedMode = readStored(MODE_KEY);
+    if (storedMode === 'normal' || storedMode === 'super_focused') {
+      set({ productMode: storedMode });
+    }
+
+    try {
+      const conversations = await conversationsApi.list();
+      if (generation !== hydrateGeneration) return;
+
+      const storedId = readActiveConversation();
+      const activeId =
+        (storedId && conversations.some((item) => item.conversation_id === storedId)
+          ? storedId
+          : conversations[0]?.conversation_id) || '';
+
+      if (!activeId) {
+        writeActiveConversation(null);
+        set({ conversations, conversationId: '', messages: [], conversationError: null });
+        return;
+      }
+
+      const detail = await conversationsApi.get(activeId);
+      if (generation !== hydrateGeneration) return;
+
+      writeActiveConversation(activeId);
+      set({
+        conversations,
+        conversationId: activeId,
+        messages: mapStoredMessages(detail.messages || []),
+        conversationError: null,
+      });
+    } catch (error) {
+      if (generation !== hydrateGeneration) return;
+      set({
+        conversationError: toUserMessage(error, 'Could not load your conversations.'),
+      });
+    } finally {
+      if (generation === hydrateGeneration) {
+        set({ isHydrating: false, hasHydrated: true });
+      }
+    }
+  };
+
   return {
     conversationId: '',
     conversations: [],
@@ -236,43 +309,27 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     initializeConversations: async () => {
       if (get().isHydrating || get().hasHydrated) return;
-      set({ isHydrating: true });
+      await hydrateConversations();
+    },
 
-      const storedMode = readStored(MODE_KEY);
-      if (storedMode === 'normal' || storedMode === 'super_focused') {
-        set({ productMode: storedMode });
-      }
+    reloadConversations: async () => {
+      await hydrateConversations();
+    },
 
-      try {
-        const conversations = await conversationsApi.list();
-        const storedId = readStored(ACTIVE_CONVERSATION_KEY);
-        const activeId =
-          (storedId && conversations.some((item) => item.conversation_id === storedId)
-            ? storedId
-            : conversations[0]?.conversation_id) || '';
-
-        if (!activeId) {
-          // No history yet: stay in an unsaved draft instead of creating an empty row.
-          writeStored(ACTIVE_CONVERSATION_KEY, null);
-          set({ conversations, conversationId: '', messages: [] });
-          return;
-        }
-
-        const detail = await conversationsApi.get(activeId);
-        writeStored(ACTIVE_CONVERSATION_KEY, activeId);
-        set({
-          conversations,
-          conversationId: activeId,
-          messages: mapStoredMessages(detail.messages || []),
-          conversationError: null,
-        });
-      } catch (error) {
-        set({
-          conversationError: toUserMessage(error, 'Could not load your conversations.'),
-        });
-      } finally {
-        set({ isHydrating: false, hasHydrated: true });
-      }
+    beginIdentitySwitch: () => {
+      abortInFlight();
+      hydrateGeneration += 1;
+      set({
+        conversations: [],
+        conversationId: '',
+        messages: [],
+        activeCitation: null,
+        conversationError: null,
+        isHydrating: true,
+        hasHydrated: false,
+        isLoading: false,
+        isSwitching: false,
+      });
     },
 
     /** New chat is a local draft: no empty conversations are ever persisted. */
@@ -285,7 +342,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
 
       abortInFlight();
-      writeStored(ACTIVE_CONVERSATION_KEY, null);
+      writeActiveConversation(null);
       set((state) => ({
         conversationId: '',
         messages: [],
@@ -301,7 +358,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       if (!id || (id === get().conversationId && !get().conversationError)) return;
 
       abortInFlight();
-      writeStored(ACTIVE_CONVERSATION_KEY, id);
+      writeActiveConversation(id);
 
       // Clear immediately so the previous transcript can never be mistaken for this one.
       set({
@@ -369,7 +426,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       if (remaining.length > 0) {
         await get().selectConversation(remaining[0].conversation_id);
       } else {
-        writeStored(ACTIVE_CONVERSATION_KEY, null);
+        writeActiveConversation(null);
         set({ conversationId: '', messages: [], activeCitation: null });
       }
     },
@@ -407,7 +464,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         try {
           const created = await conversationsApi.create();
           conversationId = created.conversation_id;
-          writeStored(ACTIVE_CONVERSATION_KEY, conversationId);
+          writeActiveConversation(conversationId);
           set((state) => ({
             conversationId: created.conversation_id,
             conversations: [created, ...state.conversations],
@@ -475,7 +532,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         try {
           const created = await conversationsApi.create();
           targetConversationId = created.conversation_id;
-          writeStored(ACTIVE_CONVERSATION_KEY, targetConversationId);
+          writeActiveConversation(targetConversationId);
           set((state) => ({
             conversationId: created.conversation_id,
             conversations: [created, ...state.conversations],
