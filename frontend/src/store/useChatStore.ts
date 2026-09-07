@@ -8,7 +8,11 @@ import { toUserMessage } from '@/lib/api/client';
 import { ensureGuestSession } from '@/lib/guestSession';
 import { useAuthStore } from './useAuthStore';
 import { useDocumentStore } from './useDocumentStore';
+import { usePdfPanelStore } from './usePdfPanelStore';
 import { notify } from './useToastStore';
+import { shouldFollowAnswerCitation } from '@/lib/workspace/pdfPanel';
+import { classifyChatCommand } from '@/lib/workspace/chatCommand';
+import { runWorkspaceCommand } from '@/lib/workspace/applyChatCommand';
 
 const ACTIVE_CONVERSATION_PREFIX = 'docusage_active_conversation';
 const MODE_KEY = 'docusage_product_mode';
@@ -184,7 +188,19 @@ export const useChatStore = create<ChatState>((set, get) => {
             ),
           }));
         },
-        (citations) => patchMessage(assistantId, { citations }),
+        (citations) => {
+          patchMessage(assistantId, { citations });
+          if (
+            shouldFollowAnswerCitation({
+              isOpen: usePdfPanelStore.getState().isOpen,
+              citationCount: citations.length,
+            })
+          ) {
+            const target =
+              citations.find((item) => item.documentId) || citations[0];
+            if (target) get().setActiveCitation(target);
+          }
+        },
         mode,
         signal,
         regenerate,
@@ -288,7 +304,10 @@ export const useChatStore = create<ChatState>((set, get) => {
     activeCitation: null,
     composerFocusToken: 0,
 
-    setActiveCitation: (citation) => set({ activeCitation: citation }),
+    setActiveCitation: (citation) => {
+      set({ activeCitation: citation });
+      if (citation) usePdfPanelStore.getState().open();
+    },
 
     setProductMode: (mode) => {
       writeStored(MODE_KEY, mode);
@@ -431,8 +450,56 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
     },
 
-    sendMessage: async (content: string) => {
-      if (get().isLoading) return;
+    sendMessage: async (raw: string) => {
+      const content = raw.trim();
+      if (!content || get().isLoading) return;
+
+      const command = classifyChatCommand(content);
+      if (command.kind !== 'question') {
+        const documents = useDocumentStore.getState().documents;
+        const selectedDocumentId = useDocumentStore.getState().selectedDocumentId;
+        const panel = usePdfPanelStore.getState();
+        const reply = await runWorkspaceCommand(command, {
+          documents,
+          selectedDocumentId,
+          previewDocumentId: panel.previewDocumentId,
+          citationDocumentId: get().activeCitation?.documentId,
+          visiblePage: panel.visiblePage,
+          pageCount: panel.pageCount,
+          openPanel: (options) => usePdfPanelStore.getState().open(options),
+          closePanel: () => {
+            get().setActiveCitation(null);
+            usePdfPanelStore.getState().close();
+          },
+          requestPage: (page) => {
+            get().setActiveCitation(null);
+            usePdfPanelStore.getState().requestPage(page);
+          },
+        });
+        const stamp = Date.now();
+        set((state) => ({
+          messages: [
+            ...state.messages,
+            {
+              id: `user-${stamp}-nav`,
+              role: 'user',
+              content,
+              timestamp: new Date(),
+              status: 'ok',
+            },
+            {
+              id: `assistant-${stamp}-nav`,
+              role: 'assistant',
+              content: reply,
+              timestamp: new Date(),
+              citations: [],
+              status: 'ok',
+            },
+          ],
+          isLoading: false,
+        }));
+        return;
+      }
 
       const assistantId = `assistant-${Date.now()}`;
 

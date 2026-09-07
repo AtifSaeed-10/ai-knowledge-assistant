@@ -3,6 +3,7 @@
 import React, { KeyboardEvent, useEffect, useRef, useState } from "react";
 import { ArrowUp, Square } from "lucide-react";
 import { useChatStore } from "@/store/useChatStore";
+import { isWorkspaceCommand } from "@/lib/workspace/chatCommand";
 import { cn } from "@/lib/cn";
 
 const MAX_HEIGHT = 180;
@@ -20,8 +21,6 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const stopGeneration = useChatStore((state) => state.stopGeneration);
-  const setActiveCitation = useChatStore((state) => state.setActiveCitation);
-  const activeCitation = useChatStore((state) => state.activeCitation);
   const focusToken = useChatStore((state) => state.composerFocusToken);
 
   useEffect(() => {
@@ -37,13 +36,15 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
 
   const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(event.target.value);
-    if (activeCitation && event.target.value.length > 0) setActiveCitation(null);
     resize();
   };
 
+  const commandReady = isWorkspaceCommand(input);
+  const canSendText = canAsk || commandReady;
+
   const handleSend = () => {
     const value = input.trim();
-    if (!value || isLoading || !canAsk) return;
+    if (!value || isLoading || !canSendText) return;
 
     onSend(value);
     setInput("");
@@ -67,14 +68,14 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
       ? "Type your next question while this one answers…"
       : "Ask a question about your documents…";
 
-  const readyToSend = Boolean(input.trim()) && !isLoading && canAsk;
+  const readyToSend = Boolean(input.trim()) && !isLoading && canSendText;
 
   return (
     <div>
       <div
         className={cn(
           "flex items-end gap-2 rounded-2xl border bg-surface p-1.5 pl-3.5 shadow-card transition-colors",
-          canAsk
+          canSendText
             ? "border-line focus-within:border-sage"
             : "border-line bg-surface-muted"
         )}
@@ -84,7 +85,6 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
           value={input}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          disabled={!canAsk}
           placeholder={placeholder}
           rows={1}
           aria-label="Ask a question about your documents"
@@ -122,9 +122,11 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
       </div>
 
       <p className="mt-1.5 px-1 text-meta text-ink-subtle">
-        {canAsk
-          ? "Enter to send · Shift + Enter for a new line"
-          : blockedReason || "Waiting for a ready document"}
+        {commandReady
+          ? "This will move the PDF — it will not search the document."
+          : canAsk
+            ? "Enter to send · Shift + Enter for a new line"
+            : blockedReason || "Waiting for a ready document"}
       </p>
     </div>
   );

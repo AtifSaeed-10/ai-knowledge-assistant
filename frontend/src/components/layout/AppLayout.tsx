@@ -7,7 +7,9 @@ import { SignupModal } from "@/components/auth/SignupModal";
 import { Toaster } from "@/components/ui/Toaster";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useChatStore } from "@/store/useChatStore";
+import { usePdfPanelStore } from "@/store/usePdfPanelStore";
 import { useSupabaseSession } from "@/lib/supabase/useSupabaseSession";
+import { cn } from "@/lib/cn";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -17,6 +19,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const initializeConversations = useChatStore((state) => state.initializeConversations);
   const initSession = useAuthStore((state) => state.initSession);
+  const pdfOpen = usePdfPanelStore((state) => state.isOpen);
 
   const closeSidebar = useCallback(() => setIsSidebarOpen(false), []);
 
@@ -52,7 +55,12 @@ export function AppLayout({ children }: AppLayoutProps) {
       <div className="flex h-full min-w-0 flex-1 flex-col">
         <WorkspaceHeader onOpenSidebar={() => setIsSidebarOpen(true)} />
 
-        <main className="mx-auto flex w-full min-h-0 max-w-5xl flex-1 flex-col overflow-hidden px-3 pb-3 pt-3 sm:px-6 sm:pb-5">
+        <main
+          className={cn(
+            "mx-auto flex w-full min-h-0 max-w-5xl flex-1 flex-col overflow-hidden px-3 pb-3 pt-3 sm:px-6 sm:pb-5",
+            pdfOpen && "lg:mx-0 lg:max-w-none lg:px-4"
+          )}
+        >
           {children}
         </main>
       </div>

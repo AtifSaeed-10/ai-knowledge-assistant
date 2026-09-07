@@ -182,22 +182,30 @@ function PdfPageSlot({
 export function PdfEvidenceViewer({
   fileUrl,
   focusPage,
+  focusNonce,
   evidence,
   scale,
   onReady,
   onError,
+  onPageCount,
+  onVisiblePage,
 }: {
   fileUrl: string;
   focusPage: number | null;
+  focusNonce?: number;
   evidence: ChunkEvidence | null;
   scale: number;
   onReady: () => void;
   onError: () => void;
+  onPageCount?: (count: number) => void;
+  onVisiblePage?: (page: number) => void;
 }) {
   const widthRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const onReadyRef = useRef(onReady);
   const onErrorRef = useRef(onError);
+  const onPageCountRef = useRef(onPageCount);
+  const onVisiblePageRef = useRef(onVisiblePage);
   const readyRef = useRef(false);
 
   const [containerWidth, setContainerWidth] = useState(0);
@@ -207,6 +215,8 @@ export function PdfEvidenceViewer({
 
   onReadyRef.current = onReady;
   onErrorRef.current = onError;
+  onPageCountRef.current = onPageCount;
+  onVisiblePageRef.current = onVisiblePage;
 
   useEffect(() => {
     setScrollRoot(scrollRef.current);
@@ -249,6 +259,7 @@ export function PdfEvidenceViewer({
         }
         setDocumentProxy(pdf);
         setDims(nextDims);
+        onPageCountRef.current?.(pdf.numPages);
       } catch {
         if (!cancelled) onErrorRef.current();
       }
@@ -275,7 +286,8 @@ export function PdfEvidenceViewer({
 
   useEffect(() => {
     if (!canLayout) return;
-    const targetPage = focusPage && focusPage >= 1 ? focusPage : 1;
+    const rawPage = focusPage && focusPage >= 1 ? focusPage : 1;
+    const targetPage = dims.length > 0 ? Math.min(rawPage, dims.length) : rawPage;
     let cancelled = false;
     let tries = 0;
     let timer = 0;
@@ -299,7 +311,42 @@ export function PdfEvidenceViewer({
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timer);
     };
-  }, [canLayout, evidence?.chunk_id, evidence?.highlight_available, evidence?.quote, evidence?.quote_highlight_available, focusPage]);
+  }, [canLayout, dims.length, evidence?.chunk_id, evidence?.highlight_available, evidence?.quote, evidence?.quote_highlight_available, focusNonce, focusPage]);
+
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root || !canLayout) return;
+
+    let frame = 0;
+    const reportVisiblePage = () => {
+      const mid = root.getBoundingClientRect().top + root.clientHeight / 2;
+      let bestPage = 1;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      root.querySelectorAll<HTMLElement>("[data-pdf-page]").forEach((node) => {
+        const page = Number(node.dataset.pdfPage);
+        if (!Number.isFinite(page) || page < 1) return;
+        const rect = node.getBoundingClientRect();
+        const distance = Math.abs((rect.top + rect.bottom) / 2 - mid);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestPage = page;
+        }
+      });
+      onVisiblePageRef.current?.(bestPage);
+    };
+
+    const onScroll = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(reportVisiblePage);
+    };
+
+    reportVisiblePage();
+    root.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      root.removeEventListener("scroll", onScroll);
+    };
+  }, [canLayout, dims.length]);
 
   const forcePages = new Set(
     [focusPage, (focusPage || 1) - 1, (focusPage || 1) + 1].filter(

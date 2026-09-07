@@ -3,6 +3,7 @@ import { Document, DocumentStatus } from '@/types';
 import { documentsApi } from '@/lib/api/documents';
 import { QuotaExceededError, toUserMessage } from '@/lib/api/client';
 import { useAuthStore } from './useAuthStore';
+import { usePdfPanelStore } from './usePdfPanelStore';
 import { notify } from './useToastStore';
 
 /** Poll cadence, and the point at which a silent backend is treated as a failure. */
@@ -211,6 +212,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
 
         set((state) => ({ documents: [newDoc, ...state.documents] }));
         startPolling(newDoc.id);
+        usePdfPanelStore.getState().open({ documentId: newDoc.id });
         void useAuthStore.getState().refreshUsage();
 
         return true;

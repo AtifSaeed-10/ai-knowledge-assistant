@@ -4,7 +4,7 @@ import React, { useEffect } from "react";
 import { AlertCircle, RotateCcw } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { DocumentUploader } from "@/components/documents/DocumentUploader";
-import { ChatContainer } from "@/components/chat/ChatContainer";
+import { WorkspaceStage } from "@/components/layout/WorkspaceStage";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { LogoMark } from "@/components/ui/Logo";
 
@@ -88,11 +88,7 @@ export default function WorkspacePage() {
         </div>
       )}
 
-      {!isBooting && hasDocuments && (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <ChatContainer />
-        </div>
-      )}
+      {!isBooting && hasDocuments && <WorkspaceStage />}
     </AppLayout>
   );
 }
