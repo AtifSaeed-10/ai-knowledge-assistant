@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { useChatStore } from "@/store/useChatStore";
+import { usePdfPanelStore } from "@/store/usePdfPanelStore";
 import { Document, DocumentEvidenceSummary } from "@/types";
 import { documentsApi } from "@/lib/api/documents";
 import { ConfirmDialog } from "@/components/ui/Dialog";
@@ -88,6 +89,17 @@ export function DocumentLibrary({ isCollapsed = false }: DocumentLibraryProps) {
   const loadError = useDocumentStore((state) => state.loadError);
   const reload = useDocumentStore((state) => state.reload);
   const productMode = useChatStore((state) => state.productMode);
+  const setActiveCitation = useChatStore((state) => state.setActiveCitation);
+  const previewOpen = usePdfPanelStore((state) => state.isOpen);
+  const openPreview = usePdfPanelStore((state) => state.open);
+
+  const chooseDocument = (id: string | null) => {
+    selectDocument(id);
+    if (id && previewOpen) {
+      setActiveCitation(null);
+      openPreview({ documentId: id });
+    }
+  };
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Document | null>(null);
@@ -157,7 +169,7 @@ export function DocumentLibrary({ isCollapsed = false }: DocumentLibraryProps) {
                 <li key={doc.id}>
                   <button
                     type="button"
-                    onClick={() => selectDocument(doc.id)}
+                    onClick={() => chooseDocument(doc.id)}
                     aria-pressed={isSelected}
                     title={`${doc.name} — ${getFriendlyDocumentStatus(doc.status)}`}
                     className={cn(
@@ -182,7 +194,7 @@ export function DocumentLibrary({ isCollapsed = false }: DocumentLibraryProps) {
               <li key={doc.id} className="group relative">
                 <button
                   type="button"
-                  onClick={() => selectDocument(isSelected ? null : doc.id)}
+                  onClick={() => chooseDocument(isSelected ? null : doc.id)}
                   aria-pressed={isSelected}
                   title={doc.name}
                   className={cn(
