@@ -28,6 +28,14 @@ export function evidencePresentationStatus(
   }
   const status = (citation.quoteMappingStatus || "").toLowerCase();
   if (citation.quoteHighlightAvailable) {
+    const contentType = (citation.contentType || "").toLowerCase();
+    if (
+      contentType === "scanned_or_image" ||
+      contentType === "scanned_ocr" ||
+      contentType === "low_text_layout"
+    ) {
+      return citation.pageNumber ? "page_only" : "unavailable";
+    }
     return "precise";
   }
   if ((citation.evidenceState || "").toLowerCase() === "page_only") {

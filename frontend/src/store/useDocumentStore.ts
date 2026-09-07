@@ -28,6 +28,7 @@ interface DocumentState {
   selectedDocumentId: string | null;
   initialize: () => Promise<void>;
   reload: () => Promise<void>;
+  beginIdentitySwitch: () => void;
   uploadDocument: (file: File) => Promise<boolean>;
   deleteDocument: (id: string) => Promise<boolean>;
   retryProcessing: (id: string) => void;
@@ -36,6 +37,7 @@ interface DocumentState {
 
 export const useDocumentStore = create<DocumentState>((set, get) => {
   const polls = new Map<string, PollRecord>();
+  let loadGeneration = 0;
 
   const stopPolling = (documentId: string) => {
     const record = polls.get(documentId);
@@ -144,17 +146,31 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
   };
 
   const loadDocuments = async () => {
+    const generation = ++loadGeneration;
     set({ isLoading: true });
 
     try {
       const docs = await documentsApi.getDocuments();
-      set({ documents: docs, loadError: null });
+      if (generation !== loadGeneration) return;
+
+      const selectedDocumentId = get().selectedDocumentId;
+      const selectedStillOwned =
+        selectedDocumentId && docs.some((doc) => doc.id === selectedDocumentId);
+
+      set({
+        documents: docs,
+        loadError: null,
+        selectedDocumentId: selectedStillOwned ? selectedDocumentId : null,
+      });
       resumePollingForProcessing(docs);
     } catch (error) {
+      if (generation !== loadGeneration) return;
       const message = toUserMessage(error, 'Could not load your documents.');
       set({ loadError: message });
     } finally {
-      set({ isLoading: false, hasInitialized: true });
+      if (generation === loadGeneration) {
+        set({ isLoading: false, hasInitialized: true });
+      }
     }
   };
 
@@ -175,6 +191,18 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
 
     reload: async () => {
       await loadDocuments();
+    },
+
+    beginIdentitySwitch: () => {
+      loadGeneration += 1;
+      Array.from(polls.keys()).forEach(stopPolling);
+      set({
+        documents: [],
+        selectedDocumentId: null,
+        loadError: null,
+        hasInitialized: false,
+        isLoading: true,
+      });
     },
 
     uploadDocument: async (file: File) => {

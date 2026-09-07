@@ -51,7 +51,11 @@ from app_platform.auth.guest import normalize_session_id
 from app_platform.guards import ownership
 from app_platform.quotas import service as quotas
 from database.document_store import reassign_documents
-from database.guest_store import get_guest_session, mark_guest_migrated
+from database.guest_store import (
+    ensure_guest_session,
+    get_guest_session,
+    mark_guest_migrated,
+)
 from memory.store import reassign_conversations
 from fastapi import Depends, Header
 
@@ -188,11 +192,11 @@ def migrate_guest(
         }
 
     session = get_guest_session(session_id)
-    if not session or session.get("migrated_to_user_id"):
+    if session and session.get("migrated_to_user_id"):
         return {
             "documents_moved": 0,
             "conversations_moved": 0,
-            "already_migrated": bool(session),
+            "already_migrated": True,
         }
 
     documents_moved = reassign_documents(
@@ -201,11 +205,21 @@ def migrate_guest(
     conversations_moved = reassign_conversations(
         ACTOR_GUEST, session_id, context.actor_type, context.actor_id
     )
+
+    if not session:
+        if not documents_moved and not conversations_moved:
+            return {
+                "documents_moved": 0,
+                "conversations_moved": 0,
+                "already_migrated": False,
+            }
+        ensure_guest_session(session_id)
+
     mark_guest_migrated(session_id, context.actor_id)
 
     # Trial questions already asked count against the new monthly allowance,
     # so signing in cannot be used to reset the counter repeatedly.
-    for _ in range(int(session.get("question_count") or 0)):
+    for _ in range(int((session or {}).get("question_count") or 0)):
         quotas.record_question(context)
 
     return {

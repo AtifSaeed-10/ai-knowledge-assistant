@@ -15,7 +15,7 @@ from app_platform.auth.guest import GUEST_SESSION_HEADER
 from backend import app
 from database.db import init_db
 from database.document_store import create_document, update_document_status
-from test_support import api_client, new_guest_session
+from test_support import api_client, new_guest_session, user_api_client
 
 
 class PlatformApiTestCase(unittest.TestCase):
@@ -240,6 +240,126 @@ class TestMigrateGuestRoute(PlatformApiTestCase):
         )
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["detail"]["code"], "AUTH_REQUIRED")
+
+
+class TestAccountWorkspaces(PlatformApiTestCase):
+    """
+    The product contract: each Google account keeps its own PDFs and chats,
+    a guest trial can be claimed once, and signing back in restores history.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.auth = patch.multiple(
+            settings,
+            AUTH_PROVIDER="supabase",
+            SUPABASE_JWT_SECRET="unit-test-jwt-secret",
+        )
+        self.auth.start()
+        self.addCleanup(self.auth.stop)
+
+        self.doc_id = self.ready_document("trial.pdf", self.session_a)
+        self.conv_id = self.client_a.post(
+            "/conversations", json={"title": "trial chat"}
+        ).json()["conversation_id"]
+
+        self.user_a = user_api_client(
+            app, "google-a", "a@example.com", guest_session=self.session_a
+        )
+        self.user_b = user_api_client(
+            app, "google-b", "b@example.com", guest_session=self.session_a
+        )
+
+    def _document_ids(self, client):
+        return [item["document_id"] for item in client.get("/documents").json()]
+
+    def _conversation_ids(self, client):
+        return [item["conversation_id"] for item in client.get("/conversations").json()]
+
+    def test_first_sign_in_claims_the_guest_pdf_and_chat(self):
+        body = self.user_a.post("/auth/migrate-guest").json()
+        self.assertEqual(body["documents_moved"], 1)
+        self.assertEqual(body["conversations_moved"], 1)
+        self.assertFalse(body["already_migrated"])
+
+        self.assertEqual(self._document_ids(self.user_a), [self.doc_id])
+        self.assertEqual(self._conversation_ids(self.user_a), [self.conv_id])
+        self.assertEqual(self._document_ids(self.client_a), [])
+        self.assertEqual(self._conversation_ids(self.client_a), [])
+
+    def test_second_account_cannot_take_or_see_the_first_account_library(self):
+        self.user_a.post("/auth/migrate-guest")
+
+        body = self.user_b.post("/auth/migrate-guest").json()
+        self.assertEqual(body["documents_moved"], 0)
+        self.assertEqual(body["conversations_moved"], 0)
+        self.assertTrue(body["already_migrated"])
+
+        self.assertEqual(self._document_ids(self.user_b), [])
+        self.assertEqual(self._conversation_ids(self.user_b), [])
+        self.assertEqual(self.user_b.get(f"/documents/{self.doc_id}").status_code, 403)
+        self.assertEqual(
+            self.user_b.get(f"/conversations/{self.conv_id}").status_code, 403
+        )
+        self.assertEqual(self._document_ids(self.user_a), [self.doc_id])
+        self.assertEqual(self._conversation_ids(self.user_a), [self.conv_id])
+
+    def test_signing_back_in_restores_that_account_history(self):
+        self.user_a.post("/auth/migrate-guest")
+
+        again = user_api_client(app, "google-a", "a@example.com")
+        self.assertEqual(self._document_ids(again), [self.doc_id])
+        self.assertEqual(self._conversation_ids(again), [self.conv_id])
+        self.assertEqual(again.get(f"/conversations/{self.conv_id}").status_code, 200)
+
+    def test_guest_files_are_claimed_even_without_a_trial_row(self):
+        orphan = new_guest_session()
+        doc = self.ready_document("orphan.pdf", orphan)
+        claimant = user_api_client(
+            app, "google-c", "c@example.com", guest_session=orphan
+        )
+
+        body = claimant.post("/auth/migrate-guest").json()
+        self.assertEqual(body["documents_moved"], 1)
+        self.assertEqual(self._document_ids(claimant), [doc])
+        self.assertNotIn(doc, self._document_ids(self.user_a))
+
+    def test_a_new_guest_trial_can_be_claimed_by_the_next_account(self):
+        self.user_a.post("/auth/migrate-guest")
+
+        later_guest = new_guest_session()
+        later_guest_client = api_client(app, later_guest)
+        later_guest_client.get("/me/usage")
+        later_doc = self.ready_document("later.pdf", later_guest)
+        later_user = user_api_client(
+            app, "google-b", "b@example.com", guest_session=later_guest
+        )
+
+        body = later_user.post("/auth/migrate-guest").json()
+        self.assertEqual(body["documents_moved"], 1)
+        self.assertEqual(self._document_ids(later_user), [later_doc])
+        self.assertEqual(self._document_ids(self.user_a), [self.doc_id])
+        self.assertNotIn(later_doc, self._document_ids(self.user_a))
+
+    def test_two_signed_in_accounts_keep_separate_uploads(self):
+        from app_platform.auth.dependency import resolve_context
+        from test_support import make_access_token
+
+        self.user_a.post("/auth/migrate-guest")
+
+        context_b = resolve_context(
+            f"Bearer {make_access_token('google-b', 'b@example.com')}", None
+        )
+        b_doc = create_document(
+            "b-only.pdf",
+            owner_type=context_b.actor_type,
+            owner_id=context_b.actor_id,
+        )
+        update_document_status(b_doc, "ready")
+
+        self.assertEqual(self._document_ids(self.user_a), [self.doc_id])
+        self.assertEqual(self._document_ids(self.user_b), [b_doc])
+        self.assertNotIn(self.doc_id, self._document_ids(self.user_b))
 
 
 if __name__ == "__main__":

@@ -19,7 +19,12 @@ from fastapi import HTTPException
 
 from app_platform import settings
 from app_platform.auth.dependency import resolve_context
-from app_platform.auth.supabase_jwt import TokenError, bearer_token, verify_token
+from app_platform.auth.supabase_jwt import (
+    TokenError,
+    bearer_token,
+    clear_jwks_cache,
+    verify_token,
+)
 from app_platform.guards import ownership
 from app_platform.quotas import service as quotas
 from database.db import init_db
@@ -223,6 +228,63 @@ class TestSupabaseTokens(unittest.TestCase):
         with patch.object(settings, "SUPABASE_JWT_SECRET", ""):
             with self.assertRaises(TokenError):
                 verify_token(make_token("sub-a"))
+
+    def test_es256_token_verifies_against_jwks(self):
+        from cryptography.hazmat.primitives.asymmetric.ec import (
+            ECDSA,
+            SECP256R1,
+            generate_private_key,
+        )
+        from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+        from cryptography.hazmat.primitives.hashes import SHA256
+
+        private = generate_private_key(SECP256R1())
+        numbers = private.public_key().public_numbers()
+        header = _b64(json.dumps({
+            "alg": "ES256",
+            "typ": "JWT",
+            "kid": "test-es256",
+        }).encode())
+        payload = _b64(json.dumps({
+            "sub": "sub-es",
+            "email": "es@example.com",
+            "exp": int(time.time()) + 3600,
+        }).encode())
+        der = private.sign(f"{header}.{payload}".encode("ascii"), ECDSA(SHA256()))
+        r, s = decode_dss_signature(der)
+        signature = _b64(r.to_bytes(32, "big") + s.to_bytes(32, "big"))
+        token = f"{header}.{payload}.{signature}"
+        jwk = {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "test-es256",
+            "x": _b64(numbers.x.to_bytes(32, "big")),
+            "y": _b64(numbers.y.to_bytes(32, "big")),
+        }
+
+        clear_jwks_cache()
+        with patch(
+            "app_platform.auth.supabase_jwt.fetch_jwks",
+            return_value=[jwk],
+        ):
+            claims = verify_token(token)
+        self.assertEqual(claims["sub"], "sub-es")
+        self.assertEqual(claims["email"], "es@example.com")
+
+    def test_es256_token_is_rejected_for_the_wrong_key(self):
+        header = _b64(json.dumps({"alg": "ES256", "typ": "JWT"}).encode())
+        payload = _b64(json.dumps({
+            "sub": "sub-es",
+            "exp": int(time.time()) + 3600,
+        }).encode())
+        token = f"{header}.{payload}.{_b64(b'\\x00' * 64)}"
+        clear_jwks_cache()
+        with patch(
+            "app_platform.auth.supabase_jwt.fetch_jwks",
+            return_value=[],
+        ):
+            with self.assertRaises(TokenError):
+                verify_token(token)
 
 
 class TestUserIdentity(TemporaryDatabase):

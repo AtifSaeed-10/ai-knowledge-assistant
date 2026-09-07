@@ -20,6 +20,16 @@ function randomSessionId(): string {
   return `g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+function persistSessionId(sessionId: string): void {
+  cachedSessionId = sessionId;
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(GUEST_SESSION_KEY, sessionId);
+  } catch {
+    // Private browsing: the id still works for this page lifetime.
+  }
+}
+
 /** Create the trial id on first visit and reuse it afterwards. */
 export function ensureGuestSession(): string {
   if (cachedSessionId) return cachedSessionId;
@@ -37,13 +47,18 @@ export function ensureGuestSession(): string {
   }
 
   const sessionId = stored && stored.trim() ? stored.trim() : randomSessionId();
-  try {
-    window.localStorage.setItem(GUEST_SESSION_KEY, sessionId);
-  } catch {
-    // Private browsing: the id still works for this page lifetime.
-  }
+  persistSessionId(sessionId);
+  return sessionId;
+}
 
-  cachedSessionId = sessionId;
+/**
+ * Start a new trial identity. Used after a signed-in account claims this
+ * browser's guest work, and again on sign-out, so the next person cannot
+ * inherit the previous library.
+ */
+export function resetGuestSession(): string {
+  const sessionId = randomSessionId();
+  persistSessionId(sessionId);
   return sessionId;
 }
 
