@@ -306,6 +306,7 @@ def finalize_answer_citations(
             final_for_trace,
             claim_texts=claim_texts,
             orchestration_meta=orchestration_meta,
+            recall_candidates=recall_candidates,
         )
         log_evidence_trace(trace, conversation_id=conversation_id, question=question)
         trace_payload = trace.to_dict()

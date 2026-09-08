@@ -14,7 +14,9 @@ import { cn } from "@/lib/cn";
  * "what am I asking?" belongs next to "what am I typing?".
  */
 export function ScopeBar() {
-  const { mode, scopeLabel, selectedDocument, processingCount, canAsk } = useChatScope();
+  const { mode, scopeLabel, selectedDocument, pinnedDocument, processingCount, canAsk } =
+    useChatScope();
+  const clearDocumentPin = useChatStore((state) => state.clearDocumentPin);
   const isOpen = usePdfPanelStore((state) => state.isOpen);
   const pinned = usePdfPanelStore((state) => state.pinned);
   const openPanel = usePdfPanelStore((state) => state.open);
@@ -54,6 +56,15 @@ export function ScopeBar() {
           <span className="truncate" title={scopeLabel}>
             {scopeLabel}
           </span>
+          {pinnedDocument && !isFocused && (
+            <button
+              type="button"
+              onClick={clearDocumentPin}
+              className="rounded-md px-1.5 py-0.5 text-meta font-medium text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink"
+            >
+              Search all
+            </button>
+          )}
         </span>
       )}
 

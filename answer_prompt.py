@@ -24,6 +24,7 @@ from conversation_query import (
 )
 from answer_planner import format_plan_for_prompt, plan_answer, MAX_CITATION_MARKERS
 from modes import MODE_NORMAL, MODE_SUPER_FOCUSED, normalize_mode
+from query_retrieval import parse_section_ref
 
 
 INSUFFICIENT_CONTEXT_PHRASE = (
@@ -51,8 +52,17 @@ _STYLE_HINTS = {
         "Give a concise explanation in plain language. Use 2-4 short paragraphs or bullets "
         "at most. Do not restate the same idea in multiple ways."
     ),
-    "simplification": "Use beginner-friendly language. Keep the same facts. Do not add new claims.",
-    "elaboration": "Go deeper using available evidence only. Do not invent extra detail.",
+    "simplification": (
+        "Rewrite the supported facts from the passages in beginner-friendly language. "
+        "Do not look for a section or sentence that is already 'simple'. "
+        "Do not say the information was not found just because the user asked "
+        "for simpler wording. Keep the same facts. Do not add new claims."
+    ),
+    "elaboration": (
+        "Go deeper using available evidence only. "
+        "Do not refuse because the document has no section titled 'more detail'. "
+        "Do not invent extra detail."
+    ),
     "summary": (
         "Compress the supported material from the passages in context. "
         "Do not look for a heading or section titled Summary. "
@@ -83,7 +93,11 @@ _STYLE_HINTS = {
         "Use evidence that describes mechanism or steps. If the evidence only "
         "names or defines the concept, say that the document does not explain how."
     ),
-    "clarification": "Restate the supported meaning in plainer language. Do not add new claims.",
+    "clarification": (
+        "Restate the supported meaning in plainer language. "
+        "Do not refuse because the document never uses the word 'clarify'. "
+        "Do not add new claims."
+    ),
     "mixed": (
         "Treat this as a multi-part request. Answer each supported part. "
         "For each unsupported part, say it was not found in the evidence. Do not fill gaps."
@@ -182,7 +196,9 @@ def _style_rules(analysis: TurnAnalysis | None) -> str:
         extra.append(
             "This is a transformation of the current topic. "
             "Do not repeat the entire previous answer. "
-            "Keep the same topic and change presentation only."
+            "Keep the same topic and change presentation only. "
+            "Do not say the topic was not found in the document just because "
+            "the user asked for a simpler, shorter, or clearer version."
         )
     if analysis.intent == INTENT_EXAMPLE:
         extra.append(
@@ -229,6 +245,22 @@ def _caution_from_relevances(relevances: list | None) -> str:
     return (
         "Use a passage only when it actually supports the claim. "
         "Ignore related-but-off-topic excerpts."
+    )
+
+
+def _section_lookup_rules(question: str) -> str:
+    """Syllabus / outline lookups should not die as a one-line refusal."""
+    if parse_section_ref(question) is None:
+        return ""
+    return (
+        "Numbered week/lecture/module lookup:\n"
+        "- Prefer the passage that names that same number.\n"
+        "- If that exact heading is missing, do not stop at "
+        f'"{MISSING_IN_DOCUMENT_PHRASE}". List the weeks or topics the '
+        "passages actually show, including whatever comes next in the "
+        "schedule, so the reader can see the outline.\n"
+        "- Do not invent a week, lecture, or topic that is not written "
+        "in the passages."
     )
 
 
@@ -300,6 +332,7 @@ Response style:
 
 Grounding rules:
 {_grounding_contract()}
+{_section_lookup_rules(original)}
 - Preserve qualifications and conditions from the source.
 - For multi-part questions, answer supported parts and explicitly mark unsupported parts.
 - {_caution_from_relevances(relevances)}

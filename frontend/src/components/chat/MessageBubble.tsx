@@ -24,9 +24,11 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
   const citations = withAnswerQuotes(message.citations, message.content);
   const citedSources = usedCitationsWithFallback(message.citations, message.content);
 
+  const chooseDocumentScope = useChatStore((state) => state.chooseDocumentScope);
   const lastAssistant = [...messages].reverse().find((item) => item.role === "assistant");
   const isLastAssistant = lastAssistant?.id === message.id;
-  const canRetry = isLastAssistant && !isStreaming && !isLoading;
+  const canRetry = isLastAssistant && !isStreaming && !isLoading && !message.scopeChoices?.length;
+  const scopeChoices = message.scopeChoices || [];
 
   if (message.role === "user") {
     return (
@@ -90,13 +92,39 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
       </div>
 
       {isSearching ? (
-        <div className="space-y-2.5 py-1">
-          <div className="skeleton h-3 w-[88%]" />
-          <div className="skeleton h-3 w-[72%]" />
-          <div className="skeleton h-3 w-[56%]" />
+        <div>
+          <div className="space-y-2.5 py-1">
+            <div className="skeleton h-3 w-[88%]" />
+            <div className="skeleton h-3 w-[72%]" />
+            <div className="skeleton h-3 w-[56%]" />
+          </div>
+          <button
+            type="button"
+            onClick={() => void retryLastAnswer()}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-meta font-medium text-ink transition-colors hover:bg-surface-muted"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Try again
+          </button>
         </div>
       ) : (
         <AnswerMarkdown content={message.content} citations={citations} />
+      )}
+
+      {scopeChoices.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {scopeChoices.map((choice) => (
+            <button
+              key={choice.id}
+              type="button"
+              disabled={isLoading}
+              onClick={() => void chooseDocumentScope(choice.id)}
+              className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-meta font-medium text-ink transition-colors hover:border-sage hover:bg-olive-soft disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {choice.name}
+            </button>
+          ))}
+        </div>
       )}
 
       {message.status === "stopped" && (
@@ -107,7 +135,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
 
       {!isStreaming && citedSources.length > 0 && <SourceList citations={citedSources} />}
 
-      {!isStreaming && hasContent && (
+      {!isStreaming && hasContent && scopeChoices.length === 0 && (
         <MessageActions
           content={message.content}
           showRetry={canRetry}

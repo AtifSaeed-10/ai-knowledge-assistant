@@ -54,6 +54,17 @@ class TestTurnAnalysis(unittest.TestCase):
         self.assertEqual(analysis.relation, RELATION_TRANSFORM)
         self.assertEqual(analysis.intent, INTENT_SIMPLIFICATION)
 
+    def test_make_it_more_simple_searches_the_same_topic(self):
+        analysis = analyze_turn("make it more simple", _history_supervised())
+        self.assertEqual(analysis.intent, INTENT_SIMPLIFICATION)
+        self.assertEqual(analysis.relation, RELATION_TRANSFORM)
+        composed = compose_followup_query(
+            "make it more simple", _history_supervised(), analysis
+        )
+        self.assertIsNotNone(composed)
+        self.assertIn("supervised learning", composed.lower())
+        self.assertNotEqual(composed.lower().strip(), "make it more simple")
+
     def test_example_request_without_topic_needs_rewrite(self):
         analysis = analyze_turn("Give me an example.", _history_supervised())
         self.assertTrue(analysis.needs_rewrite)
@@ -211,6 +222,21 @@ class TestAskQuestionConversationRouting(unittest.TestCase):
 
 
 class TestGroundedPrompt(unittest.TestCase):
+    def test_week_lookup_asks_for_the_surrounding_schedule(self):
+        prompt = build_answer_prompt(
+            question="what is content of week 4",
+            search_query="what is content of week 4",
+            history=None,
+            chunks=["Week 1 Intro. Week 2 Review. Week 3 Lab. Midterm. Week 5 Project."],
+            metadata=[{"filename": "outline.pdf", "page_number": 2}],
+            ids=["doc-a_1"],
+            relevances=[80],
+            analysis=analyze_turn("what is content of week 4", None),
+            mode="normal",
+        )
+        self.assertIn("Numbered week/lecture/module lookup", prompt)
+        self.assertIn("List the weeks or topics the passages actually show", prompt)
+
     def test_prompt_separates_conversation_from_evidence(self):
         analysis = analyze_turn("Give me an example.", _history_supervised())
         prompt = build_answer_prompt(
@@ -299,7 +325,21 @@ class TestGroundedPrompt(unittest.TestCase):
         self.assertIn("[E1] ml.pdf, p. 4", text)
         self.assertIn("Source: ml.pdf, p. 5", text)
 
-    def test_prompt_requests_verbatim_quotes_not_coordinates(self):
+    def test_simplification_prompt_does_not_look_for_a_simple_section(self):
+        analysis = analyze_turn("make it more simple", _history_supervised())
+        prompt = build_answer_prompt(
+            question="make it more simple",
+            search_query="Explain supervised learning simply",
+            history=_history_supervised(),
+            chunks=["Supervised learning trains models from labeled examples."],
+            metadata=[{"filename": "ml.pdf", "page_number": 3}],
+            analysis=analysis,
+            mode="normal",
+        )
+        lowered = prompt.lower()
+        self.assertIn("beginner-friendly", lowered)
+        self.assertIn("simpler wording", lowered)
+        self.assertIn("do not look for a section or sentence that is already 'simple'", lowered)
         analysis = analyze_turn("What is supervised learning?", None)
         prompt = build_answer_prompt(
             question="What is supervised learning?",

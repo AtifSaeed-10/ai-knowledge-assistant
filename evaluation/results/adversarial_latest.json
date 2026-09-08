@@ -1,0 +1,31 @@
+{
+  "generated_at": "2026-08-24T19:16:42.236263+00:00",
+  "passed": true,
+  "python": {
+    "passed": true,
+    "tests_run": 186,
+    "ok": 186,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "failures": [],
+    "modules": [
+      "test_adversarial_suite",
+      "test_index_hygiene",
+      "test_recall_first_retrieval",
+      "test_rerank_calibration",
+      "test_query_retrieval",
+      "test_claim_orchestrator",
+      "test_claim_reanchor",
+      "test_grounding_verifier",
+      "test_citation_evidence_state",
+      "test_citation_resolver",
+      "test_claim_validator",
+      "test_visual_evidence",
+      "test_evidence_trace",
+      "test_stream_final_answer",
+      "test_real_document_eval"
+    ]
+  },
+  "frontend": null
+}

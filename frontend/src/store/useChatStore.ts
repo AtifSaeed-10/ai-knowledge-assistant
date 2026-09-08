@@ -13,9 +13,26 @@ import { notify } from './useToastStore';
 import { shouldFollowAnswerCitation } from '@/lib/workspace/pdfPanel';
 import { classifyChatCommand } from '@/lib/workspace/chatCommand';
 import { runWorkspaceCommand } from '@/lib/workspace/applyChatCommand';
+import {
+  SEARCH_ALL_SCOPE_ID,
+  lastCitedDocumentId,
+  resolveDocumentScope,
+  shouldRememberScopePin,
+} from '@/lib/workspace/documentScope';
 
 const ACTIVE_CONVERSATION_PREFIX = 'docusage_active_conversation';
 const MODE_KEY = 'docusage_product_mode';
+/** Retrieval + first token should not sit on "Searching" forever. */
+const ANSWER_TIMEOUT_MS = 75_000;
+const ANSWER_TIMEOUT_MESSAGE =
+  'This search didn’t finish. Try again — the question is still here.';
+const EMPTY_ANSWER_MESSAGE = 'No answer came back. Try again.';
+const STOPPED_EMPTY_MESSAGE = 'Search was stopped before an answer arrived.';
+const RETRY_ABORT = 'retry';
+const TIMEOUT_ABORT = 'timeout';
+const USER_ABORT = 'user';
+
+type AbortReason = typeof RETRY_ABORT | typeof TIMEOUT_ABORT | typeof USER_ABORT;
 
 function readStored(key: string): string | null {
   if (typeof window === 'undefined') return null;
@@ -72,6 +89,25 @@ function resolveRetrievalDocumentIds(mode: ProductMode): string[] {
   return readyDocuments.map((doc) => doc.id);
 }
 
+function decideQuestionScope(
+  question: string,
+  mode: ProductMode,
+  messages: Message[],
+  pinnedDocumentId: string | null
+) {
+  const { documents, selectedDocumentId } = useDocumentStore.getState();
+  const panel = usePdfPanelStore.getState();
+  return resolveDocumentScope({
+    question,
+    mode,
+    documents,
+    selectedDocumentId,
+    previewDocumentId: panel.isOpen ? panel.previewDocumentId : null,
+    lastCitedDocumentId: lastCitedDocumentId(messages),
+    pinnedDocumentId,
+  });
+}
+
 function mapStoredMessages(
   raw: Array<{
     id?: number | string;
@@ -110,10 +146,14 @@ interface ChatState {
   productMode: ProductMode;
   activeCitation: Citation | null;
   composerFocusToken: number;
+  /** One-file pin for this chat so follow-ups stay on the PDF the reader picked. */
+  pinnedDocumentId: string | null;
 
   setActiveCitation: (citation: Citation | null) => void;
   setProductMode: (mode: ProductMode) => void;
   requestComposerFocus: () => void;
+  clearDocumentPin: () => void;
+  chooseDocumentScope: (documentId: string) => Promise<void>;
 
   initializeConversations: () => Promise<void>;
   reloadConversations: () => Promise<void>;
@@ -131,15 +171,41 @@ interface ChatState {
 
 export const useChatStore = create<ChatState>((set, get) => {
   let abortController: AbortController | null = null;
-  let stoppedByUser = false;
+  let abortReason: AbortReason | null = null;
+  let streamTimeoutId = 0;
   let hydrateGeneration = 0;
+
+  const clearStreamTimeout = () => {
+    if (streamTimeoutId) {
+      window.clearTimeout(streamTimeoutId);
+      streamTimeoutId = 0;
+    }
+  };
+
+  const armStreamTimeout = () => {
+    clearStreamTimeout();
+    if (typeof window === 'undefined') return;
+    streamTimeoutId = window.setTimeout(() => {
+      abortReason = TIMEOUT_ABORT;
+      abortController?.abort();
+    }, ANSWER_TIMEOUT_MS);
+  };
+
+  const beginAnswerRequest = (): AbortSignal => {
+    abortController?.abort();
+    abortController = new AbortController();
+    abortReason = null;
+    armStreamTimeout();
+    return abortController.signal;
+  };
 
   const abortInFlight = () => {
     if (abortController) {
-      stoppedByUser = false;
+      abortReason = null;
       abortController.abort();
       abortController = null;
     }
+    clearStreamTimeout();
   };
 
   const patchMessage = (id: string, patch: Partial<Message>) => {
@@ -148,28 +214,80 @@ export const useChatStore = create<ChatState>((set, get) => {
     }));
   };
 
+  const failAssistant = (id: string, content: string) => {
+    patchMessage(id, { status: 'error', content, citations: [] });
+  };
+
+  const closeAnswerRequest = () => {
+    const shouldRetry = abortReason === RETRY_ABORT;
+    abortReason = null;
+    clearStreamTimeout();
+    abortController = null;
+    set({ isLoading: false });
+    if (shouldRetry) void get().retryLastAnswer();
+    return shouldRetry;
+  };
+
+  const recoverStartFailure = (
+    assistantId: string,
+    signal: AbortSignal,
+    error: unknown,
+    fallback: string
+  ) => {
+    if (signal.aborted) {
+      const shouldRetry = abortReason === RETRY_ABORT;
+      if (!shouldRetry) {
+        failAssistant(
+          assistantId,
+          abortReason === TIMEOUT_ABORT ? ANSWER_TIMEOUT_MESSAGE : STOPPED_EMPTY_MESSAGE
+        );
+      }
+      closeAnswerRequest();
+      return;
+    }
+    failAssistant(assistantId, toUserMessage(error, fallback));
+    abortReason = null;
+    clearStreamTimeout();
+    abortController = null;
+    set({ isLoading: false });
+  };
+
+  const ensureConversationId = async (signal: AbortSignal): Promise<string> => {
+    const existing = get().conversationId;
+    if (existing) return existing;
+
+    const created = await conversationsApi.create(undefined, signal);
+    writeActiveConversation(created.conversation_id);
+    set((state) => ({
+      conversationId: created.conversation_id,
+      conversations: [created, ...state.conversations],
+    }));
+    return created.conversation_id;
+  };
+
   const streamAssistant = async ({
     content,
     assistantId,
     conversationId,
     regenerate,
+    documentIds,
+    signal,
   }: {
     content: string;
     assistantId: string;
     conversationId: string;
     regenerate: boolean;
+    documentIds?: string[];
+    signal: AbortSignal;
   }) => {
-    abortController?.abort();
-    abortController = new AbortController();
-    stoppedByUser = false;
-
-    const signal = abortController.signal;
-
     try {
       const mode = get().productMode;
-      const documentIds = resolveRetrievalDocumentIds(mode);
+      const scopedIds =
+        documentIds && documentIds.length > 0
+          ? documentIds
+          : resolveRetrievalDocumentIds(mode);
 
-      if (documentIds.length === 0) {
+      if (scopedIds.length === 0) {
         throw new Error(
           mode === 'super_focused'
             ? 'Choose a ready document before asking in single-document mode.'
@@ -179,7 +297,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       await chatApi.streamMessage(
         content,
-        documentIds,
+        scopedIds,
         conversationId,
         (token) => {
           set((state) => ({
@@ -208,6 +326,12 @@ export const useChatStore = create<ChatState>((set, get) => {
         (finalAnswer) => patchMessage(assistantId, { content: finalAnswer })
       );
 
+      const latest = get().messages.find((msg) => msg.id === assistantId);
+      if (!latest?.content.trim()) {
+        failAssistant(assistantId, EMPTY_ANSWER_MESSAGE);
+        return;
+      }
+
       patchMessage(assistantId, { status: 'ok' });
       void get().refreshConversations();
       void useAuthStore.getState().refreshUsage();
@@ -218,29 +342,30 @@ export const useChatStore = create<ChatState>((set, get) => {
         (error instanceof Error && error.name === 'AbortError');
 
       if (aborted) {
+        if (abortReason === RETRY_ABORT) return;
+
         const partial = get().messages.find((msg) => msg.id === assistantId);
 
-        // Stopping should never feel like a crash: keep whatever was written.
-        if (stoppedByUser && partial?.content.trim()) {
-          patchMessage(assistantId, { status: 'stopped' });
-        } else {
-          set((state) => ({
-            messages: state.messages.filter((msg) => msg.id !== assistantId),
-          }));
+        if (abortReason === TIMEOUT_ABORT) {
+          failAssistant(assistantId, ANSWER_TIMEOUT_MESSAGE);
+          return;
         }
 
-        stoppedByUser = false;
+        // Keep the bubble so the same question can be tried again.
+        if (partial?.content.trim()) {
+          patchMessage(assistantId, { status: 'stopped' });
+        } else {
+          failAssistant(assistantId, STOPPED_EMPTY_MESSAGE);
+        }
         return;
       }
 
-      patchMessage(assistantId, {
-        status: 'error',
-        content: toUserMessage(error, 'The answer could not be generated.'),
-        citations: [],
-      });
+      failAssistant(
+        assistantId,
+        toUserMessage(error, 'The answer could not be generated.')
+      );
     } finally {
-      abortController = null;
-      set({ isLoading: false });
+      closeAnswerRequest();
     }
   };
 
@@ -303,6 +428,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     productMode: 'normal',
     activeCitation: null,
     composerFocusToken: 0,
+    pinnedDocumentId: null,
 
     setActiveCitation: (citation) => {
       set({ activeCitation: citation });
@@ -316,6 +442,8 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     requestComposerFocus: () =>
       set((state) => ({ composerFocusToken: state.composerFocusToken + 1 })),
+
+    clearDocumentPin: () => set({ pinnedDocumentId: null }),
 
     refreshConversations: async () => {
       try {
@@ -343,6 +471,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         conversationId: '',
         messages: [],
         activeCitation: null,
+        pinnedDocumentId: null,
         conversationError: null,
         isHydrating: true,
         hasHydrated: false,
@@ -366,6 +495,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         conversationId: '',
         messages: [],
         activeCitation: null,
+        pinnedDocumentId: null,
         conversationError: null,
         isLoading: false,
         isSwitching: false,
@@ -384,6 +514,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         conversationId: id,
         messages: [],
         activeCitation: null,
+        pinnedDocumentId: null,
         conversationError: null,
         isLoading: false,
         isSwitching: true,
@@ -446,7 +577,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         await get().selectConversation(remaining[0].conversation_id);
       } else {
         writeActiveConversation(null);
-        set({ conversationId: '', messages: [], activeCitation: null });
+        set({ conversationId: '', messages: [], activeCitation: null, pinnedDocumentId: null });
       }
     },
 
@@ -501,9 +632,51 @@ export const useChatStore = create<ChatState>((set, get) => {
         return;
       }
 
+      const decision = decideQuestionScope(
+        content,
+        get().productMode,
+        get().messages,
+        get().pinnedDocumentId
+      );
+
+      if (decision.kind === 'clarify') {
+        const stamp = Date.now();
+        set((state) => ({
+          messages: [
+            ...state.messages,
+            {
+              id: `user-${stamp}-scope`,
+              role: 'user',
+              content,
+              timestamp: new Date(),
+              status: 'ok',
+            },
+            {
+              id: `assistant-${stamp}-scope`,
+              role: 'assistant',
+              content: 'Which PDF should I use for this?',
+              timestamp: new Date(),
+              citations: [],
+              status: 'ok',
+              scopeChoices: [
+                ...decision.candidates,
+                { id: SEARCH_ALL_SCOPE_ID, name: 'Search all documents' },
+              ],
+              pendingQuestion: content,
+            },
+          ],
+          isLoading: false,
+        }));
+        return;
+      }
+
       const assistantId = `assistant-${Date.now()}`;
+      const signal = beginAnswerRequest();
 
       set((state) => ({
+        pinnedDocumentId: shouldRememberScopePin(decision)
+          ? decision.documentIds[0]
+          : state.pinnedDocumentId,
         activeCitation: null,
         isLoading: true,
         messages: [
@@ -525,64 +698,142 @@ export const useChatStore = create<ChatState>((set, get) => {
         ],
       }));
 
-      let conversationId = get().conversationId;
+      try {
+        const conversationId = await ensureConversationId(signal);
+        await streamAssistant({
+          content,
+          assistantId,
+          conversationId,
+          regenerate: false,
+          documentIds: decision.documentIds,
+          signal,
+        });
+      } catch (error) {
+        recoverStartFailure(assistantId, signal, error, 'Could not start this conversation.');
+      }
+    },
 
-      if (!conversationId) {
-        try {
-          const created = await conversationsApi.create();
-          conversationId = created.conversation_id;
-          writeActiveConversation(conversationId);
-          set((state) => ({
-            conversationId: created.conversation_id,
-            conversations: [created, ...state.conversations],
-          }));
-        } catch (error) {
-          patchMessage(assistantId, {
-            status: 'error',
-            content: toUserMessage(error, 'Could not start this conversation.'),
-          });
-          set({ isLoading: false });
-          return;
-        }
+    chooseDocumentScope: async (documentId: string) => {
+      if (get().isLoading) return;
+
+      const messages = get().messages;
+      const target = [...messages]
+        .reverse()
+        .find((item) => item.role === 'assistant' && item.scopeChoices?.length);
+      const question = target?.pendingQuestion?.trim();
+      if (!target || !question) return;
+
+      const readyDocuments = useDocumentStore
+        .getState()
+        .documents.filter((doc) => doc.status === 'ready');
+      const searchAll = documentId === SEARCH_ALL_SCOPE_ID;
+      const picked = readyDocuments.find((doc) => doc.id === documentId) || null;
+      if (!searchAll && !picked) return;
+
+      const documentIds = searchAll ? readyDocuments.map((doc) => doc.id) : [picked!.id];
+      if (documentIds.length === 0) return;
+
+      if (picked) {
+        useDocumentStore.getState().selectDocument(picked.id);
+        usePdfPanelStore.getState().open({ documentId: picked.id, pinned: true });
       }
 
-      await streamAssistant({
-        content,
-        assistantId,
-        conversationId,
-        regenerate: false,
+      const assistantId = target.id;
+      const signal = beginAnswerRequest();
+      set({
+        pinnedDocumentId: searchAll ? null : picked!.id,
+        activeCitation: null,
+        isLoading: true,
+        messages: messages.map((item) =>
+          item.id === assistantId
+            ? {
+                ...item,
+                content: '',
+                citations: [],
+                scopeChoices: undefined,
+                pendingQuestion: undefined,
+              }
+            : item
+        ),
       });
+
+      try {
+        const conversationId = await ensureConversationId(signal);
+        await streamAssistant({
+          content: question,
+          assistantId,
+          conversationId,
+          regenerate: false,
+          documentIds,
+          signal,
+        });
+      } catch (error) {
+        recoverStartFailure(assistantId, signal, error, 'Could not start this conversation.');
+      }
     },
 
     stopGeneration: () => {
-      if (!abortController) return;
-      stoppedByUser = true;
-      abortController.abort();
+      abortReason = USER_ABORT;
+      if (abortController) {
+        abortController.abort();
+        return;
+      }
+
+      clearStreamTimeout();
+      const last = get().messages[get().messages.length - 1];
+      if (last?.role === 'assistant' && !last.content.trim() && last.status !== 'error') {
+        failAssistant(last.id, STOPPED_EMPTY_MESSAGE);
+      }
+      set({ isLoading: false });
     },
 
     retryLastAnswer: async () => {
       const { messages, isLoading, conversationId } = get();
-      if (isLoading || messages.length === 0) return;
+      if (messages.length === 0) return;
 
+      if (isLoading) {
+        abortReason = RETRY_ABORT;
+        if (abortController) {
+          abortController.abort();
+          return;
+        }
+        clearStreamTimeout();
+        set({ isLoading: false });
+      }
+
+      const current = get().messages;
       let lastAssistantIndex = -1;
-      for (let i = messages.length - 1; i >= 0; i -= 1) {
-        if (messages[i].role === 'assistant') {
+      for (let i = current.length - 1; i >= 0; i -= 1) {
+        if (current[i].role === 'assistant') {
           lastAssistantIndex = i;
           break;
         }
       }
       if (lastAssistantIndex <= 0) return;
+      if (current[lastAssistantIndex].scopeChoices?.length) return;
 
-      const question = messages[lastAssistantIndex - 1];
+      const question = current[lastAssistantIndex - 1];
       if (!question || question.role !== 'user') return;
 
+      const decision = decideQuestionScope(
+        question.content,
+        get().productMode,
+        current.slice(0, lastAssistantIndex - 1),
+        get().pinnedDocumentId
+      );
+      if (decision.kind === 'clarify') return;
+      if (shouldRememberScopePin(decision)) {
+        set({ pinnedDocumentId: decision.documentIds[0] });
+      }
+
       const assistantId = `assistant-${Date.now()}`;
+      const signal = beginAnswerRequest();
 
       set({
         activeCitation: null,
         isLoading: true,
         messages: [
-          ...messages.slice(0, lastAssistantIndex),
+          ...current.slice(0, lastAssistantIndex),
           {
             id: assistantId,
             role: 'assistant',
@@ -593,33 +844,22 @@ export const useChatStore = create<ChatState>((set, get) => {
         ],
       });
 
-      let targetConversationId = conversationId;
-
-      if (!targetConversationId) {
-        try {
-          const created = await conversationsApi.create();
-          targetConversationId = created.conversation_id;
-          writeActiveConversation(targetConversationId);
-          set((state) => ({
-            conversationId: created.conversation_id,
-            conversations: [created, ...state.conversations],
-          }));
-        } catch (error) {
-          patchMessage(assistantId, {
-            status: 'error',
-            content: toUserMessage(error, 'Could not reach the server.'),
-          });
-          set({ isLoading: false });
-          return;
+      try {
+        let targetConversationId = conversationId || get().conversationId;
+        if (!targetConversationId) {
+          targetConversationId = await ensureConversationId(signal);
         }
+        await streamAssistant({
+          content: question.content,
+          assistantId,
+          conversationId: targetConversationId,
+          regenerate: true,
+          documentIds: decision.documentIds,
+          signal,
+        });
+      } catch (error) {
+        recoverStartFailure(assistantId, signal, error, 'Could not reach the server.');
       }
-
-      await streamAssistant({
-        content: question.content,
-        assistantId,
-        conversationId: targetConversationId,
-        regenerate: true,
-      });
     },
   };
 });

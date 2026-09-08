@@ -48,7 +48,10 @@ export function ChatContainer() {
   };
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-card">
+    <div
+      data-tour="chat"
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-card"
+    >
       <div className="flex min-h-0 flex-1 flex-col bg-surface-muted">
         {isSwitching ? (
           <TranscriptSkeleton />

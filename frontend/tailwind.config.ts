@@ -98,6 +98,27 @@ const config = {
           from: { transform: "translateX(-100%)" },
           to: { transform: "translateX(220%)" },
         },
+
+        /* Onboarding tour: click a citation, watch the page highlight. */
+        "tour-pointer": {
+          "0%, 18%": { opacity: "0", transform: "translate3d(-10px, 14px, 0)" },
+          "26%, 44%": { opacity: "1", transform: "translate3d(0, 0, 0)" },
+          "52%, 100%": { opacity: "0", transform: "translate3d(0, 0, 0)" },
+        },
+        "tour-chip": {
+          "0%, 24%": { boxShadow: "0 0 0 0 rgba(135, 171, 114, 0)" },
+          "34%, 46%": { boxShadow: "0 0 0 4px rgba(135, 171, 114, 0.4)" },
+          "60%, 100%": { boxShadow: "0 0 0 0 rgba(135, 171, 114, 0)" },
+        },
+        "tour-page": {
+          "0%, 46%": { transform: "translate3d(0, 0, 0)" },
+          "58%, 100%": { transform: "translate3d(0, -10px, 0)" },
+        },
+        "tour-highlight": {
+          "0%, 52%": { opacity: "0", transform: "scaleX(0.08)" },
+          "68%, 92%": { opacity: "1", transform: "scaleX(1)" },
+          "100%": { opacity: "0", transform: "scaleX(0.08)" },
+        },
       },
 
       animation: {
@@ -106,6 +127,10 @@ const config = {
         "slide-in-right": "slide-in-right 200ms ease-out both",
         shimmer: "shimmer 1.8s linear infinite",
         "progress-slide": "progress-slide 1.6s ease-in-out infinite",
+        "tour-pointer": "tour-pointer 4.6s ease-in-out infinite",
+        "tour-chip": "tour-chip 4.6s ease-in-out infinite",
+        "tour-page": "tour-page 4.6s ease-in-out infinite",
+        "tour-highlight": "tour-highlight 4.6s ease-out infinite",
       },
     },
   },

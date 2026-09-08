@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Download, Menu, SquarePen } from "lucide-react";
+import Link from "next/link";
 import { LogoMark } from "@/components/ui/Logo";
 import { UsageMeter } from "@/components/auth/UsageMeter";
 import { UserMenu } from "@/components/auth/UserMenu";
@@ -50,7 +51,9 @@ export function WorkspaceHeader({ onOpenSidebar }: WorkspaceHeaderProps) {
           <Menu className="h-5 w-5" />
         </button>
 
-        <LogoMark className="h-6 w-auto shrink-0 lg:hidden" />
+        <Link href="/" aria-label="DocuSage home" className="rounded-md lg:hidden">
+          <LogoMark className="h-6 w-auto shrink-0" />
+        </Link>
 
         <div className="min-w-0 flex-1">
           {isSwitching ? (

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from query_retrieval import parse_section_ref
 from conversation_query import (
     INTENT_COMPARISON,
     INTENT_DEFINITION,
@@ -115,6 +116,9 @@ def plan_answer(
     }
 
     sub_queries: list[str] = []
+    section = parse_section_ref(question) or parse_section_ref(search_query)
+    if section:
+        sub_queries.append(f"{section[0]} {section[1]}")
     if briefing and subject:
         role_queries = {
             "definition": f"What is {subject}?",

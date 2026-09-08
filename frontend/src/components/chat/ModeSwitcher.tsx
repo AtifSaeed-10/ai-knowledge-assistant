@@ -47,6 +47,7 @@ export function ModeSwitcher() {
     <div
       role="radiogroup"
       aria-label="Which documents to search"
+      data-tour="scope"
       className="inline-flex shrink-0 items-center rounded-lg border border-line bg-surface-sunken p-0.5"
     >
       {PRODUCT_MODES.map((mode, index) => {

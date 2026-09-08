@@ -10,7 +10,10 @@ const jakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "DocuSage",
+  title: {
+    default: "DocuSage",
+    template: "%s",
+  },
   description: "Ask questions about your PDFs and get answers with page-level citations.",
 };
 

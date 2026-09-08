@@ -25,6 +25,7 @@ KIND_DEFAULT = "default"
 KIND_FRONT_MATTER = "front_matter"
 KIND_FIGURE = "figure_ref"
 KIND_ARTICLE = "article_ref"
+KIND_SECTION_REF = "section_ref"
 KIND_WHY_AUTHOR = "why_author"
 KIND_LISTING = "listing"
 
@@ -50,6 +51,74 @@ _WHICH_FIGURE_RE = re.compile(
     re.I,
 )
 _ARTICLE_RE = re.compile(r"\barticles?\s+(\d+[a-z]?)\b", re.I)
+_SECTION_REF_RE = re.compile(
+    r"\b(weeks?|lectures?|sessions?|modules?|units?|chapters?|lessons?|"
+    r"days?|topics?)\s*(?:number|no\.?|#)?\s*"
+    r"(\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|"
+    r"ten|eleven|twelve)\b",
+    re.I,
+)
+_WORD_OR_ROMAN_NUMBER = {
+    "one": "1",
+    "two": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8",
+    "nine": "9",
+    "ten": "10",
+    "eleven": "11",
+    "twelve": "12",
+    "i": "1",
+    "ii": "2",
+    "iii": "3",
+    "iv": "4",
+    "v": "5",
+    "vi": "6",
+    "vii": "7",
+    "viii": "8",
+    "ix": "9",
+    "x": "10",
+    "xi": "11",
+    "xii": "12",
+}
+
+
+def _canonical_section_number(raw: str) -> str:
+    value = (raw or "").strip().lower()
+    if value.isdigit():
+        return str(int(value))
+    return _WORD_OR_ROMAN_NUMBER.get(value, value)
+
+
+def parse_section_ref(question: str) -> tuple[str, str] | None:
+    """Return (unit_label, digit) for 'week 4' / 'lecture four' style lookups."""
+    match = _SECTION_REF_RE.search(question or "")
+    if not match:
+        return None
+    label = re.sub(r"s$", "", match.group(1).lower())
+    number = _canonical_section_number(match.group(2))
+    if not number:
+        return None
+    return label, number
+
+
+def section_ref_phrases(label: str, number: str) -> list[str]:
+    """Lexical forms that usually appear as syllabus headings."""
+    word = next(
+        (name for name, digit in _WORD_OR_ROMAN_NUMBER.items() if digit == number and name.isalpha() and len(name) > 2),
+        "",
+    )
+    forms = [
+        f"{label} {number}",
+        f"{label}{number}",
+        f"{label}-{number}",
+    ]
+    if word:
+        forms.append(f"{label} {word}")
+    return forms
 _FRONT_MATTER_RE = re.compile(
     r"\b(dedicat(?:e|ed|ion)|preface|foreword|acknowledg(?:e|ements?)|"
     r"this (?:book|edition)|title page|front matter)\b",
@@ -89,6 +158,8 @@ class RetrievalQuery:
     reserved_slots: int = 0
     figure_number: int | None = None
     article_number: str | None = None
+    section_label: str | None = None
+    section_number: str | None = None
 
 
 def _tokens(text: str) -> list[str]:
@@ -146,10 +217,14 @@ def classify_retrieval_query(question: str) -> RetrievalQuery:
     if art_match:
         article_number = art_match.group(1).lower()
 
+    section = parse_section_ref(text)
+
     if figure_number is not None or _WHICH_FIGURE_RE.search(text):
         kind = KIND_FIGURE
     elif article_number is not None:
         kind = KIND_ARTICLE
+    elif section is not None:
+        kind = KIND_SECTION_REF
     elif _FRONT_MATTER_RE.search(text):
         kind = KIND_FRONT_MATTER
     elif _WHY_AUTHOR_RE.search(text):
@@ -184,6 +259,13 @@ def classify_retrieval_query(question: str) -> RetrievalQuery:
     elif kind == KIND_ARTICLE:
         phrases.append(f"article {article_number}")
         extra.append(f"article {article_number}")
+        reserved = QUERY_TYPE_RESERVED_SLOTS
+        boost = QUERY_TYPE_CANDIDATE_BOOST
+    elif kind == KIND_SECTION_REF and section is not None:
+        label, number = section
+        forms = section_ref_phrases(label, number)
+        phrases.extend(forms)
+        extra.extend(forms[:2])
         reserved = QUERY_TYPE_RESERVED_SLOTS
         boost = QUERY_TYPE_CANDIDATE_BOOST
     elif kind == KIND_FRONT_MATTER:
@@ -240,6 +322,8 @@ def classify_retrieval_query(question: str) -> RetrievalQuery:
         reserved_slots=reserved,
         figure_number=figure_number,
         article_number=article_number,
+        section_label=section[0] if section else None,
+        section_number=section[1] if section else None,
     )
 
 
