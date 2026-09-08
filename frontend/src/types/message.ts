@@ -1,4 +1,5 @@
 import type { Citation } from './citation';
+import type { ScopeChoice } from '@/lib/workspace/documentScope';
 
 export type MessageRole = 'user' | 'assistant';
 
@@ -15,4 +16,7 @@ export interface Message {
   timestamp: Date;
   citations?: Citation[];
   status?: MessageStatus;
+  /** Local "which PDF?" chips — never persisted. */
+  scopeChoices?: ScopeChoice[];
+  pendingQuestion?: string;
 }

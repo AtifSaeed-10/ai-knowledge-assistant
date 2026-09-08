@@ -13,6 +13,7 @@ export interface ChatScope {
   processingCount: number;
   failedCount: number;
   selectedDocument: Document | null;
+  pinnedDocument: Document | null;
   /** True when a question can actually be answered right now. */
   canAsk: boolean;
   /** Why asking is blocked, in plain language. Null when ready. */
@@ -27,6 +28,7 @@ export interface ChatScope {
  */
 export function useChatScope(): ChatScope {
   const mode = useChatStore((state) => state.productMode);
+  const pinnedDocumentId = useChatStore((state) => state.pinnedDocumentId);
   const documents = useDocumentStore((state) => state.documents);
   const selectedDocumentId = useDocumentStore((state) => state.selectedDocumentId);
   const usage = useAuthStore((state) => state.usage);
@@ -61,12 +63,17 @@ export function useChatScope(): ChatScope {
         : "You have used all your questions for this month.";
   }
 
+  const pinnedDocument =
+    readyDocuments.find((doc) => doc.id === pinnedDocumentId) || null;
+
   const scopeLabel =
     mode === "super_focused"
       ? selectedIsReady
         ? selectedDocument!.name
         : "No document selected"
-      : `All documents (${readyDocuments.length})`;
+      : pinnedDocument
+        ? pinnedDocument.name
+        : `All documents (${readyDocuments.length})`;
 
   return {
     mode,
@@ -75,6 +82,7 @@ export function useChatScope(): ChatScope {
     processingCount,
     failedCount,
     selectedDocument,
+    pinnedDocument,
     canAsk,
     blockedReason,
     scopeLabel,

@@ -12,9 +12,11 @@ from query_retrieval import (
     KIND_FIGURE,
     KIND_FRONT_MATTER,
     KIND_LISTING,
+    KIND_SECTION_REF,
     KIND_WHY_AUTHOR,
     classify_retrieval_query,
     ensure_typed_hits_in_pool,
+    parse_section_ref,
 )
 from hybrid_retrieval import retrieve_candidates
 from reranker import rerank_candidates
@@ -74,6 +76,18 @@ class TestClassifyRetrievalQuery(unittest.TestCase):
         joined = " ".join(profile.phrases).lower()
         self.assertIn("nanking", joined)
         self.assertIn("nanjing", joined)
+
+    def test_week_number_is_a_section_lookup(self):
+        profile = classify_retrieval_query(
+            "what is content of week 4"
+        )
+        self.assertEqual(profile.kind, KIND_SECTION_REF)
+        self.assertEqual(profile.section_label, "week")
+        self.assertEqual(profile.section_number, "4")
+        self.assertIn("week 4", profile.phrases)
+        self.assertGreater(profile.reserved_slots, 0)
+        self.assertTrue(any("week 4" in item.lower() for item in profile.extra_queries))
+        self.assertEqual(parse_section_ref("What's in lecture four?"), ("lecture", "4"))
 
     def test_listing_and_count(self):
         profile = classify_retrieval_query(

@@ -9,6 +9,15 @@ from conversation_query import INTENT_DEFINITION, INTENT_KEY_POINTS, INTENT_SUMM
 
 
 class TestAnswerPlanner(unittest.TestCase):
+    def test_week_lookup_adds_a_lexical_sub_query(self):
+        analysis = analyze_turn("what is content of week 4", None)
+        plan = plan_answer(
+            "what is content of week 4",
+            "what is content of week 4",
+            analysis,
+        )
+        self.assertTrue(any(item.lower() == "week 4" for item in plan.sub_queries))
+
     def test_definition_question_gets_briefing_components(self):
         analysis = analyze_turn("What is supervised learning?", None)
         self.assertEqual(analysis.intent, INTENT_DEFINITION)

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, FileText, PanelLeft, PanelLeftClose, Plus, X } from "lucide-react";
+import Link from "next/link";
 import { Logo, LogoMark } from "@/components/ui/Logo";
 import { Dialog } from "@/components/ui/Dialog";
 import { DocumentLibrary } from "@/components/documents/DocumentLibrary";
@@ -19,9 +20,11 @@ const COLLAPSED_WIDTH = 76;
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Keeps the panel readable while the onboarding tour points at it. */
+  forceExpanded?: boolean;
 }
 
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
+export function Sidebar({ isOpen, onClose, forceExpanded = false }: SidebarProps) {
   const documents = useDocumentStore((state) => state.documents);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -89,8 +92,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   const readyCount = documents.filter((doc) => doc.status === "ready").length;
   // Collapsing is a desktop affordance; the mobile drawer is always expanded.
-  const isCompact = isCollapsed && !isOpen;
-  const desktopWidth = isCollapsed ? COLLAPSED_WIDTH : width;
+  const isCompact = isCollapsed && !isOpen && !forceExpanded;
+  const desktopWidth = isCompact ? COLLAPSED_WIDTH : width;
 
   return (
     <>
@@ -104,6 +107,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
       <aside
         aria-label="Workspace"
+        data-tour="documents"
         style={{ width: isOpen ? 288 : desktopWidth }}
         className={cn(
           "fixed left-0 top-0 z-40 flex h-full flex-col border-r border-line bg-surface-muted lg:relative lg:visible lg:translate-x-0",
@@ -118,9 +122,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           )}
         >
           {isCompact ? (
-            <LogoMark className="h-7 w-auto" />
+            <Link href="/" aria-label="DocuSage home" className="rounded-md">
+              <LogoMark className="h-7 w-auto" />
+            </Link>
           ) : (
-            <Logo className="h-7 w-auto shrink-0" />
+            <Link href="/" aria-label="DocuSage home" className="rounded-md">
+              <Logo className="h-7 w-auto shrink-0" />
+            </Link>
           )}
 
           {!isCompact && (

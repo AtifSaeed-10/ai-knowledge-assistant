@@ -93,6 +93,7 @@ class TestMatrixDirectAndFollowUps(unittest.TestCase):
     def test_c_presentation_transforms_keep_subject(self):
         for question in (
             "Explain it more simply.",
+            "Make it more simple.",
             "Make it shorter.",
             "Give me the key points.",
             "Can you clarify?",

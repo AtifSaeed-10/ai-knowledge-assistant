@@ -19,10 +19,13 @@ from claim_localizer import (
 )
 from config import CLAIM_SUPPORT_MIN
 from conversation_query import (
+    INTENT_CLARIFICATION,
+    INTENT_ELABORATION,
     INTENT_EXAMPLE,
     INTENT_HOW,
     INTENT_KEY_POINTS,
     INTENT_LISTING,
+    INTENT_SIMPLIFICATION,
     INTENT_SUMMARY,
     INTENT_WHY,
     TurnAnalysis,
@@ -31,7 +34,15 @@ from evidence_focus import ROLE_SUPPORT, passage_roles
 from evidence_mapping import make_snippet
 from evidence_state import looks_like_evidence_refusal
 
-SYNTHESIS_INTENTS = {INTENT_SUMMARY, INTENT_KEY_POINTS}
+# Style restyles of the current topic: any on-topic passage is enough.
+# Do not require the PDF to contain the words "simple" or "summary".
+SYNTHESIS_INTENTS = {
+    INTENT_SUMMARY,
+    INTENT_KEY_POINTS,
+    INTENT_SIMPLIFICATION,
+    INTENT_CLARIFICATION,
+    INTENT_ELABORATION,
+}
 _ROLE_GATED_INTENTS = {INTENT_LISTING, INTENT_EXAMPLE, INTENT_WHY, INTENT_HOW}
 _MIN_SYNTHESIS_TOKENS = 12
 _MAX_EXCERPT_CHARS = 400
@@ -45,8 +56,9 @@ A previous draft said the information was not in the document, but the
 passages above DO contain supporting material for this request.
 Do not say the information was not found.
 Answer only from those passages.
-If the user asked for a summary or key points, synthesize from the passages
-in context; do not look for a heading titled Summary.
+If the user asked for a summary, key points, or a simpler/clearer version,
+synthesize from the passages in context; do not look for a heading titled
+Summary or Simple.
 If you are still uncertain, quote the most relevant one or two sentences
 rather than refusing. Never invent facts that are not in the passages.
 """

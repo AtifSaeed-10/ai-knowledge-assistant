@@ -34,6 +34,12 @@ SPLITTER_SEPARATORS = [
 
 # Deterministic heading patterns for academic / technical PDFs.
 _HEADING_PATTERNS = [
+    # Week 4 / Lecture 2 / Session 1: Topic
+    re.compile(
+        r"^(week|lecture|session|module|unit|chapter|lesson|day)\s*[-:]?\s*"
+        r"(\d+|[ivxlcdm]+)\b.*$",
+        re.IGNORECASE,
+    ),
     # UNIT I / Unit II
     re.compile(r"^(UNIT\s+[IVXLCDM]+)\b.*$", re.IGNORECASE),
     # 1.2 Title / 2.5.1. Introduction / 1.1 What Is Machine Learning?

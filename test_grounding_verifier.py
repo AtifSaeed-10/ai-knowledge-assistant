@@ -247,6 +247,40 @@ class TestAskQuestionAntiRefusal(unittest.TestCase):
         self.assertIn("twenty days", result["answer"].lower())
         self.assertTrue(result["sources"])
 
+    def test_simplify_followup_refusal_is_replaced_when_topic_passages_exist(self):
+        history = [
+            {"role": "user", "content": "What is supervised learning?"},
+            {
+                "role": "assistant",
+                "content": "Supervised learning trains models from labeled examples.",
+            },
+        ]
+        retrieval = _retrieval(
+            [
+                "Supervised learning trains models from labeled examples. "
+                "Classification and regression are common forms of this approach."
+            ],
+            [3],
+            [90],
+            ["ml_3"],
+        )
+        with patch("rag.retrieve_candidates", return_value=retrieval), patch(
+            "rag.generate_response",
+            return_value=MISSING_IN_DOCUMENT_PHRASE,
+        ):
+            result = ask_question(
+                "make it more simple",
+                history,
+                ["handbook"],
+                generate=True,
+            )
+        self.assertNotEqual(result["answer"], MISSING_IN_DOCUMENT_PHRASE)
+        self.assertTrue(result["sources"])
+        self.assertTrue(
+            "labeled" in result["answer"].lower()
+            or "supervised" in result["answer"].lower()
+        )
+
     def test_listing_mismatch_refusal_is_kept(self):
         retrieval = _retrieval(
             [TAXONOMY_CHUNK],

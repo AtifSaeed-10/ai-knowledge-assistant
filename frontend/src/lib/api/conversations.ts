@@ -11,12 +11,13 @@ export const conversationsApi = {
     });
   },
 
-  async create(title?: string): Promise<ConversationSummary> {
+  async create(title?: string, signal?: AbortSignal): Promise<ConversationSummary> {
     return apiJson<ConversationSummary>("/conversations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: title || null }),
       errorMessage: "Failed to create conversation",
+      signal,
     });
   },
 

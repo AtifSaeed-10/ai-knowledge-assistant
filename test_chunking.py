@@ -163,6 +163,8 @@ class TestTinyChunkMerging(unittest.TestCase):
 class TestHeadingsAndBuildChunks(unittest.TestCase):
     def test_heading_detection(self):
         self.assertTrue(is_heading_line("UNIT I"))
+        self.assertTrue(is_heading_line("Week 4: Neural Networks"))
+        self.assertTrue(is_heading_line("Lecture 2"))
         self.assertTrue(is_heading_line("1.2 Components of Learning"))
         self.assertTrue(is_heading_line("INTRODUCTION TO CLUSTERING"))
         self.assertFalse(is_heading_line("This is a normal sentence about learning."))
