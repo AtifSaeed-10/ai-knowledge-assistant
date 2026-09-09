@@ -33,7 +33,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
   if (message.role === "user") {
     return (
       <div className="flex animate-rise-in justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-olive px-4 py-2.5 text-body leading-relaxed tracking-[-0.01em] text-white sm:max-w-[70%]">
+        <div className="max-w-[92%] rounded-2xl rounded-br-md bg-olive px-3.5 py-2.5 text-body leading-relaxed tracking-[-0.01em] text-white sm:max-w-[70%] sm:px-4">
           <p className="whitespace-pre-wrap break-anywhere">{message.content}</p>
         </div>
       </div>

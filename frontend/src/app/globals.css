@@ -8,6 +8,11 @@
     color-scheme: light;
   }
 
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
   body {
     @apply bg-paper text-ink antialiased;
     text-rendering: optimizeLegibility;

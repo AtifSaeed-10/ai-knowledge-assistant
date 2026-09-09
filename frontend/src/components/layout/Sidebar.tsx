@@ -108,9 +108,9 @@ export function Sidebar({ isOpen, onClose, forceExpanded = false }: SidebarProps
       <aside
         aria-label="Workspace"
         data-tour="documents"
-        style={{ width: isOpen ? 288 : desktopWidth }}
+        style={{ width: isOpen ? "min(288px, 86vw)" : desktopWidth }}
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-full flex-col border-r border-line bg-surface-muted lg:relative lg:visible lg:translate-x-0",
+          "fixed left-0 top-0 z-40 flex h-full flex-col border-r border-line bg-surface-muted pt-[env(safe-area-inset-top)] lg:relative lg:visible lg:translate-x-0 lg:pt-0",
           isResizing ? "transition-none" : "transition-[transform,width] duration-200 ease-out",
           isOpen ? "visible translate-x-0" : "invisible -translate-x-full"
         )}

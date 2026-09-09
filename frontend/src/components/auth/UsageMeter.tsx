@@ -16,7 +16,7 @@ export function UsageMeter() {
     <button
       type="button"
       onClick={() => openSignup(null)}
-      className="rounded-lg border border-line bg-surface px-2.5 py-1 text-ui font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface-muted"
+      className="rounded-lg border border-line bg-surface px-2 py-1 text-meta font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface-muted sm:px-2.5 sm:text-ui"
     >
       Sign in
     </button>

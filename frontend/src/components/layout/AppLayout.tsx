@@ -61,7 +61,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   }, [tourWantsSidebar]);
 
   return (
-    <div className="flex h-[100dvh] w-full overflow-hidden bg-paper text-ink">
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-paper text-ink pt-[env(safe-area-inset-top)]">
       <Sidebar
         isOpen={isSidebarOpen}
         onClose={closeSidebar}
@@ -73,7 +73,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
         <main
           className={cn(
-            "mx-auto flex w-full min-h-0 max-w-5xl flex-1 flex-col overflow-hidden px-3 pb-3 pt-3 sm:px-6 sm:pb-5",
+            "mx-auto flex w-full min-h-0 max-w-5xl flex-1 flex-col overflow-hidden px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-6 sm:pb-5 sm:pt-3",
             pdfOpen && "lg:mx-0 lg:max-w-none lg:px-4"
           )}
         >

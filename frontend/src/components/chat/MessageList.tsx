@@ -78,7 +78,7 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
         ref={scrollRef}
         onScroll={handleScroll}
         aria-busy={isLoading}
-        className="scroll-area min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6"
+        className="scroll-area min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
       >
         {messages.length === 0 ? (
           <div className="flex h-full min-h-0 items-center justify-center">
