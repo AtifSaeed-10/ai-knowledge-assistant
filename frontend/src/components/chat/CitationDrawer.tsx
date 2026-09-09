@@ -107,7 +107,7 @@ export const CitationDrawer = () => {
         role="dialog"
         aria-modal="true"
         aria-label={`Source: ${previewDocument.name}`}
-        className="absolute right-0 top-0 flex h-full w-full animate-slide-in-right flex-col border-l border-line bg-surface shadow-overlay sm:w-[min(760px,92vw)]"
+        className="absolute right-0 top-0 flex h-full w-full animate-slide-in-right flex-col border-l border-line bg-surface pt-[env(safe-area-inset-top)] shadow-overlay sm:w-[min(760px,92vw)]"
       >
         <PdfSourcePanel
           document={previewDocument}

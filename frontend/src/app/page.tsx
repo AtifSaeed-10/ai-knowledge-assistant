@@ -53,11 +53,11 @@ export default function WorkspacePage() {
 
       {!isBooting && !showWorkspace && (
         <div className="scroll-area min-h-0 flex-1 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center py-8">
-            <div className="w-full max-w-lg text-center">
+          <div className="flex min-h-full items-center justify-center py-6 sm:py-8">
+            <div className="w-full max-w-lg px-1 text-center">
               <LogoMark className="mx-auto h-10 w-10" />
 
-              <h1 className="mt-5 text-display font-semibold tracking-[-0.02em] text-ink">
+              <h1 className="mt-4 text-h1 font-semibold tracking-[-0.02em] text-ink sm:mt-5 sm:text-display">
                 Upload a PDF to begin
               </h1>
               <p className="mx-auto mt-2 max-w-md text-body leading-relaxed text-ink-muted">

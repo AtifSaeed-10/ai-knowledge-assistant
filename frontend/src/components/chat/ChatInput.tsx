@@ -121,7 +121,7 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
         )}
       </div>
 
-      <p className="mt-1.5 px-1 text-meta text-ink-subtle">
+      <p className="mt-1.5 hidden px-1 text-meta text-ink-subtle sm:block">
         {commandReady
           ? "This will move the PDF — it will not search the document."
           : canAsk

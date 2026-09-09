@@ -115,7 +115,7 @@ export function UserMenu() {
         <div
           id={menuId}
           role="menu"
-          className="absolute right-0 z-50 mt-2 w-72 origin-top-right rounded-xl border border-line bg-surface py-2 shadow-overlay animate-rise-in"
+          className="absolute right-0 z-50 mt-2 w-[min(18rem,calc(100vw-1.5rem))] origin-top-right rounded-xl border border-line bg-surface py-2 shadow-overlay animate-rise-in"
         >
           <div className="flex items-start gap-3 px-3.5 pb-3 pt-1.5">
             <Avatar user={user} size={40} />

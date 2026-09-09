@@ -17,6 +17,12 @@ export const metadata: Metadata = {
   description: "Ask questions about your PDFs and get answers with page-level citations.",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover" as const,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{

@@ -67,7 +67,7 @@ export function ModeSwitcher() {
             onClick={() => applyMode(mode.id)}
             onKeyDown={(event) => onKeyDown(event, index)}
             className={cn(
-              "rounded-md px-2 py-1 text-meta font-medium tracking-[-0.01em] transition-colors",
+              "rounded-md px-1.5 py-1 text-meta font-medium tracking-[-0.01em] transition-colors sm:px-2",
               isActive
                 ? "bg-surface text-ink shadow-card"
                 : "text-ink-muted hover:text-ink"

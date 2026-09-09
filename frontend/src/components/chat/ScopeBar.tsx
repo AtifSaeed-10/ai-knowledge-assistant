@@ -38,7 +38,7 @@ export function ScopeBar() {
   };
 
   return (
-    <div className="mb-2 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+    <div className="mb-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 sm:gap-x-2.5">
       <ModeSwitcher />
 
       {missingSelection ? (
@@ -47,7 +47,7 @@ export function ScopeBar() {
           <span className="truncate">Select a document in the sidebar</span>
         </span>
       ) : (
-        <span className="inline-flex min-w-0 items-center gap-1.5 text-meta text-ink-muted">
+        <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-meta text-ink-muted">
           {isFocused ? (
             <Crosshair className="h-3.5 w-3.5 shrink-0 text-olive" />
           ) : (
@@ -122,7 +122,7 @@ function PreviewToggle({
       ) : (
         <PanelRight className="h-3.5 w-3.5 text-ink-icon" />
       )}
-      <span>{visible ? "Hide PDF" : "Show PDF"}</span>
+      <span className="hidden sm:inline">{visible ? "Hide PDF" : "Show PDF"}</span>
     </button>
   );
 }

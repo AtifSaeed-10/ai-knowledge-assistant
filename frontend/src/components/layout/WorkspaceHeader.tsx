@@ -40,18 +40,18 @@ export function WorkspaceHeader({ onOpenSidebar }: WorkspaceHeaderProps) {
   };
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-paper px-3 sm:h-16 sm:px-6">
-      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-line bg-paper px-2 sm:h-16 sm:gap-3 sm:px-6">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2.5">
         <button
           type="button"
           onClick={onOpenSidebar}
           aria-label="Open workspace menu"
-          className="-ml-1 rounded-lg p-2 text-ink-muted transition-colors hover:bg-surface hover:text-ink lg:hidden"
+          className="-ml-0.5 rounded-lg p-2 text-ink-muted transition-colors hover:bg-surface hover:text-ink lg:hidden"
         >
           <Menu className="h-5 w-5" />
         </button>
 
-        <Link href="/" aria-label="DocuSage home" className="rounded-md lg:hidden">
+        <Link href="/" aria-label="DocuSage home" className="hidden rounded-md sm:block lg:hidden">
           <LogoMark className="h-6 w-6 shrink-0" />
         </Link>
 
@@ -66,7 +66,7 @@ export function WorkspaceHeader({ onOpenSidebar }: WorkspaceHeaderProps) {
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5">
         <UsageMeter />
 
         {hasMessages && (
@@ -74,7 +74,7 @@ export function WorkspaceHeader({ onOpenSidebar }: WorkspaceHeaderProps) {
             type="button"
             onClick={handleExport}
             title="Export this conversation as Markdown"
-            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-ui font-medium text-ink-muted transition-colors hover:bg-surface hover:text-ink"
+            className="inline-flex items-center gap-1.5 rounded-lg p-2 text-ui font-medium text-ink-muted transition-colors hover:bg-surface hover:text-ink sm:px-2.5 sm:py-1.5"
           >
             <Download className="h-4 w-4" />
             <span className="hidden sm:inline">Export</span>
@@ -85,7 +85,7 @@ export function WorkspaceHeader({ onOpenSidebar }: WorkspaceHeaderProps) {
           type="button"
           onClick={startNewConversation}
           title="Start a new chat"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-ui font-medium text-ink shadow-card transition-colors hover:border-line-strong hover:bg-surface-muted"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface p-2 text-ui font-medium text-ink shadow-card transition-colors hover:border-line-strong hover:bg-surface-muted sm:px-2.5 sm:py-1.5"
         >
           <SquarePen className="h-4 w-4 text-olive" />
           <span className="hidden sm:inline">New chat</span>
