@@ -5,7 +5,7 @@ import { SpotlightOverlay, useTourAnchorRect } from "./SpotlightOverlay";
 import { TourPopover } from "./TourPopover";
 import { EvidenceTourDemo } from "./EvidenceTourDemo";
 import { WORKSPACE_TOUR_STEPS, inflateTourRect } from "@/lib/workspace/tourSteps";
-import { hasSeenWorkspaceTour, markWorkspaceTourSeen } from "@/lib/site/firstRun";
+import { hasSeenWorkspaceTour, rememberWorkspaceTourSeen } from "@/lib/site/firstRun";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useDocumentStore } from "@/store/useDocumentStore";
 
@@ -23,15 +23,20 @@ export function WorkspaceTour({ onNeedsSidebar }: WorkspaceTourProps) {
   const documents = useDocumentStore((state) => state.documents);
   const hasInitialized = useDocumentStore((state) => state.hasInitialized);
   const isSignupOpen = useAuthStore((state) => state.isSignupOpen);
+  const accountSeenTour = useAuthStore((state) => state.user?.seenWorkspaceTour === true);
 
   const [stepIndex, setStepIndex] = useState<number | null>(null);
+  const alreadySeen = hasSeenWorkspaceTour(accountSeenTour);
 
   useEffect(() => {
-    if (stepIndex !== null) return;
+    if (alreadySeen) {
+      setStepIndex(null);
+      return;
+    }
     if (!hasInitialized || documents.length === 0) return;
-    if (isSignupOpen || hasSeenWorkspaceTour()) return;
-    setStepIndex(0);
-  }, [documents.length, hasInitialized, isSignupOpen, stepIndex]);
+    if (isSignupOpen) return;
+    setStepIndex((current) => (current === null ? 0 : current));
+  }, [alreadySeen, documents.length, hasInitialized, isSignupOpen]);
 
   const step = stepIndex === null ? null : WORKSPACE_TOUR_STEPS[stepIndex];
 
@@ -40,7 +45,7 @@ export function WorkspaceTour({ onNeedsSidebar }: WorkspaceTourProps) {
   }, [onNeedsSidebar, step?.needsSidebar]);
 
   const finish = useCallback(() => {
-    markWorkspaceTourSeen();
+    void rememberWorkspaceTourSeen();
     setStepIndex(null);
   }, []);
 

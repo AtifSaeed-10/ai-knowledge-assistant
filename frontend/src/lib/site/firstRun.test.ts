@@ -47,4 +47,30 @@ describe("workspace tour flag", () => {
     expect(firstRun.hasSeenWorkspaceTour()).toBe(true);
     expect(() => firstRun.markWorkspaceTourSeen()).not.toThrow();
   });
+
+  it("reads the signed-in account flag independently of this browser", async () => {
+    const firstRun = await import("./firstRun");
+
+    expect(firstRun.accountHasSeenWorkspaceTour(undefined)).toBe(false);
+    expect(firstRun.accountHasSeenWorkspaceTour({})).toBe(false);
+    expect(
+      firstRun.accountHasSeenWorkspaceTour({ docusage_seen_workspace_tour: true })
+    ).toBe(true);
+    expect(firstRun.hasSeenWorkspaceTour(true)).toBe(true);
+    expect(firstRun.hasSeenWorkspaceTour(false)).toBe(false);
+  });
+
+  it("copies the flag from the account onto this device, and from this device onto the account", async () => {
+    const firstRun = await import("./firstRun");
+
+    expect(
+      firstRun.tourSeenSync({ localSeen: false, accountSeen: true })
+    ).toEqual({ writeLocal: true, writeAccount: false });
+    expect(
+      firstRun.tourSeenSync({ localSeen: true, accountSeen: false })
+    ).toEqual({ writeLocal: false, writeAccount: true });
+    expect(
+      firstRun.tourSeenSync({ localSeen: true, accountSeen: true })
+    ).toEqual({ writeLocal: false, writeAccount: false });
+  });
 });

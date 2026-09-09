@@ -2,6 +2,7 @@ import type { Session } from "@supabase/supabase-js";
 
 import { authApi } from "@/lib/api/auth";
 import { resetGuestSession } from "@/lib/guestSession";
+import { accountHasSeenWorkspaceTour, syncWorkspaceTourWithAccount } from "@/lib/site/firstRun";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useChatStore } from "@/store/useChatStore";
 import { useDocumentStore } from "@/store/useDocumentStore";
@@ -27,6 +28,7 @@ export function userFromSession(session: Session) {
     email: session.user.email ?? null,
     name: firstString(meta.full_name, meta.name, meta.given_name),
     avatarUrl: firstString(meta.avatar_url, meta.picture),
+    seenWorkspaceTour: accountHasSeenWorkspaceTour(meta),
   };
 }
 
@@ -99,6 +101,9 @@ export async function applyAuthSession(session: Session | null): Promise<void> {
 
   if (session) {
     useAuthStore.getState().setSession(userFromSession(session), session.access_token);
+    void syncWorkspaceTourWithAccount(
+      (session.user.user_metadata || {}) as Record<string, unknown>
+    );
   } else {
     useAuthStore.getState().setSession(null, null);
   }
