@@ -55,7 +55,7 @@ export default function WorkspacePage() {
         <div className="scroll-area min-h-0 flex-1 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center py-8">
             <div className="w-full max-w-lg text-center">
-              <LogoMark className="mx-auto h-10 w-auto" />
+              <LogoMark className="mx-auto h-10 w-10" />
 
               <h1 className="mt-5 text-display font-semibold tracking-[-0.02em] text-ink">
                 Upload a PDF to begin

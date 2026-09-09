@@ -5,11 +5,17 @@
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;
+    color-scheme: light;
   }
 
   body {
     @apply bg-paper text-ink antialiased;
     text-rendering: optimizeLegibility;
+  }
+
+  /* Keep brand fills even when the OS forces a dark or high-contrast palette. */
+  .logo-mark {
+    forced-color-adjust: none;
   }
 
   ::selection {

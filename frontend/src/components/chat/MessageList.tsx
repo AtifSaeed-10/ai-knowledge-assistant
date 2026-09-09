@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowRight, CalendarClock, ScrollText, ShieldAlert } from "lucide-react";
+import { ArrowDown, ArrowRight, BookOpen, ListTree, ScrollText } from "lucide-react";
 import { Message } from "@/types";
 import { MessageBubble } from "./MessageBubble";
 import { useChatScope } from "@/hooks/useChatScope";
@@ -16,14 +16,14 @@ interface MessageListProps {
 
 const FOCUSED_PROMPTS = [
   { label: "Summarize this document", icon: ScrollText },
-  { label: "What risks or obligations are mentioned?", icon: ShieldAlert },
-  { label: "List the important dates and deadlines", icon: CalendarClock },
+  { label: "What are the main topics covered?", icon: ListTree },
+  { label: "Explain the main ideas in simple terms", icon: BookOpen },
 ];
 
 const LIBRARY_PROMPTS = [
   { label: "Summarize the key findings", icon: ScrollText },
-  { label: "What risks are mentioned?", icon: ShieldAlert },
-  { label: "List important dates and deadlines", icon: CalendarClock },
+  { label: "What are the main topics covered?", icon: ListTree },
+  { label: "Explain the main ideas in simple terms", icon: BookOpen },
 ];
 
 export function MessageList({ messages, isLoading, onSelectPrompt }: MessageListProps) {
