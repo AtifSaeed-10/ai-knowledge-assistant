@@ -52,7 +52,7 @@ export function WorkspaceHeader({ onOpenSidebar }: WorkspaceHeaderProps) {
         </button>
 
         <Link href="/" aria-label="DocuSage home" className="rounded-md lg:hidden">
-          <LogoMark className="h-6 w-auto shrink-0" />
+          <LogoMark className="h-6 w-6 shrink-0" />
         </Link>
 
         <div className="min-w-0 flex-1">

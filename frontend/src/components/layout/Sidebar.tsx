@@ -123,7 +123,7 @@ export function Sidebar({ isOpen, onClose, forceExpanded = false }: SidebarProps
         >
           {isCompact ? (
             <Link href="/" aria-label="DocuSage home" className="rounded-md">
-              <LogoMark className="h-7 w-auto" />
+              <LogoMark className="h-7 w-7" />
             </Link>
           ) : (
             <Link href="/" aria-label="DocuSage home" className="rounded-md">
