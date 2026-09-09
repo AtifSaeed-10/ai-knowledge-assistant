@@ -19,6 +19,7 @@ import {
   resolveDocumentScope,
   shouldRememberScopePin,
 } from '@/lib/workspace/documentScope';
+import { shouldSkipConversationReload } from '@/lib/workspace/workspaceView';
 
 const ACTIVE_CONVERSATION_PREFIX = 'docusage_active_conversation';
 const MODE_KEY = 'docusage_product_mode';
@@ -504,7 +505,18 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     selectConversation: async (id: string) => {
-      if (!id || (id === get().conversationId && !get().conversationError)) return;
+      const current = get();
+      if (
+        shouldSkipConversationReload({
+          requestedId: id,
+          currentId: current.conversationId,
+          conversationError: current.conversationError,
+          messageCount: current.messages.length,
+          isSwitching: current.isSwitching,
+        })
+      ) {
+        return;
+      }
 
       abortInFlight();
       writeActiveConversation(id);

@@ -5,6 +5,8 @@ import { AlertCircle, RotateCcw } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { DocumentUploader } from "@/components/documents/DocumentUploader";
 import { WorkspaceStage } from "@/components/layout/WorkspaceStage";
+import { shouldShowChatWorkspace } from "@/lib/workspace/workspaceView";
+import { useChatStore } from "@/store/useChatStore";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { LogoMark } from "@/components/ui/Logo";
 
@@ -14,13 +16,25 @@ export default function WorkspacePage() {
   const loadError = useDocumentStore((state) => state.loadError);
   const initialize = useDocumentStore((state) => state.initialize);
   const reload = useDocumentStore((state) => state.reload);
+  const conversations = useChatStore((state) => state.conversations);
+  const messages = useChatStore((state) => state.messages);
+  const conversationId = useChatStore((state) => state.conversationId);
+  const hasHydrated = useChatStore((state) => state.hasHydrated);
 
   useEffect(() => {
     void initialize();
   }, [initialize]);
 
-  const isBooting = !hasInitialized;
   const hasDocuments = documents.length > 0;
+  // Without PDFs, wait for chat history so we don't flash the upload screen
+  // over a sidebar that already lists saved conversations.
+  const isBooting = !hasInitialized || (!hasDocuments && !hasHydrated);
+  const showWorkspace = shouldShowChatWorkspace({
+    documentCount: documents.length,
+    conversationCount: conversations.length,
+    messageCount: messages.length,
+    conversationId,
+  });
 
   return (
     <AppLayout>
@@ -37,7 +51,7 @@ export default function WorkspacePage() {
         </div>
       )}
 
-      {!isBooting && !hasDocuments && (
+      {!isBooting && !showWorkspace && (
         <div className="scroll-area min-h-0 flex-1 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center py-8">
             <div className="w-full max-w-lg text-center">
@@ -88,7 +102,7 @@ export default function WorkspacePage() {
         </div>
       )}
 
-      {!isBooting && hasDocuments && <WorkspaceStage />}
+      {!isBooting && showWorkspace && <WorkspaceStage />}
     </AppLayout>
   );
 }
