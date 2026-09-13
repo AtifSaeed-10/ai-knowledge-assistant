@@ -2,7 +2,9 @@ print("========== LOADED BACKEND.PY ==========")
 from database.db import init_db
 import json
 from database.document_store import  update_document_status
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -46,7 +48,9 @@ from modes import (
 from agent_foundation import effective_mode
 from app_platform import errors, settings as platform_settings
 from app_platform.auth.context import ACTOR_GUEST, RequestContext
+from app_platform.auth.admin import require_admin
 from app_platform.auth.dependency import get_request_context
+from app_platform.ops.overview import admin_overview
 from app_platform.auth.guest import normalize_session_id
 from app_platform.guards import ownership
 from app_platform.quotas import service as quotas
@@ -161,6 +165,28 @@ def _owner_fields(context: RequestContext) -> dict:
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.exception_handler(StarletteHTTPException)
+async def record_platform_http_error(request: Request, exc: StarletteHTTPException):
+    try:
+        from app_platform.ops.events import record_http_exception
+
+        record_http_exception(
+            request.url.path,
+            exc.status_code,
+            exc.detail,
+            getattr(request.state, "actor", None),
+        )
+    except Exception:
+        pass
+    return await http_exception_handler(request, exc)
+
+
+@app.get("/admin/overview")
+def admin_overview_api(_context: RequestContext = Depends(require_admin)):
+    """Private operator snapshot. Locked to ADMIN_EMAILS."""
+    return admin_overview()
 
 
 @app.get("/me/usage")
@@ -415,9 +441,22 @@ def chat_stream(
 
             completed = True
 
-        except Exception:
+        except Exception as exc:
 
             # Do not save a partial assistant response on stream failure.
+            try:
+                from app_platform.ops.events import record_safe
+
+                record_safe(
+                    kind="http",
+                    route="/chat/stream",
+                    category="stream_failed",
+                    message=type(exc).__name__,
+                    actor_type=context.actor_type,
+                    actor_id=context.actor_id,
+                )
+            except Exception:
+                pass
             raise
 
         if completed:

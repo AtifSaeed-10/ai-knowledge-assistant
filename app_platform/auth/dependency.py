@@ -7,12 +7,13 @@ browser still holds a trial id is treated as the user.
 
 from __future__ import annotations
 
-from fastapi import Header
+from fastapi import Header, Request
 
 from app_platform import errors, settings
 from app_platform.auth.context import RequestContext, guest_context, user_context
 from app_platform.auth.guest import normalize_session_id
 from app_platform.auth.supabase_jwt import TokenError, bearer_token, verify_token
+from app_platform.ops.request_actor import bind_actor
 from database.guest_store import ensure_guest_session
 from database.user_store import upsert_user
 
@@ -46,7 +47,11 @@ def resolve_context(
 
 
 def get_request_context(
+    request: Request,
     authorization: str | None = Header(default=None),
     x_guest_session: str | None = Header(default=None),
 ) -> RequestContext:
-    return resolve_context(authorization, x_guest_session)
+    context = resolve_context(authorization, x_guest_session)
+    request.state.actor = context
+    bind_actor(context)
+    return context

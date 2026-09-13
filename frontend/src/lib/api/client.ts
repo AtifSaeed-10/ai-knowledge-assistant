@@ -36,6 +36,14 @@ export class AuthRequiredError extends Error {
   }
 }
 
+/** Signed in, but this account is not allowed to see the resource. */
+export class ForbiddenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ForbiddenError';
+  }
+}
+
 type ErrorDetail = {
   code?: string;
   message?: string;
@@ -87,6 +95,10 @@ async function raiseForStatus(response: Response, fallback: string): Promise<nev
 
   if (response.status === 401) {
     throw new AuthRequiredError(detail?.message || 'Sign in to continue.');
+  }
+
+  if (response.status === 403) {
+    throw new ForbiddenError(detail?.message || 'You do not have access.');
   }
 
   throw new Error(detail?.message || `${fallback} (${response.status}).`);

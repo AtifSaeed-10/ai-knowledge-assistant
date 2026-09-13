@@ -12,6 +12,7 @@ export interface UsageSnapshot {
   questionsWindow: 'trial' | 'month';
   maxPdfMb: number;
   authAvailable: boolean;
+  admin: boolean;
 }
 
 interface UsageApiResponse {
@@ -23,6 +24,7 @@ interface UsageApiResponse {
   questions_window?: string;
   max_pdf_mb?: number;
   auth_available?: boolean;
+  admin?: boolean;
 }
 
 export interface AuthUser {
@@ -57,6 +59,7 @@ function mapUsage(data: UsageApiResponse): UsageSnapshot {
     questionsWindow: data.questions_window === 'month' ? 'month' : 'trial',
     maxPdfMb: data.max_pdf_mb ?? 25,
     authAvailable: data.auth_available === true,
+    admin: data.admin === true,
   };
 }
 
