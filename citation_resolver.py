@@ -36,6 +36,20 @@ _COORD_MARKER_RE = re.compile(
     r"\[(E[1-9]\d*)[^\]]*\b(?:x0|y0|x1|y1|bbox|coord_space)\b[^\]]*\]",
     re.IGNORECASE,
 )
+# Accidental leaks: (E4:"...") / (E4) / bare E4:"..." — never official [E1:"..."] markers.
+_LEAK_PAREN_RE = re.compile(
+    r"\(\s*E[1-9]\d*(?:\s*:\s*\"[^\"]*\")?\s*\)",
+    re.IGNORECASE,
+)
+_LEAK_BARE_QUOTED_RE = re.compile(
+    r'(?<!\[)E[1-9]\d*\s*:\s*"[^"]*"',
+    re.IGNORECASE,
+)
+_OFFICIAL_MARKER_RE = re.compile(
+    r'\[E[1-9]\d*(?::\"[^\"\]]*\")?\]',
+    re.IGNORECASE,
+)
+_STANDALONE_E_RE = re.compile(r"\bE[1-9]\d*\b", re.IGNORECASE)
 
 MAX_QUOTE_CHARS = 120
 MIN_QUOTE_COMPACT = 8
@@ -147,6 +161,27 @@ def _ids_from_group(body: str, valid_ids: set[str]) -> list[str]:
     return kept
 
 
+def strip_leaked_evidence_tags(text: str) -> str:
+    """Remove parenthetical / bare E-tags; keep official [E1] / [E1:\"quote\"] markers."""
+    if not text:
+        return text
+    held: list[str] = []
+
+    def _hold(match: re.Match[str]) -> str:
+        held.append(match.group(0))
+        return f"\x00CIT{len(held) - 1}\x00"
+
+    protected = _OFFICIAL_MARKER_RE.sub(_hold, text)
+    cleaned = _LEAK_PAREN_RE.sub("", protected)
+    cleaned = _LEAK_BARE_QUOTED_RE.sub("", cleaned)
+    cleaned = _STANDALONE_E_RE.sub("", cleaned)
+    for index, marker in enumerate(held):
+        cleaned = cleaned.replace(f"\x00CIT{index}\x00", marker, 1)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r" +([,.;:])", r"\1", cleaned)
+    return cleaned
+
+
 def resolve_evidence_markers(text: str, valid_ids: set[str]) -> str:
     """Drop invalid IDs; keep valid ones as [E1] or [E1:\"quote\"] in order."""
 
@@ -172,7 +207,8 @@ def resolve_evidence_markers(text: str, valid_ids: set[str]) -> str:
     resolved = _QUOTED_MARKER_RE.sub(replace_quoted, text or "")
     resolved = _COORD_MARKER_RE.sub(replace_coord_marker, resolved)
     resolved = _CITATION_GROUP_RE.sub(replace_group, resolved)
-    return _ADJACENT_DUP_RE.sub(r"\1", resolved)
+    resolved = _ADJACENT_DUP_RE.sub(r"\1", resolved)
+    return strip_leaked_evidence_tags(resolved)
 
 
 def split_unclosed_bracket(buffer: str) -> tuple[str, str]:

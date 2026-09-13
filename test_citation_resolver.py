@@ -87,6 +87,31 @@ class TestResolveMarkers(unittest.TestCase):
             "Fact.[E1] Nope.",
         )
 
+    def test_parenthetical_eid_leak_is_stripped(self):
+        text = 'A claim.[E1:"supervised learning uses labeled examples"] (E4:"uses labeled training examples")'
+        self.assertEqual(
+            resolve_evidence_markers(text, self.valid).rstrip(),
+            'A claim.[E1:"supervised learning uses labeled examples"]',
+        )
+
+    def test_bare_quoted_eid_leak_is_stripped(self):
+        text = 'A claim. E2:"classification and regression tasks" Done.'
+        self.assertEqual(resolve_evidence_markers(text, self.valid), "A claim. Done.")
+
+    def test_standalone_eid_in_prose_is_stripped(self):
+        text = "See E1 and E2 for the definition."
+        self.assertEqual(
+            resolve_evidence_markers(text, self.valid),
+            "See and for the definition.",
+        )
+
+    def test_official_markers_survive_leak_cleanup(self):
+        text = 'Kept.[E2] Also E9 and (E1:"too short leak")'
+        self.assertEqual(
+            resolve_evidence_markers(text, self.valid).rstrip(),
+            "Kept.[E2] Also and",
+        )
+
 
 class TestStreamHoldback(unittest.TestCase):
     def test_partial_markers_are_held(self):
