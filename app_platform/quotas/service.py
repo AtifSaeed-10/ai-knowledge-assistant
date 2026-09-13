@@ -46,6 +46,8 @@ def pdfs_used(context: RequestContext) -> int:
 
 
 def usage_summary(context: RequestContext) -> dict[str, Any]:
+    from app_platform.auth.admin import is_admin
+
     limits = limits_for(context)
     return {
         "tier": context.tier,
@@ -57,6 +59,7 @@ def usage_summary(context: RequestContext) -> dict[str, Any]:
         "questions_window": limits.questions_window,
         "max_pdf_mb": settings.QUOTA_MAX_PDF_MB,
         "auth_available": settings.auth_enabled(),
+        "admin": is_admin(context),
     }
 
 

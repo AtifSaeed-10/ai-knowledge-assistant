@@ -27,6 +27,7 @@ def _row_to_user(row) -> dict[str, Any] | None:
         "auth_subject": row[1],
         "email": row[2],
         "created_at": row[3],
+        "last_seen_at": row[4] if len(row) > 4 else None,
     }
 
 
@@ -48,7 +49,7 @@ def upsert_user(auth_subject: str, email: str | None = None) -> dict[str, Any]:
     connection.commit()
     cursor.execute(
         """
-        SELECT user_id, auth_subject, email, created_at
+        SELECT user_id, auth_subject, email, created_at, last_seen_at
         FROM users
         WHERE auth_subject = ?
         """,
@@ -64,7 +65,7 @@ def get_user(user_id: str) -> dict[str, Any] | None:
     cursor = connection.cursor()
     cursor.execute(
         """
-        SELECT user_id, auth_subject, email, created_at
+        SELECT user_id, auth_subject, email, created_at, last_seen_at
         FROM users
         WHERE user_id = ?
         """,
@@ -73,3 +74,23 @@ def get_user(user_id: str) -> dict[str, Any] | None:
     row = cursor.fetchone()
     connection.close()
     return _row_to_user(row)
+
+
+def list_users() -> list[dict[str, Any]]:
+    connection = get_connection()
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT user_id, auth_subject, email, created_at, last_seen_at
+        FROM users
+        ORDER BY last_seen_at DESC, created_at DESC
+        """
+    )
+    rows = cursor.fetchall()
+    connection.close()
+    users: list[dict[str, Any]] = []
+    for row in rows:
+        user = _row_to_user(row)
+        if user:
+            users.append(user)
+    return users

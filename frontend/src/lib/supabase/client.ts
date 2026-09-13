@@ -34,7 +34,7 @@ export function getSupabaseClient(): SupabaseClient | null {
 }
 
 /** Redirect to Google. The app reloads with a session in the URL fragment. */
-export async function signInWithGoogle(): Promise<void> {
+export async function signInWithGoogle(redirectTo?: string): Promise<void> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error("Sign-in is not configured on this deployment.");
@@ -42,7 +42,9 @@ export async function signInWithGoogle(): Promise<void> {
 
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
-    options: { redirectTo: window.location.origin },
+    options: {
+      redirectTo: redirectTo || window.location.origin,
+    },
   });
 
   if (error) throw new Error(error.message);

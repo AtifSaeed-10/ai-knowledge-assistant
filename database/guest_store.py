@@ -30,7 +30,7 @@ def ensure_guest_session(session_id: str) -> dict[str, Any]:
     connection.commit()
     cursor.execute(
         """
-        SELECT session_id, created_at, pdf_count, question_count, migrated_to_user_id
+        SELECT session_id, created_at, last_seen_at, pdf_count, question_count, migrated_to_user_id
         FROM guest_sessions
         WHERE session_id = ?
         """,
@@ -41,9 +41,21 @@ def ensure_guest_session(session_id: str) -> dict[str, Any]:
     return {
         "session_id": row[0],
         "created_at": row[1],
-        "pdf_count": int(row[2] or 0),
-        "question_count": int(row[3] or 0),
-        "migrated_to_user_id": row[4],
+        "last_seen_at": row[2],
+        "pdf_count": int(row[3] or 0),
+        "question_count": int(row[4] or 0),
+        "migrated_to_user_id": row[5],
+    }
+
+
+def _row_to_guest(row) -> dict[str, Any]:
+    return {
+        "session_id": row[0],
+        "created_at": row[1],
+        "last_seen_at": row[2],
+        "pdf_count": int(row[3] or 0),
+        "question_count": int(row[4] or 0),
+        "migrated_to_user_id": row[5],
     }
 
 
@@ -52,7 +64,7 @@ def get_guest_session(session_id: str) -> dict[str, Any] | None:
     cursor = connection.cursor()
     cursor.execute(
         """
-        SELECT session_id, created_at, pdf_count, question_count, migrated_to_user_id
+        SELECT session_id, created_at, last_seen_at, pdf_count, question_count, migrated_to_user_id
         FROM guest_sessions
         WHERE session_id = ?
         """,
@@ -62,13 +74,22 @@ def get_guest_session(session_id: str) -> dict[str, Any] | None:
     connection.close()
     if not row:
         return None
-    return {
-        "session_id": row[0],
-        "created_at": row[1],
-        "pdf_count": int(row[2] or 0),
-        "question_count": int(row[3] or 0),
-        "migrated_to_user_id": row[4],
-    }
+    return _row_to_guest(row)
+
+
+def list_guest_sessions() -> list[dict[str, Any]]:
+    connection = get_connection()
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT session_id, created_at, last_seen_at, pdf_count, question_count, migrated_to_user_id
+        FROM guest_sessions
+        ORDER BY last_seen_at DESC, created_at DESC
+        """
+    )
+    rows = cursor.fetchall()
+    connection.close()
+    return [_row_to_guest(row) for row in rows]
 
 
 def increment_guest_pdf_count(session_id: str) -> None:

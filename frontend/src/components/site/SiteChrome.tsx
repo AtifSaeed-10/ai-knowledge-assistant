@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
+import { LegalLinks } from "@/components/site/LegalLinks";
 
 export function SiteHeader() {
   return (
@@ -9,6 +10,12 @@ export function SiteHeader() {
         <Logo className="h-7 w-auto" />
       </Link>
       <nav className="flex items-center gap-1 sm:gap-2">
+        <Link
+          href="/about"
+          className="rounded-lg px-2.5 py-1.5 text-ui font-medium text-ink-muted transition-colors hover:bg-surface hover:text-ink"
+        >
+          About
+        </Link>
         <Link
           href="/privacy"
           className="rounded-lg px-2.5 py-1.5 text-ui font-medium text-ink-muted transition-colors hover:bg-surface hover:text-ink"
@@ -37,13 +44,8 @@ export function SiteFooter() {
     <footer className="border-t border-line px-4 py-6 sm:px-6">
       <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3 text-meta text-ink-subtle">
         <p>DocuSage · answers from your PDFs, with the page</p>
-        <nav className="flex gap-4">
-          <Link href="/privacy" className="hover:text-ink">
-            Privacy
-          </Link>
-          <Link href="/terms" className="hover:text-ink">
-            Terms
-          </Link>
+        <nav className="flex flex-wrap gap-4">
+          <LegalLinks linkClassName="text-meta" />
           <Link href="/" className="hover:text-ink">
             Workspace
           </Link>

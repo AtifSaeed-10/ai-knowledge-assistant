@@ -47,6 +47,26 @@ def _env_csv(name: str, default: list[str]) -> list[str]:
     return items
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = _env_str(name)
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def _env_optional_float(name: str) -> float | None:
+    raw = _env_str(name)
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
 # ========================
 # Datastore
 # ========================
@@ -78,6 +98,20 @@ QUOTA_GUEST_MAX_QUESTIONS = _env_int("QUOTA_GUEST_MAX_QUESTIONS", 15)
 QUOTA_USER_MAX_PDFS = _env_int("QUOTA_USER_MAX_PDFS", 5)
 QUOTA_USER_MAX_QUESTIONS_MONTHLY = _env_int("QUOTA_USER_MAX_QUESTIONS_MONTHLY", 100)
 QUOTA_MAX_PDF_MB = _env_int("QUOTA_MAX_PDF_MB", 25)
+
+# ========================
+# Operator dashboard
+# ========================
+# Comma-separated Google emails. Only these accounts can load /admin.
+ADMIN_EMAILS = _env_csv("ADMIN_EMAILS", ["saeedatif199@gmail.com"])
+
+# Azure VM credit card on the dashboard. Remaining is estimated unless
+# AZURE_SPEND_USD is set; live billing APIs are not wired yet.
+AZURE_CREDIT_START_USD = _env_float("AZURE_CREDIT_START_USD", 100.0)
+AZURE_CREDIT_EXPIRES = _env_str("AZURE_CREDIT_EXPIRES", "2027-09-05")
+AZURE_VM_HOURLY_USD = _env_float("AZURE_VM_HOURLY_USD", 0.05)
+AZURE_CREDIT_STARTED_AT = _env_str("AZURE_CREDIT_STARTED_AT")
+AZURE_SPEND_USD = _env_optional_float("AZURE_SPEND_USD")
 
 
 def auth_enabled() -> bool:

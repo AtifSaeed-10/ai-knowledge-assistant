@@ -72,6 +72,12 @@ def index_pdf(pdf_path: str, document_id: str):
         if not chunks:
             purge_document_index(document_id, delete_files=False)
             mark_document_index_failed(document_id, INDEX_FAILURE_NO_TEXT)
+            try:
+                from app_platform.ops.events import record_index_failure
+
+                record_index_failure(document_id, INDEX_FAILURE_NO_TEXT)
+            except Exception:
+                pass
             logger.warning(
                 "index_pdf document_id=%s failed: no chunks (engine=%s pages_with_text=%s)",
                 document_id,
@@ -149,6 +155,12 @@ def index_pdf(pdf_path: str, document_id: str):
         purge_document_index(document_id, delete_files=False)
         message = f"Indexing failed: {exc.__class__.__name__}"
         mark_document_index_failed(document_id, message)
+        try:
+            from app_platform.ops.events import record_index_failure
+
+            record_index_failure(document_id, message)
+        except Exception:
+            pass
         logger.exception(
             "index_pdf document_id=%s failed with exception",
             document_id,

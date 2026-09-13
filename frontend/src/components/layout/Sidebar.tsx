@@ -8,6 +8,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { DocumentLibrary } from "@/components/documents/DocumentLibrary";
 import { DocumentUploader } from "@/components/documents/DocumentUploader";
 import { ConversationList } from "@/components/chat/ConversationList";
+import { LegalLinks } from "@/components/site/LegalLinks";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { cn } from "@/lib/cn";
 
@@ -191,18 +192,21 @@ export function Sidebar({ isOpen, onClose, forceExpanded = false }: SidebarProps
           </div>
         </div>
 
-        {!isCompact && documents.length > 0 && (
+        {!isCompact && (
           <div className="shrink-0 border-t border-line px-4 py-3">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-meta text-ink-muted">
-              <span className="inline-flex items-center gap-1.5">
-                <FileText size={13} className="text-ink-icon" />
-                {documents.length} {documents.length === 1 ? "document" : "documents"}
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <CheckCircle2 size={13} className="text-sage" />
-                {readyCount} ready
-              </span>
-            </div>
+            {documents.length > 0 && (
+              <div className="mb-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-meta text-ink-muted">
+                <span className="inline-flex items-center gap-1.5">
+                  <FileText size={13} className="text-ink-icon" />
+                  {documents.length} {documents.length === 1 ? "document" : "documents"}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <CheckCircle2 size={13} className="text-sage" />
+                  {readyCount} ready
+                </span>
+              </div>
+            )}
+            <LegalLinks />
           </div>
         )}
 

@@ -22,6 +22,7 @@ from llm.errors import (
     RetryableLLMError,
 )
 from llm.sanitize import safe_error_message
+from app_platform.ops.groq_limits import store_groq_call, usage_tokens
 
 
 class GroqProvider(LLMProvider):
@@ -120,14 +121,30 @@ class GroqProvider(LLMProvider):
             retry_same=False,
         )
 
+    def _create(self, prompt: str, *, stream: bool):
+        completions = self._client().chat.completions
+        payload = {
+            "model": self._model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if stream:
+            payload["stream"] = True
+        raw_api = getattr(completions, "with_raw_response", None)
+        if raw_api is not None:
+            raw = raw_api.create(**payload)
+            headers = getattr(raw, "headers", None)
+            body = raw.parse() if hasattr(raw, "parse") else raw
+            return body, headers
+        return completions.create(**payload), None
+
     def generate(self, prompt: str) -> str:
         try:
-            response = self._client().chat.completions.create(
-                model=self._model,
-                messages=[{"role": "user", "content": prompt}],
-            )
+            response, headers = self._create(prompt, stream=False)
         except Exception as exc:
-            raise self._map_exception(exc) from None
+            mapped = self._map_exception(exc)
+            store_groq_call(None, 0, str(mapped))
+            raise mapped from None
+        store_groq_call(headers, usage_tokens(response))
         text = ""
         try:
             text = response.choices[0].message.content or ""
@@ -144,11 +161,8 @@ class GroqProvider(LLMProvider):
 
     def stream(self, prompt: str) -> Iterator[str]:
         try:
-            stream = self._client().chat.completions.create(
-                model=self._model,
-                messages=[{"role": "user", "content": prompt}],
-                stream=True,
-            )
+            stream, headers = self._create(prompt, stream=True)
+            store_groq_call(headers, 0)
             for chunk in stream:
                 try:
                     content = chunk.choices[0].delta.content
@@ -156,7 +170,10 @@ class GroqProvider(LLMProvider):
                     content = None
                 if content:
                     yield content
-        except LLMError:
+        except LLMError as exc:
+            store_groq_call(None, 0, str(exc))
             raise
         except Exception as exc:
-            raise self._map_exception(exc) from None
+            mapped = self._map_exception(exc)
+            store_groq_call(None, 0, str(mapped))
+            raise mapped from None

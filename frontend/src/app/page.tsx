@@ -9,6 +9,7 @@ import { shouldShowChatWorkspace } from "@/lib/workspace/workspaceView";
 import { useChatStore } from "@/store/useChatStore";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { LogoMark } from "@/components/ui/Logo";
+import { LegalLinks } from "@/components/site/LegalLinks";
 
 export default function WorkspacePage() {
   const documents = useDocumentStore((state) => state.documents);
@@ -97,6 +98,7 @@ export default function WorkspacePage() {
               <p className="mt-3 text-meta text-ink-subtle">
                 Every answer links back to the exact page it came from
               </p>
+              <LegalLinks className="mt-4 justify-center" />
             </div>
           </div>
         </div>

@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useId, useRef, useState } from "react";
-import { LogOut } from "lucide-react";
+import { LayoutDashboard, LogOut } from "lucide-react";
+import Link from "next/link";
 
 import { signOut } from "@/lib/supabase/client";
 import { applyAuthSession } from "@/lib/workspace/syncWorkspace";
@@ -58,6 +59,7 @@ function Avatar({ user, size = 32 }: { user: AuthUser; size?: number }) {
  */
 export function UserMenu() {
   const user = useAuthStore((state) => state.user);
+  const isAdmin = useAuthStore((state) => state.usage?.admin === true);
 
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -129,6 +131,43 @@ export function UserMenu() {
           </div>
 
           <div className="mx-2 border-t border-line" />
+
+          {isAdmin ? (
+            <Link
+              href="/admin"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="mx-1.5 mt-1.5 flex w-[calc(100%-0.75rem)] items-center gap-2.5 rounded-lg px-3 py-2 text-left text-ui text-ink transition-colors hover:bg-surface-muted"
+            >
+              <LayoutDashboard className="h-4 w-4 text-ink-muted" />
+              Operations
+            </Link>
+          ) : null}
+
+          <Link
+            href="/about"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="mx-1.5 mt-1.5 flex w-[calc(100%-0.75rem)] items-center gap-2.5 rounded-lg px-3 py-2 text-left text-ui text-ink transition-colors hover:bg-surface-muted"
+          >
+            About
+          </Link>
+          <Link
+            href="/privacy"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="mx-1.5 flex w-[calc(100%-0.75rem)] items-center gap-2.5 rounded-lg px-3 py-2 text-left text-ui text-ink transition-colors hover:bg-surface-muted"
+          >
+            Privacy
+          </Link>
+          <Link
+            href="/terms"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="mx-1.5 flex w-[calc(100%-0.75rem)] items-center gap-2.5 rounded-lg px-3 py-2 text-left text-ui text-ink transition-colors hover:bg-surface-muted"
+          >
+            Terms
+          </Link>
 
           <button
             type="button"

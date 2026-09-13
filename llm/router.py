@@ -146,6 +146,7 @@ class LLMRouter:
                     success=False,
                     category=error.category,
                     latency_ms=latency,
+                    message=str(error),
                 )
                 _log(
                     f"LLM provider failed: provider={name} error_category={error.category}"
@@ -192,6 +193,7 @@ class LLMRouter:
                     success=False,
                     category=error.category,
                     latency_ms=latency,
+                    message=str(error),
                 )
                 _log(
                     f"LLM provider failed: provider={provider.name} "
@@ -214,6 +216,7 @@ class LLMRouter:
         success: bool,
         category: str | None = None,
         latency_ms: int = 0,
+        message: str | None = None,
     ) -> None:
         self.attempts.append(
             AttemptRecord(
@@ -225,6 +228,18 @@ class LLMRouter:
                 error_category=category,
             )
         )
+        if success:
+            return
+        try:
+            from app_platform.ops.events import record_llm_event
+
+            record_llm_event(
+                provider=provider.name,
+                category=category,
+                message=message,
+            )
+        except Exception:
+            return
 
 
 def get_router() -> LLMRouter:
