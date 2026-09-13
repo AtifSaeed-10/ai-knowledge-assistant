@@ -92,20 +92,10 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
       </div>
 
       {isSearching ? (
-        <div>
-          <div className="space-y-2.5 py-1">
-            <div className="skeleton h-3 w-[88%]" />
-            <div className="skeleton h-3 w-[72%]" />
-            <div className="skeleton h-3 w-[56%]" />
-          </div>
-          <button
-            type="button"
-            onClick={() => void retryLastAnswer()}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-meta font-medium text-ink transition-colors hover:bg-surface-muted"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Try again
-          </button>
+        <div className="space-y-2.5 py-1">
+          <div className="skeleton h-3 w-[88%]" />
+          <div className="skeleton h-3 w-[72%]" />
+          <div className="skeleton h-3 w-[56%]" />
         </div>
       ) : (
         <AnswerMarkdown content={message.content} citations={citations} />

@@ -164,7 +164,9 @@ def _citation_style_rules(has_evidence_ids: bool) -> str:
         "- Several claims may reuse one id with different short quotes.\n"
         "- Only use ids from passage headers. Never invent ids, pages, or coordinates.\n"
         "- Use [E1][E2] only when distinct passages support distinct parts of one claim.\n"
-        "- Do not write 'Source:' or page numbers in the answer."
+        "- Do not write 'Source:' or page numbers in the answer.\n"
+        "- Never write (E1), (E1:\"...\"), E1:\"...\", or the letters E1/E2 in prose. "
+        "The only allowed form is [E#:\"...\"] or [E#]."
     )
 
 
