@@ -26,6 +26,7 @@ from typing import Any
 import pymupdf as fitz
 
 from chunking import PAGE_JOIN, build_document_text
+from page_ocr import OCR_ENGINE
 from pdf_extraction import PRIMARY_ENGINE
 
 logger = logging.getLogger(__name__)
@@ -910,6 +911,7 @@ def map_chunk_to_evidence(
     layouts: dict[int, PageLayout],
     search_from: int,
     text_engine: str,
+    page_engines: dict[int, str] | None = None,
 ) -> tuple[dict[str, Any], int]:
     slices, next_from, join_recovered, fully_located = locate_chunk_slices(
         chunk["text"],
@@ -995,6 +997,14 @@ def map_chunk_to_evidence(
     pages = [int(row["page"]) for row in slices] or [
         int(chunk.get("page_start") or chunk.get("page_number") or 1)
     ]
+    if page_engines:
+        if any(
+            "ocr" in str(page_engines.get(page_number) or text_engine).lower()
+            for page_number in pages
+        ):
+            text_engine = OCR_ENGINE
+            highlight_available = False
+            regions = []
     if slices:
         sources = {
             (layouts[p].source if p in layouts else SOURCE_NONE)
@@ -1075,6 +1085,11 @@ def build_document_evidence(
     """
     layouts = extract_page_layouts(pdf_path)
     full_text, page_spans = build_document_text(pages)
+    page_engines = {
+        int(page["page_number"]): str(page.get("text_engine") or text_engine)
+        for page in pages
+        if page.get("page_number") is not None
+    }
     search_from = 0
     chunk_rows: list[dict[str, Any]] = []
     highlighted = 0
@@ -1087,6 +1102,7 @@ def build_document_evidence(
             layouts=layouts,
             search_from=search_from,
             text_engine=text_engine,
+            page_engines=page_engines,
         )
         if record["highlight_available"]:
             highlighted += 1

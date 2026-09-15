@@ -2,8 +2,9 @@
 PDF text extraction for the indexing pipeline.
 
 PyMuPDF is the primary extractor; pypdf is the fallback when the primary
-yields little or no text. Both read page-by-page from disk without loading
-the whole file into Python memory.
+yields little or no text. Image-only pages then get a Tesseract pass.
+Both native extractors read page-by-page from disk without loading the
+whole file into Python memory.
 """
 
 from __future__ import annotations
@@ -11,6 +12,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from typing import Any
+
+from page_ocr import OCR_ENGINE, fill_low_text_pages_with_ocr
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +37,8 @@ class ExtractionResult:
     primary_chars: int
     fallback_chars: int
     tried_fallback: bool
+    tried_ocr: bool = False
+    ocr_pages: int = 0
     per_page: list[PageDiagnostic] = field(default_factory=list)
 
 
@@ -66,7 +71,13 @@ def extract_pages_with_pymupdf(pdf_path: str) -> tuple[list[PageDict], list[Page
             )
 
             if char_count:
-                pages.append({"page_number": page_number, "text": text})
+                pages.append(
+                    {
+                        "page_number": page_number,
+                        "text": text,
+                        "text_engine": PRIMARY_ENGINE,
+                    }
+                )
     finally:
         doc.close()
 
@@ -108,13 +119,45 @@ def extract_pages_with_pypdf(pdf_path: str) -> tuple[list[PageDict], list[PageDi
         )
 
         if char_count:
-            pages.append({"page_number": page_number, "text": text})
+            pages.append(
+                {
+                    "page_number": page_number,
+                    "text": text,
+                    "text_engine": FALLBACK_ENGINE,
+                }
+            )
 
     return pages, diagnostics
 
 
 def _total_chars(pages: list[PageDict]) -> int:
     return sum(_strip_char_count(page.get("text")) for page in pages)
+
+
+def _tag_pages(pages: list[PageDict], engine: str) -> list[PageDict]:
+    tagged: list[PageDict] = []
+    for page in pages:
+        row = dict(page)
+        row["text_engine"] = row.get("text_engine") or engine
+        tagged.append(row)
+    return tagged
+
+
+def _engine_used(pages: list[PageDict], default: str) -> str:
+    engines = {
+        str(page.get("text_engine") or default)
+        for page in pages
+        if _strip_char_count(page.get("text"))
+    }
+    if not engines:
+        return default
+    if engines == {OCR_ENGINE}:
+        return OCR_ENGINE
+    if OCR_ENGINE in engines:
+        return f"{default}+{OCR_ENGINE}"
+    if len(engines) == 1:
+        return next(iter(engines))
+    return default
 
 
 def _log_page_diagnostics(
@@ -142,7 +185,9 @@ def extract_pages_from_pdf(
 ) -> ExtractionResult:
     """
     Extract page text using PyMuPDF, falling back to pypdf when the primary
-    result is insufficient. Returns the better of the two when both run.
+    result is insufficient. Image pages that still have almost no text are
+    OCR'd with Tesseract. Returns the better native extract, plus any OCR
+    fills.
     """
     primary_pages, primary_diag = extract_pages_with_pymupdf(pdf_path)
     primary_chars = _total_chars(primary_pages)
@@ -170,22 +215,29 @@ def extract_pages_from_pdf(
         _log_page_diagnostics(fallback_diag, document_id=document_id)
 
     if tried_fallback and fallback_chars > primary_chars:
-        chosen_pages = fallback_pages
-        engine_used = FALLBACK_ENGINE
+        chosen_pages = _tag_pages(fallback_pages, FALLBACK_ENGINE)
+        native_engine = FALLBACK_ENGINE
         per_page = fallback_diag
         total_pages = fallback_diag[0]["total_pages"] if fallback_diag else 0
     else:
-        chosen_pages = primary_pages
-        engine_used = PRIMARY_ENGINE
+        chosen_pages = _tag_pages(primary_pages, PRIMARY_ENGINE)
+        native_engine = PRIMARY_ENGINE
         per_page = primary_diag
         total_pages = primary_diag[0]["total_pages"] if primary_diag else 0
 
+    chosen_pages, ocr_stats = fill_low_text_pages_with_ocr(
+        pdf_path,
+        chosen_pages,
+        total_pages,
+        document_id=document_id,
+    )
+    engine_used = _engine_used(chosen_pages, native_engine)
     total_chars = _total_chars(chosen_pages)
 
     logger.info(
         "pdf_extract document_id=%s summary engine=%s total_pages=%s "
         "pages_with_text=%s total_chars=%s primary_chars=%s fallback_chars=%s "
-        "tried_fallback=%s",
+        "tried_fallback=%s tried_ocr=%s ocr_pages=%s",
         document_id or "unknown",
         engine_used,
         total_pages,
@@ -194,6 +246,8 @@ def extract_pages_from_pdf(
         primary_chars,
         fallback_chars,
         tried_fallback,
+        bool(ocr_stats.get("tried")),
+        int(ocr_stats.get("filled") or 0),
     )
 
     return ExtractionResult(
@@ -205,12 +259,13 @@ def extract_pages_from_pdf(
         primary_chars=primary_chars,
         fallback_chars=fallback_chars,
         tried_fallback=tried_fallback,
+        tried_ocr=bool(ocr_stats.get("tried")),
+        ocr_pages=int(ocr_stats.get("filled") or 0),
         per_page=per_page,
     )
 
 
 INDEX_FAILURE_NO_TEXT = (
     "No searchable text could be extracted from this PDF. "
-    "The file may use an unsupported layout or contain only images without a "
-    "readable text layer."
+    "If this is a scan, the pages may be too blurry, or OCR could not read them."
 )
