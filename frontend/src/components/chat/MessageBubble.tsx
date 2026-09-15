@@ -118,7 +118,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
       )}
 
       {!isStreaming && hasContent && message.scopeHint && (
-        <p className="mt-3 rounded-lg border border-line bg-surface-sunken px-2.5 py-2 text-meta leading-relaxed text-ink-muted">
+        <p className="mt-3 text-meta leading-relaxed text-ink-muted">
           {message.scopeHint}
         </p>
       )}

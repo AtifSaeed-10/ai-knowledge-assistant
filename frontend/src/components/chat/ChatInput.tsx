@@ -75,10 +75,10 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
     <div>
       <div
         className={cn(
-          "flex items-end gap-2 rounded-2xl border bg-surface p-1.5 pl-3.5 shadow-card transition-colors",
+          "flex items-end gap-2 rounded-2xl bg-surface-sunken p-1.5 pl-3.5 transition-colors",
           canSendText
-            ? "border-line focus-within:border-sage"
-            : "border-line bg-surface-muted"
+            ? "focus-within:bg-surface"
+            : "opacity-80"
         )}
       >
         <textarea

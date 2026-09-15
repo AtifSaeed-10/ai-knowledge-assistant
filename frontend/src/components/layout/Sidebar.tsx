@@ -111,14 +111,14 @@ export function Sidebar({ isOpen, onClose, forceExpanded = false }: SidebarProps
         data-tour="documents"
         style={{ width: isOpen ? "min(288px, 86vw)" : desktopWidth }}
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-full flex-col border-r border-line bg-surface-muted pt-[env(safe-area-inset-top)] lg:relative lg:visible lg:translate-x-0 lg:pt-0",
+          "fixed left-0 top-0 z-40 flex h-full flex-col bg-surface-muted pt-[env(safe-area-inset-top)] lg:relative lg:visible lg:translate-x-0 lg:pt-0",
           isResizing ? "transition-none" : "transition-[transform,width] duration-200 ease-out",
           isOpen ? "visible translate-x-0" : "invisible -translate-x-full"
         )}
       >
         <div
           className={cn(
-            "flex h-14 shrink-0 items-center gap-2 border-b border-line px-3 sm:h-16",
+            "flex h-14 shrink-0 items-center gap-2 px-3 sm:h-16",
             isCompact ? "justify-center" : "justify-between"
           )}
         >
@@ -191,7 +191,7 @@ export function Sidebar({ isOpen, onClose, forceExpanded = false }: SidebarProps
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-[2_1_0%] flex-col border-b border-line">
+          <div className="flex min-h-0 flex-[2_1_0%] flex-col">
             <ConversationList isCollapsed={isCompact} onNavigate={onClose} />
           </div>
 
@@ -201,7 +201,7 @@ export function Sidebar({ isOpen, onClose, forceExpanded = false }: SidebarProps
         </div>
 
         {!isCompact && (
-          <div className="shrink-0 border-t border-line px-4 py-3">
+          <div className="shrink-0 px-4 py-3">
             {documents.length > 0 && (
               <div className="mb-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-meta text-ink-muted">
                 <span className="inline-flex items-center gap-1.5">

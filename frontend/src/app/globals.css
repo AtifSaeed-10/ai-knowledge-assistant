@@ -91,11 +91,14 @@
 
   html {
     -webkit-tap-highlight-color: transparent;
+    /* `only` stops Chrome from auto-inverting a light page when Windows is dark. */
     color-scheme: light;
+    color-scheme: only light;
   }
 
   html.dark {
     color-scheme: dark;
+    color-scheme: only dark;
   }
 
   html,

@@ -77,7 +77,11 @@ def _indexed_vocabulary(document_ids: list[str] | None) -> dict[str, int]:
     """
     Words that appear in the scoped passages, cached until the corpus changes.
     A typo can only ever be corrected into one of these.
+
+    The BM25 index is loaded here so spelling does not run against an empty
+    dictionary — that used to leave "entrpy" uncorrected.
     """
+    bm25_index.ensure_loaded(get_collection())
     scope_key = ",".join(sorted(document_ids or [])) or "*"
     key = f"{bm25_index.fingerprint or ''}|{scope_key}"
 

@@ -14,6 +14,7 @@ ML_PASSAGES = [
     "In supervised learning the algorithm learns a mapping from inputs to outputs.",
     "Unsupervised learning finds structure in unlabeled data instead.",
     "Reinforcement learning optimises a policy through reward signals.",
+    "Entropy measures the average amount of information in a random variable.",
 ]
 
 HISTORY_PASSAGES = [
@@ -66,6 +67,13 @@ class TestCorrectQuery(unittest.TestCase):
         corrected = correct_query("Explain sprved lernng", vocabulary)
         self.assertIn("supervised", corrected.lower())
         self.assertIn("learning", corrected.lower())
+
+    def test_dropped_vowel_entropy_is_corrected(self):
+        vocabulary = build_vocabulary(ML_PASSAGES)
+        self.assertTrue(looks_misspelled("entrpy"))
+        self.assertTrue(needs_correction("TELL ME ABOUT ENTRPY"))
+        corrected = correct_query("TELL ME ABOUT ENTRPY", vocabulary)
+        self.assertIn("entropy", corrected.lower())
 
     def test_correction_only_uses_words_from_the_documents(self):
         # A history corpus has no machine-learning vocabulary, so the typed

@@ -41,7 +41,7 @@ export function WorkspaceHeader({ onOpenSidebar }: WorkspaceHeaderProps) {
   };
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-line bg-paper px-2 sm:h-16 sm:gap-3 sm:px-6">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-2 bg-paper px-2 sm:h-16 sm:gap-3 sm:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2.5">
         <button
           type="button"
@@ -86,7 +86,7 @@ export function WorkspaceHeader({ onOpenSidebar }: WorkspaceHeaderProps) {
           type="button"
           onClick={startNewConversation}
           title="Start a new chat"
-          className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-ui font-medium text-ink shadow-card transition-colors hover:border-line-strong hover:bg-surface-muted sm:h-auto sm:py-1.5"
+          className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-2.5 text-ui font-medium text-ink transition-colors hover:bg-surface-sunken sm:h-auto sm:py-1.5"
         >
           <SquarePen className="h-4 w-4 text-olive" />
           <span className="hidden sm:inline">New chat</span>
