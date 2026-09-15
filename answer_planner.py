@@ -21,6 +21,7 @@ from conversation_query import (
     INTENT_SUMMARY,
     INTENT_WHY,
     TurnAnalysis,
+    split_conjunctive_topics,
 )
 
 # Soft word budget for briefing-style answers.
@@ -42,6 +43,7 @@ class AnswerPlan:
     components: list[AnswerComponent] = field(default_factory=list)
     sub_queries: list[str] = field(default_factory=list)
     briefing: bool = False
+    multi_topic: bool = False
 
 
 _COMPONENT_LIBRARY: dict[str, list[AnswerComponent]] = {
@@ -104,8 +106,11 @@ def plan_answer(
     intent = analysis.intent if analysis else "factual"
     subject = (analysis.subject if analysis else "") or search_query or question
     subject = subject.strip()
+    topics = split_conjunctive_topics(question)
 
     components = list(_COMPONENT_LIBRARY.get(intent, []))
+    if len(topics) >= 2 and not components:
+        components = list(_COMPONENT_LIBRARY[INTENT_MIXED])
     briefing = intent in {
         INTENT_DEFINITION,
         INTENT_EXPLANATION,
@@ -119,7 +124,10 @@ def plan_answer(
     section = parse_section_ref(question) or parse_section_ref(search_query)
     if section:
         sub_queries.append(f"{section[0]} {section[1]}")
-    if briefing and subject:
+    if len(topics) >= 2:
+        sub_queries.extend(topics)
+        briefing = True
+    if briefing and subject and len(topics) < 2:
         role_queries = {
             "definition": f"What is {subject}?",
             "types": f"What are the types of {subject}?",
@@ -135,17 +143,23 @@ def plan_answer(
             query = role_queries.get(component.role)
             if query:
                 sub_queries.append(query)
-        seen: set[str] = set()
-        unique: list[str] = []
-        for item in sub_queries:
-            key = item.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            unique.append(item)
-        sub_queries = unique[:4]
 
-    return AnswerPlan(components=components, sub_queries=sub_queries, briefing=briefing)
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in sub_queries:
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    sub_queries = unique[:4]
+
+    return AnswerPlan(
+        components=components,
+        sub_queries=sub_queries,
+        briefing=briefing,
+        multi_topic=len(topics) >= 2,
+    )
 
 
 def format_plan_for_prompt(plan: AnswerPlan) -> str:
@@ -168,6 +182,12 @@ def format_plan_for_prompt(plan: AnswerPlan) -> str:
                 "Omit any section with no supporting passage. Do not repeat the same idea twice.",
             ]
         )
+        if plan.multi_topic:
+            lines.append(
+                "This is a multi-topic request. Answer each topic from the passages "
+                "that support it. If a topic has no supporting passage, say so for "
+                "that topic only — do not drop the other topics."
+            )
 
     for component in plan.components:
         req = "required" if component.required else "include only if supported"

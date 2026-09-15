@@ -5,7 +5,15 @@ from __future__ import annotations
 import unittest
 
 from answer_planner import format_plan_for_prompt, plan_answer
-from conversation_query import INTENT_DEFINITION, INTENT_KEY_POINTS, INTENT_SUMMARY, analyze_turn
+from conversation_query import (
+    INTENT_DEFINITION,
+    INTENT_KEY_POINTS,
+    INTENT_MIXED,
+    INTENT_SUMMARY,
+    analyze_turn,
+    detect_intent,
+    split_conjunctive_topics,
+)
 
 
 class TestAnswerPlanner(unittest.TestCase):
@@ -58,6 +66,39 @@ class TestAnswerPlanner(unittest.TestCase):
         self.assertIn("key_points", roles)
         text = format_plan_for_prompt(plan)
         self.assertIn("synthesize", text.lower())
+
+
+class TestConjunctiveTopics(unittest.TestCase):
+    def test_and_also_splits_two_real_topics(self):
+        parts = split_conjunctive_topics(
+            "tell me about hitler early life and also tell me supervised learning"
+        )
+        self.assertEqual(len(parts), 2)
+        self.assertIn("hitler", parts[0].lower())
+        self.assertIn("supervised", parts[1].lower())
+
+    def test_search_all_prefix_and_bare_and(self):
+        parts = split_conjunctive_topics(
+            "search all documents: Hitler's early life and supervised learning"
+        )
+        self.assertEqual(len(parts), 2)
+        self.assertTrue(any("hitler" in part.lower() for part in parts))
+        self.assertTrue(any("supervised" in part.lower() for part in parts))
+
+    def test_father_and_son_stays_one_clause(self):
+        parts = split_conjunctive_topics("the father and son conflict")
+        self.assertEqual(parts, ["the father and son conflict"])
+
+    def test_mixed_intent_and_plan_retrieves_each_topic(self):
+        question = "search all documents: Hitler's early life and supervised learning"
+        self.assertEqual(detect_intent(question), INTENT_MIXED)
+        analysis = analyze_turn(question, None)
+        plan = plan_answer(question, question, analysis)
+        self.assertTrue(plan.multi_topic)
+        joined = " ".join(plan.sub_queries).lower()
+        self.assertIn("hitler", joined)
+        self.assertIn("supervised", joined)
+        self.assertIn("multi-topic", format_plan_for_prompt(plan).lower())
 
 
 if __name__ == "__main__":

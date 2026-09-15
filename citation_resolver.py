@@ -37,12 +37,14 @@ _COORD_MARKER_RE = re.compile(
     re.IGNORECASE,
 )
 # Accidental leaks: (E4:"...") / (E4) / bare E4:"..." — never official [E1:"..."] markers.
+# Quotes may be straight or curly; models mix them.
+_QUOTE_CHARS = r"\"“”"
 _LEAK_PAREN_RE = re.compile(
-    r"\(\s*E[1-9]\d*(?:\s*:\s*\"[^\"]*\")?\s*\)",
+    rf"\(\s*(E[1-9]\d*)\s*(?::\s*[{_QUOTE_CHARS}]([^{_QUOTE_CHARS}]*)[{_QUOTE_CHARS}])?\s*\)",
     re.IGNORECASE,
 )
 _LEAK_BARE_QUOTED_RE = re.compile(
-    r'(?<!\[)E[1-9]\d*\s*:\s*"[^"]*"',
+    rf'(?<!\[)(E[1-9]\d*)\s*:\s*[{_QUOTE_CHARS}]([^{_QUOTE_CHARS}]*)[{_QUOTE_CHARS}]',
     re.IGNORECASE,
 )
 _OFFICIAL_MARKER_RE = re.compile(
@@ -161,10 +163,19 @@ def _ids_from_group(body: str, valid_ids: set[str]) -> list[str]:
     return kept
 
 
-def strip_leaked_evidence_tags(text: str) -> str:
-    """Remove parenthetical / bare E-tags; keep official [E1] / [E1:\"quote\"] markers."""
+def _promote_leaked_marker(match: re.Match[str], valid_ids: set[str]) -> str:
+    evidence_id = _normalize_token(match.group(1) or "")
+    if not evidence_id or evidence_id not in valid_ids:
+        return ""
+    quote = sanitize_quote(match.group(2)) if match.lastindex and match.lastindex >= 2 else None
+    return format_citation_marker(evidence_id, quote)
+
+
+def strip_leaked_evidence_tags(text: str, valid_ids: set[str] | None = None) -> str:
+    """Turn leaked (E1:\"...\") into official markers when valid; drop the rest."""
     if not text:
         return text
+    allowed = valid_ids or set()
     held: list[str] = []
 
     def _hold(match: re.Match[str]) -> str:
@@ -172,8 +183,9 @@ def strip_leaked_evidence_tags(text: str) -> str:
         return f"\x00CIT{len(held) - 1}\x00"
 
     protected = _OFFICIAL_MARKER_RE.sub(_hold, text)
-    cleaned = _LEAK_PAREN_RE.sub("", protected)
-    cleaned = _LEAK_BARE_QUOTED_RE.sub("", cleaned)
+    cleaned = _LEAK_PAREN_RE.sub(lambda m: _promote_leaked_marker(m, allowed), protected)
+    cleaned = _LEAK_BARE_QUOTED_RE.sub(lambda m: _promote_leaked_marker(m, allowed), cleaned)
+    cleaned = _OFFICIAL_MARKER_RE.sub(_hold, cleaned)
     cleaned = _STANDALONE_E_RE.sub("", cleaned)
     for index, marker in enumerate(held):
         cleaned = cleaned.replace(f"\x00CIT{index}\x00", marker, 1)
@@ -208,20 +220,36 @@ def resolve_evidence_markers(text: str, valid_ids: set[str]) -> str:
     resolved = _COORD_MARKER_RE.sub(replace_coord_marker, resolved)
     resolved = _CITATION_GROUP_RE.sub(replace_group, resolved)
     resolved = _ADJACENT_DUP_RE.sub(r"\1", resolved)
-    return strip_leaked_evidence_tags(resolved)
+    return strip_leaked_evidence_tags(resolved, valid_ids)
+
+
+_INCOMPLETE_PAREN_LEAK_RE = re.compile(
+    r"\(E[1-9]\d*(?:\s*:\s*[\"“”][^\"“”)]*)?$",
+    re.IGNORECASE,
+)
+_INCOMPLETE_BARE_LEAK_RE = re.compile(
+    r'(?<!\[)E[1-9]\d*\s*:\s*["“”][^"“”]*$',
+    re.IGNORECASE,
+)
 
 
 def split_unclosed_bracket(buffer: str) -> tuple[str, str]:
-    """Hold back a trailing unclosed '[' so partial [E / [E1:\" never emit."""
+    """Hold back a trailing unclosed '[' / '(E…' so partial markers never emit."""
     if not buffer:
         return "", ""
+    hold = -1
     last_open = buffer.rfind("[")
-    if last_open == -1:
+    if last_open != -1 and "]" not in buffer[last_open:]:
+        hold = last_open
+    paren = _INCOMPLETE_PAREN_LEAK_RE.search(buffer)
+    if paren:
+        hold = paren.start() if hold < 0 else min(hold, paren.start())
+    bare = _INCOMPLETE_BARE_LEAK_RE.search(buffer)
+    if bare:
+        hold = bare.start() if hold < 0 else min(hold, bare.start())
+    if hold < 0:
         return buffer, ""
-    rest = buffer[last_open:]
-    if "]" in rest:
-        return buffer, ""
-    return buffer[:last_open], rest
+    return buffer[:hold], buffer[hold:]
 
 
 def resolve_answer(text: str, sources: list[dict[str, Any]] | None) -> str:

@@ -94,9 +94,30 @@ class TestResolveMarkers(unittest.TestCase):
             'A claim.[E1:"supervised learning uses labeled examples"]',
         )
 
+    def test_parenthetical_valid_eid_becomes_official_marker(self):
+        text = 'pursue art (E1:"sent him to the Realschule"). Done.'
+        self.assertEqual(
+            resolve_evidence_markers(text, self.valid),
+            'pursue art [E1:"sent him to the Realschule"]. Done.',
+        )
+
+    def test_curly_quoted_paren_leak_becomes_marker(self):
+        text = "pursue art (E1:\u201csent him to the Realschule\u201d). Done."
+        self.assertEqual(
+            resolve_evidence_markers(text, self.valid),
+            'pursue art [E1:"sent him to the Realschule"]. Done.',
+        )
+
     def test_bare_quoted_eid_leak_is_stripped(self):
-        text = 'A claim. E2:"classification and regression tasks" Done.'
+        text = 'A claim. E9:"classification and regression tasks" Done.'
         self.assertEqual(resolve_evidence_markers(text, self.valid), "A claim. Done.")
+
+    def test_bare_quoted_valid_eid_becomes_marker(self):
+        text = 'A claim. E2:"classification and regression tasks" Done.'
+        self.assertEqual(
+            resolve_evidence_markers(text, self.valid),
+            'A claim. [E2:"classification and regression tasks"] Done.',
+        )
 
     def test_standalone_eid_in_prose_is_stripped(self):
         text = "See E1 and E2 for the definition."
@@ -106,7 +127,7 @@ class TestResolveMarkers(unittest.TestCase):
         )
 
     def test_official_markers_survive_leak_cleanup(self):
-        text = 'Kept.[E2] Also E9 and (E1:"too short leak")'
+        text = 'Kept.[E2] Also E9 and (E8:"too short leak")'
         self.assertEqual(
             resolve_evidence_markers(text, self.valid).rstrip(),
             "Kept.[E2] Also and",
@@ -119,6 +140,10 @@ class TestStreamHoldback(unittest.TestCase):
         self.assertEqual(split_unclosed_bracket("Hello [E"), ("Hello ", "[E"))
         self.assertEqual(split_unclosed_bracket("Hello [E1"), ("Hello ", "[E1"))
         self.assertEqual(split_unclosed_bracket("Hello [E1]"), ("Hello [E1]", ""))
+        self.assertEqual(
+            split_unclosed_bracket('art (E1:"sent him'),
+            ("art ", '(E1:"sent him'),
+        )
 
     def test_stream_does_not_emit_broken_markers(self):
         sources = [{"evidence_id": "E1"}]

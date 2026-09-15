@@ -99,7 +99,7 @@ const DOC_TYPE_WORDS = new Set([
 ]);
 
 const MULTI_DOC_RE =
-  /\b(compar(?:e|ison|ing)|versus|\bvs\.?\b|both|all (?:the )?(?:documents|pdfs|files)|every (?:document|pdf|file)|across (?:the )?(?:documents|pdfs|files)|search (?:all|everything)|entire (?:library|workspace))\b/i;
+  /\b(compar(?:e|ison|ing)|versus|\bvs\.?\b|both|all (?:the )?(?:documents|pdfs|files)|every (?:document|pdf|file)|across (?:the )?(?:documents|pdfs|files)|search (?:all|everything)|entire (?:library|workspace)|and also|as well as)\b/i;
 
 const DEICTIC_RE =
   /\b(?:this|that)\s+(?:pdf|document|file|one|outline|syllabus|handbook|course|paper|book)\b|\bthe\s+(?:pdf|document|file|outline|syllabus|handbook)(?!\s+of\b)\b|\b(?:summar(?:y|ize|ise)|explain|describe|overview).{0,24}\bthis\b|\b(?:is|ye|yeh)\s+(?:(?:wale?|wali)\s+)?(?:pdf|outline|document|file|course)\b|\b(?:iska|is ka)\b/i;
@@ -167,7 +167,25 @@ export function distinctiveQuestionTokens(question: string): string[] {
 }
 
 export function isMultiDocumentQuestion(question: string): boolean {
-  return MULTI_DOC_RE.test(question || "");
+  const text = question || "";
+  if (MULTI_DOC_RE.test(text)) return true;
+
+  const stripped = text
+    .replace(/^\s*search\s+all(?:\s+(?:the\s+)?(?:documents?|pdfs?|files?))?\s*[:\-–]?\s*/i, "")
+    .trim();
+  const strong = stripped.split(
+    /\s+(?:and\s+also|and\s+tell\s+me(?:\s+about)?|as\s+well\s+as)\s+/i
+  );
+  if (strong.length >= 2) return true;
+
+  const weak = stripped.split(/\s+and\s+/i);
+  if (weak.length === 2) {
+    return (
+      distinctiveQuestionTokens(weak[0]).length >= 2 &&
+      distinctiveQuestionTokens(weak[1]).length >= 2
+    );
+  }
+  return false;
 }
 
 export function isDeicticDocumentQuestion(question: string): boolean {

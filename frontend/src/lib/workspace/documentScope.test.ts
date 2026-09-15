@@ -104,6 +104,23 @@ describe("resolveDocumentScope", () => {
     expect(isGenericWholeDocumentQuestion("give me a summary")).toBe(true);
     expect(isGenericWholeDocumentQuestion("what is week 4")).toBe(false);
     expect(isMultiDocumentQuestion("compare the two pdfs")).toBe(true);
+    expect(
+      isMultiDocumentQuestion(
+        "search all documents: Hitler’s early life and supervised learning"
+      )
+    ).toBe(true);
+    expect(
+      isMultiDocumentQuestion("tell me about hitler early life and also supervised learning")
+    ).toBe(true);
+  });
+
+  it("searches every PDF when one question names two topics", () => {
+    expect(
+      decide("search all documents: Hitler’s early life and supervised learning")
+    ).toEqual({ kind: "ready", documentIds: ["outline", "hitler"], reason: "multi" });
+    expect(
+      decide("tell me about hitler early life and also tell me supervised learning")
+    ).toEqual({ kind: "ready", documentIds: ["outline", "hitler"], reason: "multi" });
   });
 
   it("reads a single last-cited file and ignores mixed citations", () => {

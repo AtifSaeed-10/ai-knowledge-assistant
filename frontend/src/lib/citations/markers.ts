@@ -47,11 +47,21 @@ export function openCitationPayload(
 
 /** Hold back a trailing unclosed '[' so partial [E / [E1:" is never rendered. */
 export function incompleteBracketLength(value: string): number {
+  if (!value) return 0;
+  let hold = -1;
   const last = value.lastIndexOf("[");
-  if (last === -1) return 0;
-  const rest = value.slice(last);
-  if (rest.includes("]")) return 0;
-  return rest.length;
+  if (last !== -1 && !value.slice(last).includes("]")) {
+    hold = last;
+  }
+  const paren = /\(E[1-9]\d*(?:\s*:\s*["\u201C\u201D][^"\u201C\u201D)]*)?$/i.exec(value);
+  if (paren && paren.index >= 0) {
+    hold = hold < 0 ? paren.index : Math.min(hold, paren.index);
+  }
+  const bare = /(?<!\[)E[1-9]\d*\s*:\s*["\u201C\u201D][^"\u201C\u201D]*$/i.exec(value);
+  if (bare && bare.index >= 0) {
+    hold = hold < 0 ? bare.index : Math.min(hold, bare.index);
+  }
+  return hold < 0 ? 0 : value.length - hold;
 }
 
 export function parseEvidenceMarker(
@@ -66,10 +76,25 @@ export function parseEvidenceMarker(
   };
 }
 
+export function promoteLeakedEvidenceMarkers(value: string): string {
+  if (!value) return value;
+  let text = value;
+  text = text.replace(
+    /\(\s*E([1-9]\d*)\s*(?::\s*["\u201C\u201D]([^"\u201C\u201D]*)["\u201C\u201D])?\s*\)/gi,
+    (_full, number: string, quote?: string) =>
+      quote?.trim() ? `[E${number}:"${quote.trim()}"]` : `[E${number}]`
+  );
+  text = text.replace(
+    /(?<!\[)E([1-9]\d*)\s*:\s*["\u201C\u201D]([^"\u201C\u201D]*)["\u201C\u201D]/gi,
+    (_full, number: string, quote: string) => `[E${number}:"${quote.trim()}"]`
+  );
+  return text;
+}
+
 export function splitEvidenceMarkers(
   value: string
 ): Array<{ type: "text"; value: string } | { type: "citation"; evidenceId: string; quote: string | null }> {
-  const parts = value.split(EVIDENCE_MARKER_SPLIT_RE);
+  const parts = promoteLeakedEvidenceMarkers(value).split(EVIDENCE_MARKER_SPLIT_RE);
   const nodes: Array<
     { type: "text"; value: string } | { type: "citation"; evidenceId: string; quote: string | null }
   > = [];
@@ -86,7 +111,7 @@ export function splitEvidenceMarkers(
 }
 
 export function toDisplayCitationText(content: string): string {
-  return content.replace(
+  return promoteLeakedEvidenceMarkers(content).replace(
     /\[E([1-9]\d*)(?:(?::\s*|\|\s*quote\s*=\s*)"[^"\]]*")?\]/gi,
     "[$1]"
   );
