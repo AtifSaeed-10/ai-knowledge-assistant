@@ -57,10 +57,11 @@ def index_pdf(pdf_path: str, document_id: str):
         chunks = build_chunks_from_pages(pages, document_id)
 
         logger.info(
-            "index_pdf document_id=%s chunks_created=%s engine=%s",
+            "index_pdf document_id=%s chunks_created=%s engine=%s ocr_pages=%s",
             document_id,
             len(chunks),
             extraction.engine_used,
+            getattr(extraction, "ocr_pages", 0),
         )
 
         update_document_metadata(
