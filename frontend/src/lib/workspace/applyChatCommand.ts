@@ -2,8 +2,20 @@ import { documentsApi } from "@/lib/api/documents";
 import { findHeadingPage } from "@/lib/pdf/findHeadingPage";
 import { pdfFileUrlWithoutHash } from "@/lib/pdf/pdfjs";
 import type { Document } from "@/types/document";
-import type { ChatCommand } from "./chatCommand";
+import type { ChatCommand, SocialReply } from "./chatCommand";
 import { resolvePreviewDocument } from "./pdfPanel";
+
+export function socialReplyText(reply: SocialReply, readyDocumentCount: number): string {
+  if (reply === "thanks") {
+    return "Happy to help. Ask me anything else from your PDFs.";
+  }
+  if (reply === "farewell") {
+    return "Bye — your chats and documents will be here when you come back.";
+  }
+  return readyDocumentCount > 0
+    ? "Hello. Ask me anything about your PDFs and I will answer with the page it came from."
+    : "Hello. Upload a PDF and I will answer questions about it with the exact page as proof.";
+}
 
 export function clampRequestedPage(page: number, pageCount: number | null): number {
   if (!Number.isFinite(page) || page < 1) return 1;
@@ -30,6 +42,11 @@ export async function runWorkspaceCommand(
     requestPage: (page: number) => void;
   }
 ): Promise<string> {
+  if (command.kind === "social") {
+    const ready = options.documents.filter((doc) => doc.status === "ready").length;
+    return socialReplyText(command.reply, ready);
+  }
+
   if (command.kind === "close_panel") {
     options.closePanel();
     return "Closed the PDF so the chat has more room. Say “show the PDF” or click a citation to open it again.";

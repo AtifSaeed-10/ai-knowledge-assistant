@@ -100,7 +100,7 @@ export function Sidebar({ isOpen, onClose, forceExpanded = false }: SidebarProps
     <>
       {isOpen && (
         <div
-          className="fixed inset-0 z-30 bg-ink/30 lg:hidden"
+          className="fixed inset-0 z-30 bg-scrim/40 lg:hidden"
           onClick={onClose}
           aria-hidden
         />
@@ -123,11 +123,19 @@ export function Sidebar({ isOpen, onClose, forceExpanded = false }: SidebarProps
           )}
         >
           {isCompact ? (
-            <Link href="/" aria-label="DocuSage home" className="rounded-md">
+            <Link
+              href="/"
+              aria-label="DocuSage home"
+              className="inline-flex h-10 items-center rounded-md sm:h-8"
+            >
               <LogoMark className="h-7 w-7" />
             </Link>
           ) : (
-            <Link href="/" aria-label="DocuSage home" className="rounded-md">
+            <Link
+              href="/"
+              aria-label="DocuSage home"
+              className="inline-flex h-10 items-center rounded-md sm:h-8"
+            >
               <Logo className="h-7 w-auto shrink-0" />
             </Link>
           )}
@@ -147,7 +155,7 @@ export function Sidebar({ isOpen, onClose, forceExpanded = false }: SidebarProps
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 rounded-md p-1.5 text-ink-icon transition-colors hover:bg-surface-sunken hover:text-ink lg:hidden"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-ink-icon transition-colors hover:bg-surface-sunken hover:text-ink lg:hidden"
             aria-label="Close workspace menu"
           >
             <X size={18} />
@@ -171,7 +179,7 @@ export function Sidebar({ isOpen, onClose, forceExpanded = false }: SidebarProps
             type="button"
             onClick={() => setIsUploadOpen(true)}
             title="Add a PDF"
-            className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-olive text-white shadow-card transition-colors hover:bg-olive-dark"
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-olive text-white shadow-card transition-colors hover:bg-olive-dark sm:h-9"
           >
             <Plus size={16} strokeWidth={2.5} />
             {isCompact ? (

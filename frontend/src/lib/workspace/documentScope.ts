@@ -104,6 +104,38 @@ const MULTI_DOC_RE =
 const DEICTIC_RE =
   /\b(?:this|that)\s+(?:pdf|document|file|one|outline|syllabus|handbook|course|paper|book)\b|\bthe\s+(?:pdf|document|file|outline|syllabus|handbook)(?!\s+of\b)\b|\b(?:summar(?:y|ize|ise)|explain|describe|overview).{0,24}\bthis\b|\b(?:is|ye|yeh)\s+(?:(?:wale?|wali)\s+)?(?:pdf|outline|document|file|course)\b|\b(?:iska|is ka)\b/i;
 
+/**
+ * "Make it easier", "why?", "give an example" carry no topic of their own —
+ * they continue whatever the last answer was about, so they must stay on the
+ * PDF that answer came from instead of re-searching the whole library.
+ */
+const FOLLOW_UP_RE =
+  /^\s*(?:and\s+|so\s+|but\s+|ok(?:ay)?[, ]+|please\s+)?(?:can you|could you|now)?\s*(?:make|explain|say|put|write|break)?\s*(?:it|this|that|them)?\s*(?:a bit|a little|bit)?\s*(?:more\s+)?(?:easier|easy|simpler|simple|simply|shorter|briefer|clearer|clear|detailed)\b|^\s*(?:why|how|and then|what about|another one|more)\s*\??\s*$|\b(?:previous|last|above|earlier)\s+(?:answer|response|reply|explanation)\b|^\s*(?:eli5|tldr|in short|elaborate|go deeper|expand(?:\s+on\s+(?:it|this|that))?|continue|more detail(?:s)?|examples?)\s*\.?\s*$/i;
+
+/**
+ * Questions about the document itself rather than its subject matter.
+ * "Who is the author" names no topic, so it cannot be answered until the
+ * reader says which PDF they mean.
+ */
+const DOCUMENT_ATTRIBUTE_RE =
+  /\b(?:auth(?:or|ors)|writer|written by|wrote (?:this|it)|publisher|published by|isbn|edition|copyright|title of (?:this|the)|what(?:'s| is) (?:this|it) about)\b/i;
+
+const ATTRIBUTE_ONLY_TOKENS = new Set([
+  "about",
+  "author",
+  "authors",
+  "copyright",
+  "edition",
+  "isbn",
+  "name",
+  "publisher",
+  "published",
+  "title",
+  "wrote",
+  "writer",
+  "written",
+]);
+
 function readyDocuments(documents: ScopeDocument[]): ScopeDocument[] {
   return documents.filter((doc) => !doc.status || doc.status === "ready");
 }
@@ -145,7 +177,21 @@ export function isDeicticDocumentQuestion(question: string): boolean {
 export function isGenericWholeDocumentQuestion(question: string): boolean {
   const text = (question || "").trim();
   if (!text) return false;
-  return distinctiveQuestionTokens(text).length === 0;
+
+  const distinctive = distinctiveQuestionTokens(text);
+  if (distinctive.length === 0) return true;
+
+  // "Who is the author" is about the file, not about a topic inside it.
+  return (
+    DOCUMENT_ATTRIBUTE_RE.test(text) &&
+    distinctive.every((token) => ATTRIBUTE_ONLY_TOKENS.has(token))
+  );
+}
+
+export function isConversationalFollowUp(question: string): boolean {
+  const text = (question || "").trim();
+  if (!text) return false;
+  return FOLLOW_UP_RE.test(text);
 }
 
 export function matchDocumentByName(
@@ -220,6 +266,7 @@ export function resolveDocumentScope(options: {
   const lastCited = findReady(ready, options.lastCitedDocumentId);
   const deictic = isDeicticDocumentQuestion(question);
   const generic = isGenericWholeDocumentQuestion(question);
+  const followUp = isConversationalFollowUp(question);
   const pointing = deictic || generic;
 
   if (ready.length === 0) {
@@ -238,6 +285,12 @@ export function resolveDocumentScope(options: {
 
   if (isMultiDocumentQuestion(question)) {
     return asReady(readyIds, "multi");
+  }
+
+  // A follow-up has no topic of its own, so it belongs to the PDF that the
+  // previous answer cited — before any filename guessing.
+  if (followUp && lastCited) {
+    return asReady([lastCited.id], "last-cited");
   }
 
   const distinctive = distinctiveQuestionTokens(question);

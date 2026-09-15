@@ -90,7 +90,7 @@ export function ConversationList({ isCollapsed = false, onNavigate }: Conversati
         <button
           type="button"
           onClick={startNewConversation}
-          className="rounded-md p-1 text-ink-icon transition-colors hover:bg-surface-sunken hover:text-olive"
+          className="-my-2 inline-flex h-10 w-10 items-center justify-center rounded-md text-ink-icon transition-colors hover:bg-surface-sunken hover:text-olive sm:h-8 sm:w-8"
           title="New chat"
           aria-label="New chat"
         >

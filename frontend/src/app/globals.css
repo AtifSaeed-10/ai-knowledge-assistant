@@ -3,9 +3,99 @@
 @tailwind utilities;
 
 @layer base {
+  /* The paper palette. Tailwind reads these through rgb(var(--token)). */
+  :root {
+    --color-paper: 246 247 244;
+
+    --color-surface: 255 255 255;
+    --color-surface-muted: 251 251 250;
+    --color-surface-sunken: 241 243 239;
+
+    --color-line: 235 239 234;
+    --color-line-strong: 220 226 217;
+
+    --color-ink: 28 36 31;
+    --color-ink-soft: 42 50 46;
+    --color-ink-muted: 91 104 88;
+    --color-ink-subtle: 99 112 95;
+    --color-ink-icon: 124 136 119;
+
+    --color-olive: 74 93 35;
+    --color-olive-dark: 62 78 29;
+    --color-olive-soft: 239 241 236;
+
+    --color-sage: 135 171 114;
+    --color-sage-soft: 197 212 184;
+
+    --color-danger: 180 35 24;
+    --color-danger-dark: 145 32 24;
+    --color-danger-soft: 254 243 242;
+    --color-danger-line: 246 214 210;
+
+    --color-warn: 138 109 31;
+    --color-warn-soft: 251 247 234;
+    --color-warn-line: 234 223 192;
+
+    --color-scrim: 28 36 31;
+
+    --focus-ring: #4a5d23;
+    --scrollbar-thumb: #dce2d9;
+    --scrollbar-thumb-hover: #cbd3c7;
+    --skeleton-base: #eff1ec;
+    --skeleton-shine: #f7f8f5;
+  }
+
+  /* Night palette: the same paper design at low luminance, so contrast
+     ratios and the olive/sage accents survive the switch. */
+  .dark {
+    --color-paper: 16 19 14;
+
+    --color-surface: 24 28 21;
+    --color-surface-muted: 30 35 25;
+    --color-surface-sunken: 36 42 30;
+
+    --color-line: 46 53 39;
+    --color-line-strong: 65 74 56;
+
+    --color-ink: 236 239 231;
+    --color-ink-soft: 220 225 212;
+    --color-ink-muted: 174 183 162;
+    --color-ink-subtle: 154 164 141;
+    --color-ink-icon: 138 148 125;
+
+    /* Deep enough that white button labels stay above 4.5:1. */
+    --color-olive: 85 113 43;
+    --color-olive-dark: 97 128 47;
+    --color-olive-soft: 43 55 32;
+
+    --color-sage: 156 193 134;
+    --color-sage-soft: 71 96 58;
+
+    --color-danger: 242 133 124;
+    --color-danger-dark: 226 111 101;
+    --color-danger-soft: 44 22 20;
+    --color-danger-line: 91 40 35;
+
+    --color-warn: 227 194 106;
+    --color-warn-soft: 43 37 20;
+    --color-warn-line: 74 64 31;
+
+    --color-scrim: 5 7 4;
+
+    --focus-ring: #9cc186;
+    --scrollbar-thumb: #3a4231;
+    --scrollbar-thumb-hover: #4b5540;
+    --skeleton-base: #232a1d;
+    --skeleton-shine: #2e3626;
+  }
+
   html {
     -webkit-tap-highlight-color: transparent;
     color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   html,
@@ -30,7 +120,7 @@
   /* A single, consistent focus treatment for every interactive element.
      Outline (not ring) so it reads correctly on white, paper and olive. */
   :where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
-    outline: 2px solid #4a5d23;
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 }
@@ -39,7 +129,7 @@
   /* Scroll containers: quiet scrollbars that match the paper surface. */
   .scroll-area {
     scrollbar-width: thin;
-    scrollbar-color: #d6dcd3 transparent;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
     overscroll-behavior: contain;
   }
 
@@ -53,22 +143,22 @@
   }
 
   .scroll-area::-webkit-scrollbar-thumb {
-    background-color: #dce2d9;
+    background-color: var(--scrollbar-thumb);
     border: 3px solid transparent;
     background-clip: content-box;
     border-radius: 999px;
   }
 
   .scroll-area:hover::-webkit-scrollbar-thumb {
-    background-color: #cbd3c7;
+    background-color: var(--scrollbar-thumb-hover);
   }
 
   .skeleton {
     background-image: linear-gradient(
       90deg,
-      #eff1ec 0%,
-      #f7f8f5 45%,
-      #eff1ec 100%
+      var(--skeleton-base) 0%,
+      var(--skeleton-shine) 45%,
+      var(--skeleton-base) 100%
     );
     background-size: 200% 100%;
     @apply animate-shimmer rounded;

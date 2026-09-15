@@ -27,12 +27,68 @@ from evidence_mapping import make_snippet
 from evidence_state import evidence_state_for_chunk, visible_sources
 from grounding_verifier import verify_and_repair_refusal
 from index_hygiene import resolve_retrieval_scope
+from query_normalize import (
+    build_vocabulary,
+    correct_query,
+    detect_small_talk,
+    needs_correction,
+    small_talk_answer,
+)
 from hybrid_retrieval import (
     retrieve_dense,
     retrieve_bm25,
     fuse_results,
     retrieve_candidates as hybrid_retrieve_candidates,
 )
+
+
+def _display_filename(document_id: str, indexed_name: str) -> str:
+    """
+    Chunk metadata stores the PDF's on-disk name, which is `{document_id}.pdf`.
+    Citations should carry the name the reader uploaded, so look it up in the
+    documents table and fall back to the indexed value.
+    """
+    document_id = str(document_id or "")
+    if not document_id:
+        return indexed_name
+
+    cached = _FILENAME_CACHE.get(document_id)
+    if cached is not None:
+        return cached or indexed_name
+
+    try:
+        from database.document_store import get_document
+
+        record = get_document(document_id) or {}
+        original = str(record.get("filename") or "").strip()
+    except Exception:
+        original = ""
+
+    _FILENAME_CACHE[document_id] = original
+    return original or indexed_name
+
+
+_FILENAME_CACHE: dict[str, str] = {}
+
+_VOCABULARY_CACHE: dict[str, dict[str, int]] = {}
+
+
+def _indexed_vocabulary(document_ids: list[str] | None) -> dict[str, int]:
+    """
+    Words that appear in the scoped passages, cached until the corpus changes.
+    A typo can only ever be corrected into one of these.
+    """
+    scope_key = ",".join(sorted(document_ids or [])) or "*"
+    key = f"{bm25_index.fingerprint or ''}|{scope_key}"
+
+    cached = _VOCABULARY_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    vocabulary = build_vocabulary(bm25_index.corpus_texts(document_ids))
+    _VOCABULARY_CACHE.clear()
+    _VOCABULARY_CACHE[key] = vocabulary
+    return vocabulary
 
 
 def _dedupe_sources(sources: list[dict]) -> list[dict]:
@@ -100,7 +156,10 @@ def _build_citation_sources(
         sources.append(
             {
                 "document_id": meta.get("document_id") or "",
-                "filename": meta.get("filename") or "",
+                "filename": _display_filename(
+                    meta.get("document_id") or "",
+                    meta.get("filename") or "",
+                ),
                 "page": page,
                 "chunk_id": chunk_id,
                 "relevance": relevance,
@@ -390,6 +449,16 @@ def ask_question(
     generate=False → /chat/stream prepares prompt once; caller streams LLM
     """
 
+    # "hi" and "thanks" have no answer in any PDF; retrieving for them would
+    # only return whatever chunk happens to score least badly.
+    small_talk = detect_small_talk(question)
+    if small_talk:
+        return {
+            "answer": small_talk_answer(small_talk),
+            "sources": [],
+            "prompt": None,
+        }
+
     product_mode = normalize_mode(mode)
     scoped_ids, abort_search = resolve_retrieval_scope(product_mode, document_ids)
     if abort_search:
@@ -411,9 +480,20 @@ def ask_question(
         if rewritten and str(rewritten).strip():
             search_query = str(rewritten).strip()
 
+    # Typed "sprved lernng"? Search for the words the documents actually use.
+    # This changes the query only — whether an answer exists is still decided
+    # by the passages.
+    spelling_note = None
+    if needs_correction(search_query):
+        corrected = correct_query(search_query, _indexed_vocabulary(document_ids))
+        if corrected.strip() and corrected != search_query:
+            spelling_note = corrected.strip()
+            search_query = spelling_note
 
     print("\n========== SEARCH QUERY ==========")
     print(search_query)
+    if spelling_note:
+        print(f"(spelling corrected from: {question})")
     print(
         f"Turn: intent={analysis.intent} relation={analysis.relation} "
         f"rewrite={analysis.needs_rewrite} ({analysis.reason})"
@@ -539,6 +619,7 @@ def ask_question(
         evidence_notes=evidence_notes,
         subject=subject,
         answer_plan=plan_text,
+        spelling_note=spelling_note,
     )
 
 

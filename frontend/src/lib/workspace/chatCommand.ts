@@ -8,6 +8,7 @@
 
 export type ChatCommand =
   | { kind: "question" }
+  | { kind: "social"; reply: SocialReply }
   | { kind: "open_panel" }
   | { kind: "close_panel" }
   | { kind: "goto_page"; page: number }
@@ -19,6 +20,27 @@ export type ChatCommand =
 
 const QUESTION_RE =
   /\b(what|what's|whats|why|how|explain|summar(?:y|ize|ise)|tell me|describe|list|compare|difference|meaning|content of|said|says|about)\b/i;
+
+/**
+ * Pleasantries are not questions about a PDF. Answering them locally keeps
+ * "hi" from spending a quota credit on a retrieval that has nothing to find.
+ */
+export type SocialReply = "greeting" | "thanks" | "farewell";
+
+const SOCIAL_PATTERNS: Array<[SocialReply, RegExp]> = [
+  [
+    "greeting",
+    /^(?:hi+|hey+|hello+|heyy+|yo|hii+|helo+|hallo|salam|as-?salam(?:u|o)?\s*alaikum|assalamualaikum|namaste|good\s+(?:morning|afternoon|evening|day))(?:\s+(?:there|docusage|bro|dude|friend))?[\s!.,?]*$/i,
+  ],
+  [
+    "thanks",
+    /^(?:thanks?|thank\s*(?:you|u)|thx|tysm|ty|shukriya|appreciate\s+it|got\s+it|nice|great|perfect|awesome|cool)(?:\s+(?:a\s+lot|so\s+much|man|bro|docusage))?[\s!.,?]*$/i,
+  ],
+  [
+    "farewell",
+    /^(?:bye+|goodbye|good\s*night|see\s*(?:you|ya)(?:\s+later)?|take\s+care|khuda\s*hafiz|allah\s*hafiz)[\s!.,?]*$/i,
+  ],
+];
 
 const NAV_RE =
   /\b(open|show|display|go\s+to|goto|jump(?:\s+to)?|take me(?:\s+to)?|scroll(?:\s+to)?|bring up|navigate(?:\s+to)?)\b/i;
@@ -158,9 +180,23 @@ function isSoftHeadingNav(text: string): boolean {
   return SOFT_NAV_RE.test(text) && leftoverAfter(text, [HEADING_RE]).length === 0;
 }
 
+export function detectSocialReply(raw: string): SocialReply | null {
+  const text = (raw || "").trim();
+  // Anything long enough to carry a real request is not small talk.
+  if (!text || text.length > 40) return null;
+
+  for (const [reply, pattern] of SOCIAL_PATTERNS) {
+    if (pattern.test(text)) return reply;
+  }
+  return null;
+}
+
 export function classifyChatCommand(raw: string): ChatCommand {
   const text = (raw || "").trim();
   if (!text) return { kind: "question" };
+
+  const social = detectSocialReply(text);
+  if (social) return { kind: "social", reply: social };
 
   if (CLOSE_PANEL_RE.test(text)) return { kind: "close_panel" };
   if (OPEN_PANEL_RE.test(text)) return { kind: "open_panel" };
@@ -208,5 +244,11 @@ export function classifyChatCommand(raw: string): ChatCommand {
 }
 
 export function isWorkspaceCommand(text: string): boolean {
-  return classifyChatCommand(text).kind !== "question";
+  const kind = classifyChatCommand(text).kind;
+  return kind !== "question" && kind !== "social";
+}
+
+/** Sendable without a ready document, but not a PDF control either. */
+export function isSocialMessage(text: string): boolean {
+  return classifyChatCommand(text).kind === "social";
 }

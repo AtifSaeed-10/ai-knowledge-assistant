@@ -108,7 +108,7 @@ export function UserMenu() {
         aria-expanded={open}
         aria-controls={menuId}
         onClick={() => setOpen((current) => !current)}
-        className="rounded-full outline-none ring-olive/30 transition hover:ring-2 focus-visible:ring-2"
+        className="inline-flex h-10 w-10 items-center justify-center rounded-full outline-none ring-olive/30 transition hover:ring-2 focus-visible:ring-2 sm:h-9 sm:w-9"
       >
         <Avatar user={user} />
       </button>

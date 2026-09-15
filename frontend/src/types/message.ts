@@ -19,4 +19,6 @@ export interface Message {
   /** Local "which PDF?" chips — never persisted. */
   scopeChoices?: ScopeChoice[];
   pendingQuestion?: string;
+  /** Shown once, under the answer the reader had to disambiguate. */
+  scopeHint?: string;
 }

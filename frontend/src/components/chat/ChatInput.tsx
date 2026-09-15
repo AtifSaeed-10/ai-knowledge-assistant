@@ -3,7 +3,7 @@
 import React, { KeyboardEvent, useEffect, useRef, useState } from "react";
 import { ArrowUp, Square } from "lucide-react";
 import { useChatStore } from "@/store/useChatStore";
-import { isWorkspaceCommand } from "@/lib/workspace/chatCommand";
+import { isSocialMessage, isWorkspaceCommand } from "@/lib/workspace/chatCommand";
 import { cn } from "@/lib/cn";
 
 const MAX_HEIGHT = 180;
@@ -40,7 +40,8 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
   };
 
   const commandReady = isWorkspaceCommand(input);
-  const canSendText = canAsk || commandReady;
+  const socialReady = isSocialMessage(input);
+  const canSendText = canAsk || commandReady || socialReady;
 
   const handleSend = () => {
     const value = input.trim();
@@ -98,7 +99,7 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
             onClick={stopGeneration}
             aria-label="Stop generating"
             title="Stop generating"
-            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-ink text-white transition-colors hover:bg-ink-soft"
+            className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-ink text-paper transition-colors hover:bg-ink-soft sm:h-9 sm:w-9"
           >
             <Square className="h-3.5 w-3.5 fill-current" />
           </button>
@@ -110,7 +111,7 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
             aria-label="Send question"
             title="Send question"
             className={cn(
-              "mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors",
+              "mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors sm:h-9 sm:w-9",
               readyToSend
                 ? "bg-olive text-white hover:bg-olive-dark"
                 : "bg-surface-sunken text-ink-icon"
@@ -124,7 +125,7 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
       <p className="mt-1.5 hidden px-1 text-meta text-ink-subtle sm:block">
         {commandReady
           ? "This will move the PDF — it will not search the document."
-          : canAsk
+          : canAsk || socialReady
             ? "Enter to send · Shift + Enter for a new line"
             : blockedReason || "Waiting for a ready document"}
       </p>

@@ -28,6 +28,8 @@ const ANSWER_TIMEOUT_MS = 75_000;
 const ANSWER_TIMEOUT_MESSAGE =
   'This search didn’t finish. Try again — the question is still here.';
 const EMPTY_ANSWER_MESSAGE = 'No answer came back. Try again.';
+const FOCUSED_MODE_HINT =
+  'Answered from that PDF. Switch the scope above to Focused to keep every question on it.';
 const STOPPED_EMPTY_MESSAGE = 'Search was stopped before an answer arrived.';
 const RETRY_ABORT = 'retry';
 const TIMEOUT_ABORT = 'timeout';
@@ -764,6 +766,9 @@ export const useChatStore = create<ChatState>((set, get) => {
                 citations: [],
                 scopeChoices: undefined,
                 pendingQuestion: undefined,
+                // Having to ask means the library was ambiguous; Focused mode
+                // is the way to stop being asked again.
+                scopeHint: picked ? FOCUSED_MODE_HINT : undefined,
               }
             : item
         ),

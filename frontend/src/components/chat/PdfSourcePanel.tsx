@@ -7,6 +7,7 @@ import { fetchChunkEvidence } from "@/lib/api/evidence";
 import { resolveEvidenceView, type ChunkEvidence } from "@/lib/pdf/coords";
 import { pdfFileUrlWithoutHash } from "@/lib/pdf/pdfjs";
 import { evidenceStatusDetail, contentTypeDetail } from "@/lib/citations/evidenceStatus";
+import { resolveCitationDocumentName } from "@/lib/citations/documentName";
 import type { Citation } from "@/types/citation";
 import type { Document } from "@/types/document";
 import { usePdfPanelStore } from "@/store/usePdfPanelStore";
@@ -195,7 +196,9 @@ export function PdfSourcePanel({
     setLoadFailed(true);
   }, []);
 
-  const title = document?.name || citation?.documentName || "Document";
+  const title =
+    document?.name ||
+    (citation ? resolveCitationDocumentName(citation, [], "Document") : "Document");
   const score = citation ? relevancePercent(citation.relevance) : null;
   const previewPage =
     citation && pageValid

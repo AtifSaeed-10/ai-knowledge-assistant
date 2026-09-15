@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
 import { LegalLinks } from "@/components/site/LegalLinks";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 
 export function SiteHeader() {
   return (
@@ -34,6 +35,7 @@ export function SiteHeader() {
         >
           Open workspace
         </Link>
+        <ThemeToggle />
       </nav>
     </header>
   );

@@ -12,7 +12,7 @@ interface MessageActionsProps {
 }
 
 const ACTION_CLASS =
-  "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-meta font-medium text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink";
+  "inline-flex items-center gap-1.5 rounded-md px-2 py-2 text-meta font-medium text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink sm:py-1";
 
 export function MessageActions({ content, showRetry, onRetry }: MessageActionsProps) {
   const [copied, setCopied] = useState(false);
