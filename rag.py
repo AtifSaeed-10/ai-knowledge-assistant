@@ -412,13 +412,11 @@ def _retrieve_with_plan(
     if not sub_queries:
         return primary
 
-    if not (primary.get("chunks") or []):
-        return primary
-
     normalized_primary = search_query.strip().lower()
     result = primary
-    extras_budget = 2
-    for sub_query in sub_queries[:3]:
+    extras_budget = 6 if getattr(plan, "multi_topic", False) else 2
+    per_query_k = 4 if getattr(plan, "multi_topic", False) else 2
+    for sub_query in sub_queries[:4]:
         if extras_budget <= 0:
             break
         if sub_query.strip().lower() == normalized_primary:
@@ -426,7 +424,7 @@ def _retrieve_with_plan(
         supplemental = retrieve_candidates(
             sub_query,
             document_ids,
-            top_k=2,
+            top_k=per_query_k,
         )
         before = len(result.get("ids") or [])
         result = _merge_retrieval_results(

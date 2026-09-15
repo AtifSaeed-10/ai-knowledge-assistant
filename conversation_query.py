@@ -318,6 +318,53 @@ def distinctive_topic_tokens(question: str) -> set[str]:
     return content - _GENERIC_REQUEST_TOKENS - _DOCUMENT_META_TOKENS - _ASPECT_TOKENS
 
 
+_SEARCH_ALL_PREFIX_RE = re.compile(
+    r"^\s*(?:search\s+all(?:\s+(?:the\s+)?(?:documents?|pdfs?|files?))?"
+    r"|across\s+(?:all\s+)?(?:the\s+)?(?:documents?|pdfs?|files?))"
+    r"\s*[:\-–]?\s*",
+    re.I,
+)
+_STRONG_TOPIC_SPLIT_RE = re.compile(
+    r"\s*(?:[,;]?\s+)?(?:and\s+also|also(?:\s+please)?\s+tell\s+me(?:\s+about)?"
+    r"|and\s+tell\s+me(?:\s+about)?|as\s+well\s+as)\s+",
+    re.I,
+)
+
+
+def strip_search_all_prefix(question: str) -> str:
+    return _SEARCH_ALL_PREFIX_RE.sub("", question or "").strip()
+
+
+def split_conjunctive_topics(question: str) -> list[str]:
+    """
+    Split “Hitler’s early life and also supervised learning” into topics.
+
+    Bare “and” only splits when both sides name their own topic
+    (two+ distinctive tokens). “father and son” stays one clause.
+    """
+    text = strip_search_all_prefix(question)
+    if not text:
+        return []
+
+    parts = [
+        part.strip(" ?.!")
+        for part in _STRONG_TOPIC_SPLIT_RE.split(text)
+        if part.strip(" ?.!")
+    ]
+    if len(parts) >= 2:
+        return parts[:4]
+
+    weak = re.split(r"\s+and\s+", text, maxsplit=1, flags=re.I)
+    if len(weak) == 2:
+        left, right = weak[0].strip(" ?.!"), weak[1].strip(" ?.!")
+        if (
+            len(distinctive_topic_tokens(left)) >= 2
+            and len(distinctive_topic_tokens(right)) >= 2
+        ):
+            return [left, right]
+    return [text]
+
+
 def detect_intent(question: str) -> str:
     text = question or ""
     hits: list[str] = []
@@ -340,6 +387,8 @@ def detect_intent(question: str) -> str:
         hits = [intent for intent in hits if intent != INTENT_ELABORATION]
 
     if len(hits) >= 2:
+        return INTENT_MIXED
+    if len(split_conjunctive_topics(text)) >= 2:
         return INTENT_MIXED
     if hits:
         return hits[0]

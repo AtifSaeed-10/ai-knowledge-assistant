@@ -35,6 +35,21 @@ describe("quoted evidence markers", () => {
     });
   });
 
+  it("turns leaked parenthetical E-tags into chips", () => {
+    const parts = splitEvidenceMarkers(
+      'pursue art (E1:"sent him to the Realschule").'
+    );
+    expect(parts).toEqual([
+      { type: "text", value: "pursue art " },
+      {
+        type: "citation",
+        evidenceId: "E1",
+        quote: "sent him to the Realschule",
+      },
+      { type: "text", value: "." },
+    ]);
+  });
+
   it("keeps two quotes from the same E-ID distinct", () => {
     const parts = splitEvidenceMarkers(
       'A.[E1:"supervised learning uses labeled examples"] B.[E1:"classification and regression"]'
@@ -67,6 +82,7 @@ describe("quoted evidence markers", () => {
       '[E1:"labeled examples'.length
     );
     expect(incompleteBracketLength('Hello [E1:"labeled examples"]')).toBe(0);
+    expect(incompleteBracketLength('art (E1:"sent him')).toBe('(E1:"sent him'.length);
   });
 
   it("keeps quoted markers intact across chunked streaming", () => {

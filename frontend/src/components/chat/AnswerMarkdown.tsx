@@ -63,7 +63,7 @@ function remarkEvidenceCitations() {
         if (
           child.type === "text" &&
           child.value &&
-          /\[E[1-9]\d*(?:(?::\s*|\|\s*quote\s*=\s*)"[^"\]]*")?\]/i.test(child.value)
+          /(?:\[|\()E[1-9]\d*|(?<!\[)E[1-9]\d*\s*:/i.test(child.value)
         ) {
           next.push(...splitCitationText(child.value));
         } else {
