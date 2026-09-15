@@ -1,10 +1,11 @@
 import { ConversationSummary } from "@/types/conversation";
 import { Message, Citation } from "@/types";
 import { toDisplayCitationText, usedCitations } from "@/lib/citations/markers";
+import { resolveCitationDocumentName } from "@/lib/citations/documentName";
 
 function citationLine(citation: Citation): string {
   const page = citation.pageNumber ? ` — p. ${citation.pageNumber}` : "";
-  return `- ${citation.documentName}${page}`;
+  return `- ${resolveCitationDocumentName(citation, [])}${page}`;
 }
 
 export function conversationToMarkdown(

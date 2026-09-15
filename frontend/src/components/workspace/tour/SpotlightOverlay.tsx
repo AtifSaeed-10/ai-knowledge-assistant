@@ -127,7 +127,7 @@ export function SpotlightOverlay({
           }}
         />
       ) : (
-        <div className="pointer-events-none absolute inset-0 bg-ink/55" aria-hidden />
+        <div className="pointer-events-none absolute inset-0 bg-scrim/60" aria-hidden />
       )}
 
       {children}

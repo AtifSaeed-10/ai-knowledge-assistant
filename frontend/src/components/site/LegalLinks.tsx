@@ -16,13 +16,13 @@ export function LegalLinks({
   linkClassName?: string;
 }) {
   return (
-    <nav aria-label="About and legal" className={cn("flex flex-wrap items-center gap-x-3 gap-y-1", className)}>
+    <nav aria-label="About and legal" className={cn("flex flex-wrap items-center gap-x-1 gap-y-1", className)}>
       {LINKS.map((item) => (
         <Link
           key={item.href}
           href={item.href}
           className={cn(
-            "text-meta text-ink-subtle transition-colors hover:text-ink",
+            "-my-1.5 inline-flex min-h-[2.25rem] items-center rounded-md px-1.5 text-meta text-ink-subtle transition-colors hover:text-ink",
             linkClassName
           )}
         >

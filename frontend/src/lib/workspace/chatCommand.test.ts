@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyChatCommand } from "./chatCommand";
+import { classifyChatCommand, isSocialMessage, isWorkspaceCommand } from "./chatCommand";
 
 describe("classifyChatCommand", () => {
   it("treats open-page phrasing as navigation, not a question", () => {
@@ -109,5 +109,34 @@ describe("classifyChatCommand", () => {
     expect(classifyChatCommand("go to the previous page")).toEqual({
       kind: "goto_prev",
     });
+  });
+
+  it("answers small talk locally instead of searching", () => {
+    expect(classifyChatCommand("hi")).toEqual({ kind: "social", reply: "greeting" });
+    expect(classifyChatCommand("Hello!")).toEqual({ kind: "social", reply: "greeting" });
+    expect(classifyChatCommand("heyy")).toEqual({ kind: "social", reply: "greeting" });
+    expect(classifyChatCommand("good morning")).toEqual({
+      kind: "social",
+      reply: "greeting",
+    });
+    expect(classifyChatCommand("thanks!")).toEqual({ kind: "social", reply: "thanks" });
+    expect(classifyChatCommand("thank you so much")).toEqual({
+      kind: "social",
+      reply: "thanks",
+    });
+    expect(classifyChatCommand("bye")).toEqual({ kind: "social", reply: "farewell" });
+  });
+
+  it("still searches when a greeting carries a real question", () => {
+    expect(classifyChatCommand("hi, what is supervised learning").kind).toBe("question");
+    expect(classifyChatCommand("hello can you summarize this").kind).toBe("question");
+    expect(classifyChatCommand("what is a high five").kind).toBe("question");
+    expect(classifyChatCommand("history of the treaty").kind).toBe("question");
+  });
+
+  it("keeps small talk out of the PDF-control path", () => {
+    expect(isWorkspaceCommand("hi")).toBe(false);
+    expect(isSocialMessage("hi")).toBe(true);
+    expect(isSocialMessage("open page 4")).toBe(false);
   });
 });

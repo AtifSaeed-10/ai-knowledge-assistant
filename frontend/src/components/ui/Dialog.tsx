@@ -104,7 +104,7 @@ export function Dialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex items-end justify-center bg-ink/40 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[120] flex items-end justify-center bg-scrim/50 p-0 sm:items-center sm:p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -200,7 +200,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className="rounded-lg bg-danger px-3.5 py-2 text-ui font-medium text-white shadow-card transition-colors hover:bg-danger-dark disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-lg bg-danger px-3.5 py-2 text-ui font-medium text-paper shadow-card transition-colors hover:bg-danger-dark disabled:cursor-not-allowed disabled:opacity-60"
           >
             {confirmLabel}
           </button>

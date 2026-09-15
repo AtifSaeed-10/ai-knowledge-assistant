@@ -18,7 +18,7 @@ export const SourceList = ({ citations }: { citations?: Citation[] }) => {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-meta font-medium text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink"
+        className="inline-flex items-center gap-1.5 rounded-md px-2 py-2 text-meta font-medium text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink sm:py-1"
       >
         {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         Sources

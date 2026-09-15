@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isConversationalFollowUp,
   isDeicticDocumentQuestion,
   isGenericWholeDocumentQuestion,
   isMultiDocumentQuestion,
@@ -116,6 +117,47 @@ describe("resolveDocumentScope", () => {
         { citations: [{ documentId: "hitler" }, { documentId: "outline" }] },
       ])
     ).toBeNull();
+  });
+
+  it("keeps a follow-up on the PDF the previous answer came from", () => {
+    expect(
+      decide("make it easier", { lastCitedDocumentId: "hitler" })
+    ).toEqual({ kind: "ready", documentIds: ["hitler"], reason: "last-cited" });
+
+    // The follow-up continues the last answer even when another file is pinned.
+    expect(
+      decide("explain it more simply", {
+        lastCitedDocumentId: "hitler",
+        pinnedDocumentId: "outline",
+      })
+    ).toEqual({ kind: "ready", documentIds: ["hitler"], reason: "last-cited" });
+  });
+
+  it("does not treat a fresh topic as a follow-up", () => {
+    expect(isConversationalFollowUp("make it easier")).toBe(true);
+    expect(isConversationalFollowUp("explain it more simply")).toBe(true);
+    expect(isConversationalFollowUp("why?")).toBe(true);
+    expect(isConversationalFollowUp("what is supervised learning")).toBe(false);
+    expect(isConversationalFollowUp("who was Hindenburg")).toBe(false);
+
+    expect(decide("who was Hindenburg", { lastCitedDocumentId: "hitler" })).toMatchObject({
+      documentIds: ["outline", "hitler"],
+    });
+  });
+
+  it("asks which PDF holds the author, but not who wrote a named work", () => {
+    expect(isGenericWholeDocumentQuestion("who is the author")).toBe(true);
+    expect(isGenericWholeDocumentQuestion("who wrote this")).toBe(true);
+    expect(isGenericWholeDocumentQuestion("who is the author of Mein Kampf")).toBe(false);
+
+    expect(
+      decide("who is the author", {
+        selectedDocumentId: null,
+        previewDocumentId: null,
+        pinnedDocumentId: null,
+        lastCitedDocumentId: null,
+      }).kind
+    ).toBe("clarify");
   });
 
   it("remembers a one-file pin, but not an all-documents search", () => {

@@ -1,56 +1,64 @@
 import type { Config } from "tailwindcss";
 
+/* Every colour is a CSS variable so the light and dark palettes in
+   globals.css swap without touching a single component class. */
+const themed = (variable: string) => `rgb(var(${variable}) / <alpha-value>)`;
+
 const config = {
   content: ["./src/**/*.{ts,tsx}"],
+  darkMode: "class",
 
   theme: {
     extend: {
       colors: {
-        paper: "#F6F7F4",
+        paper: themed("--color-paper"),
 
         surface: {
-          DEFAULT: "#FFFFFF",
-          muted: "#FBFBFA",
-          sunken: "#F1F3EF",
+          DEFAULT: themed("--color-surface"),
+          muted: themed("--color-surface-muted"),
+          sunken: themed("--color-surface-sunken"),
         },
 
         line: {
-          DEFAULT: "#EBEFEA",
-          strong: "#DCE2D9",
+          DEFAULT: themed("--color-line"),
+          strong: themed("--color-line-strong"),
         },
 
         /* Text colours are AA-compliant on paper and surface backgrounds. */
         ink: {
-          DEFAULT: "#1C241F",
-          soft: "#2A322E",
-          muted: "#5B6858",
-          subtle: "#63705F",
-          icon: "#7C8877",
+          DEFAULT: themed("--color-ink"),
+          soft: themed("--color-ink-soft"),
+          muted: themed("--color-ink-muted"),
+          subtle: themed("--color-ink-subtle"),
+          icon: themed("--color-ink-icon"),
         },
 
         olive: {
-          DEFAULT: "#4A5D23",
-          dark: "#3E4E1D",
-          soft: "#EFF1EC",
+          DEFAULT: themed("--color-olive"),
+          dark: themed("--color-olive-dark"),
+          soft: themed("--color-olive-soft"),
         },
 
         sage: {
-          DEFAULT: "#87AB72",
-          soft: "#C5D4B8",
+          DEFAULT: themed("--color-sage"),
+          soft: themed("--color-sage-soft"),
         },
 
         danger: {
-          DEFAULT: "#B42318",
-          dark: "#912018",
-          soft: "#FEF3F2",
-          line: "#F6D6D2",
+          DEFAULT: themed("--color-danger"),
+          dark: themed("--color-danger-dark"),
+          soft: themed("--color-danger-soft"),
+          line: themed("--color-danger-line"),
         },
 
         warn: {
-          DEFAULT: "#8A6D1F",
-          soft: "#FBF7EA",
-          line: "#EADFC0",
+          DEFAULT: themed("--color-warn"),
+          soft: themed("--color-warn-soft"),
+          line: themed("--color-warn-line"),
         },
+
+        /* Modal and drawer backdrops stay dark in both themes. */
+        scrim: themed("--color-scrim"),
       },
 
       fontFamily: {

@@ -77,7 +77,11 @@ DATABASE_URL = _env_str("DATABASE_URL", "sqlite:///./data/documents.db")
 # ========================
 # HTTP
 # ========================
-CORS_ORIGINS = _env_csv("CORS_ORIGINS", ["http://localhost:3000"])
+CORS_ORIGINS = _env_csv("CORS_ORIGINS", [
+    "http://localhost:3000",
+    "https://www.docusage.tech",
+    "https://docusage.tech",
+])
 
 # ========================
 # Auth

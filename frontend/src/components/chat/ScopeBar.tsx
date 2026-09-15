@@ -60,7 +60,7 @@ export function ScopeBar() {
             <button
               type="button"
               onClick={clearDocumentPin}
-              className="rounded-md px-1.5 py-0.5 text-meta font-medium text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink"
+              className="rounded-md px-1.5 py-1.5 text-meta font-medium text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink sm:py-0.5"
             >
               Search all
             </button>
@@ -113,7 +113,7 @@ function PreviewToggle({
           : "Open the PDF beside the chat"
       }
       className={cn(
-        "items-center gap-1.5 rounded-lg px-2 py-1 text-meta font-medium text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink",
+        "items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-meta font-medium text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink sm:py-1",
         className
       )}
     >

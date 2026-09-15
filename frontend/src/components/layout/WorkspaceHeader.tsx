@@ -6,6 +6,7 @@ import Link from "next/link";
 import { LogoMark } from "@/components/ui/Logo";
 import { UsageMeter } from "@/components/auth/UsageMeter";
 import { UserMenu } from "@/components/auth/UserMenu";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useChatStore } from "@/store/useChatStore";
 import {
   conversationToMarkdown,
@@ -46,7 +47,7 @@ export function WorkspaceHeader({ onOpenSidebar }: WorkspaceHeaderProps) {
           type="button"
           onClick={onOpenSidebar}
           aria-label="Open workspace menu"
-          className="-ml-0.5 rounded-lg p-2 text-ink-muted transition-colors hover:bg-surface hover:text-ink lg:hidden"
+          className="-ml-0.5 inline-flex h-10 w-10 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface hover:text-ink lg:hidden"
         >
           <Menu className="h-5 w-5" />
         </button>
@@ -74,7 +75,7 @@ export function WorkspaceHeader({ onOpenSidebar }: WorkspaceHeaderProps) {
             type="button"
             onClick={handleExport}
             title="Export this conversation as Markdown"
-            className="inline-flex items-center gap-1.5 rounded-lg p-2 text-ui font-medium text-ink-muted transition-colors hover:bg-surface hover:text-ink sm:px-2.5 sm:py-1.5"
+            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-2.5 text-ui font-medium text-ink-muted transition-colors hover:bg-surface hover:text-ink sm:h-auto sm:py-1.5"
           >
             <Download className="h-4 w-4" />
             <span className="hidden sm:inline">Export</span>
@@ -85,12 +86,14 @@ export function WorkspaceHeader({ onOpenSidebar }: WorkspaceHeaderProps) {
           type="button"
           onClick={startNewConversation}
           title="Start a new chat"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface p-2 text-ui font-medium text-ink shadow-card transition-colors hover:border-line-strong hover:bg-surface-muted sm:px-2.5 sm:py-1.5"
+          className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-ui font-medium text-ink shadow-card transition-colors hover:border-line-strong hover:bg-surface-muted sm:h-auto sm:py-1.5"
         >
           <SquarePen className="h-4 w-4 text-olive" />
           <span className="hidden sm:inline">New chat</span>
           <span className="sr-only sm:hidden">New chat</span>
         </button>
+
+        <ThemeToggle />
 
         <UserMenu />
       </div>

@@ -293,6 +293,7 @@ def build_answer_prompt(
     evidence_notes: str | None = None,
     subject: str | None = None,
     answer_plan: str | None = None,
+    spelling_note: str | None = None,
 ) -> str:
     mode_id = normalize_mode(mode) if mode else MODE_NORMAL
     if mode_id != MODE_SUPER_FOCUSED:
@@ -313,6 +314,15 @@ def build_answer_prompt(
     )
     notes = (evidence_notes or "").strip()
     notes_block = f"\n{notes}\n" if notes else ""
+    spelling = (spelling_note or "").strip()
+    spelling_block = (
+        "\nThe user request contains typos. It was read as: "
+        f'"{spelling}". Open with one short clause confirming that reading '
+        "(for example: If you mean ...), then answer normally from the "
+        "passages. If the passages do not cover it, refuse as usual.\n"
+        if spelling
+        else ""
+    )
     plan_block = f"\n{answer_plan.strip()}\n" if (answer_plan or "").strip() else ""
     has_evidence_ids = any(evidence_ids or [])
 
@@ -344,7 +354,7 @@ Conversation (reference resolution only; not evidence):
 
 Document passages:
 {evidence}
-{notes_block}{plan_block}
+{notes_block}{plan_block}{spelling_block}
 User request:
 {original}
 

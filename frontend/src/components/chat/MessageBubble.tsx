@@ -102,19 +102,25 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
       )}
 
       {scopeChoices.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        <div className="mt-3 flex flex-wrap gap-2">
           {scopeChoices.map((choice) => (
             <button
               key={choice.id}
               type="button"
               disabled={isLoading}
               onClick={() => void chooseDocumentScope(choice.id)}
-              className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-meta font-medium text-ink transition-colors hover:border-sage hover:bg-olive-soft disabled:cursor-not-allowed disabled:opacity-60"
+              className="max-w-full truncate rounded-lg border border-line-strong bg-surface px-3 py-2 text-meta font-medium text-ink transition-colors hover:border-sage hover:bg-olive-soft disabled:cursor-not-allowed disabled:opacity-60 sm:px-2.5 sm:py-1.5"
             >
               {choice.name}
             </button>
           ))}
         </div>
+      )}
+
+      {!isStreaming && hasContent && message.scopeHint && (
+        <p className="mt-3 rounded-lg border border-line bg-surface-sunken px-2.5 py-2 text-meta leading-relaxed text-ink-muted">
+          {message.scopeHint}
+        </p>
       )}
 
       {message.status === "stopped" && (

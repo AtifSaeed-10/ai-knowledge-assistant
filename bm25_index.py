@@ -146,6 +146,22 @@ class BM25Index:
             self._metadatas = normalized_metas
             self._fingerprint = fp
 
+    def corpus_texts(self, document_ids: list[str] | None = None) -> list[str]:
+        """Indexed passage text, optionally narrowed to some documents."""
+        with self._lock:
+            if not self._documents:
+                return []
+            if document_ids is None:
+                return list(self._documents)
+            allowed = set(document_ids)
+            if not allowed:
+                return []
+            return [
+                text
+                for i, text in enumerate(self._documents)
+                if self._metadatas[i].get("document_id") in allowed
+            ]
+
     def search(
         self,
         query: str,

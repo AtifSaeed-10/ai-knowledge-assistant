@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -21,6 +22,9 @@ export const viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover" as const,
+  /* Android keyboards otherwise cover the composer: this shrinks the layout
+     viewport (and 100dvh) instead of painting over it. */
+  interactiveWidget: "resizes-content" as const,
 };
 
 export default function RootLayout({
@@ -31,7 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${jakarta.variable} min-h-screen bg-paper font-sans text-ink`}>
-        {children}
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );
