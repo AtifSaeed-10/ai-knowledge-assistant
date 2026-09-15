@@ -48,7 +48,7 @@ export function ModeSwitcher() {
       role="radiogroup"
       aria-label="Which documents to search"
       data-tour="scope"
-      className="inline-flex shrink-0 items-center rounded-lg border border-line bg-surface-sunken p-0.5"
+      className="inline-flex shrink-0 items-center rounded-lg bg-surface-sunken p-0.5"
     >
       {PRODUCT_MODES.map((mode, index) => {
         const isActive = productMode === mode.id;
@@ -69,7 +69,7 @@ export function ModeSwitcher() {
             className={cn(
               "rounded-md px-2.5 py-1.5 text-meta font-medium tracking-[-0.01em] transition-colors sm:px-2 sm:py-1",
               isActive
-                ? "bg-surface text-ink shadow-card"
+                ? "bg-paper text-ink"
                 : "text-ink-muted hover:text-ink"
             )}
           >

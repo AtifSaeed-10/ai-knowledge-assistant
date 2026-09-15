@@ -125,7 +125,7 @@ export function PdfDock() {
         />
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-card">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-paper">
         <PdfSourcePanel
           document={previewDocument}
           citation={activeCitation}

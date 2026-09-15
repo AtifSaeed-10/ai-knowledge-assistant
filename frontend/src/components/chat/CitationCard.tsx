@@ -53,7 +53,7 @@ export const CitationCard = ({
         "group relative w-full rounded-xl border bg-surface py-3 pl-3 pr-7 text-left transition-colors sm:py-2.5",
         isActive
           ? "border-sage ring-1 ring-sage"
-          : "border-line-strong hover:border-sage hover:bg-surface-muted"
+          : "border-line hover:border-sage hover:bg-surface-muted"
       )}
     >
       <div className="flex items-start gap-2.5">

@@ -50,9 +50,9 @@ export function ChatContainer() {
   return (
     <div
       data-tour="chat"
-      className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-card sm:rounded-xl"
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-paper"
     >
-      <div className="flex min-h-0 flex-1 flex-col bg-surface-muted">
+      <div className="flex min-h-0 flex-1 flex-col bg-paper">
         {isSwitching ? (
           <TranscriptSkeleton />
         ) : conversationError ? (
@@ -86,7 +86,7 @@ export function ChatContainer() {
         )}
       </div>
 
-      <div className="shrink-0 border-t border-line bg-surface px-2.5 py-2.5 sm:px-4 sm:py-3">
+      <div className="shrink-0 bg-paper px-2.5 py-2.5 sm:px-4 sm:py-3">
         <ScopeBar />
         <ChatInput
           onSend={handleSend}

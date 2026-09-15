@@ -6,8 +6,8 @@ import { useTheme } from "next-themes";
 import { cn } from "@/lib/cn";
 
 /**
- * Two-state switch. Before mount the resolved theme is unknown, so a
- * same-sized placeholder holds the space and keeps the header from shifting.
+ * Two-state switch. After the first click we store light or dark explicitly,
+ * so the OS preference no longer wins on the next paint.
  */
 export function ThemeToggle({ className }: { className?: string }) {
   const { resolvedTheme, setTheme } = useTheme();
@@ -33,8 +33,9 @@ export function ThemeToggle({ className }: { className?: string }) {
       onClick={() => setTheme(isDark ? "light" : "dark")}
       title={label}
       aria-label={label}
+      aria-pressed={isDark}
       className={cn(
-        "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface hover:text-ink sm:h-9 sm:w-9",
+        "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink sm:h-9 sm:w-9",
         className
       )}
     >
