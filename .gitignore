@@ -3,6 +3,7 @@
 
 # Virtual environment
 venv/
+.venv/
 
 # Python cache
 __pycache__/
@@ -24,3 +25,14 @@ Thumbs.db
 
 # Logs
 *.log
+
+node_modules/
+.next/
+.env
+
+# Copied from pdfjs-dist on install
+frontend/public/pdf.worker.min.mjs
+
+# Held-out eval isolate (generated PDF + private chroma/sqlite)
+evaluation/results/held_out/
+evaluation/real_pdfs/*.pdf

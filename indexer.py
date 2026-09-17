@@ -1,15 +1,35 @@
 import gc
+import logging
+import os
 
-from pypdf import PdfReader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from fastembed import TextEmbedding
 import chromadb
 
+from bm25_index import bm25_index
+from chunking import (
+    build_chunks_from_pages,
+    chroma_metadata_for_chunk,
+)
 from config import (
     CHROMA_DB_PATH,
     COLLECTION_NAME,
 )
+from database.document_store import (
+    mark_document_index_failed,
+    touch_document_index,
+    update_document_metadata,
+    update_document_index_error,
+    update_document_status,
+)
+from database.evidence_store import replace_document_evidence
+from evidence_mapping import build_document_evidence
+from index_hygiene import purge_chroma_document, purge_document_index
+from pdf_extraction import (
+    INDEX_FAILURE_NO_TEXT,
+    extract_pages_from_pdf,
+)
 
+logger = logging.getLogger(__name__)
 
 # ========================
 # Embedding Model (loaded once)
@@ -22,114 +42,136 @@ model = TextEmbedding(
 # ========================
 # PDF Indexing Pipeline
 # ========================
-def index_pdf(pdf_path: str):
+def index_pdf(pdf_path: str, document_id: str):
+    update_document_status(document_id, "extracting")
+    update_document_index_error(document_id, None)
 
-    # ------------------------
-    # Load PDF
-    # ------------------------
-    reader = PdfReader(pdf_path)
+    try:
+        def _on_extract_progress(info: dict) -> None:
+            pages = int(info.get("total_pages") or 0)
+            if pages:
+                update_document_metadata(document_id, pages, 0)
+            touch_document_index(document_id)
 
-    pages_text = []
+        extraction = extract_pages_from_pdf(
+            pdf_path,
+            document_id=document_id,
+            on_progress=_on_extract_progress,
+        )
+        pages = extraction.pages
 
-    for page in reader.pages:
-        page_text = page.extract_text()
+        update_document_status(document_id, "chunking")
 
-        if page_text:
-            pages_text.append(page_text)
+        chunks = build_chunks_from_pages(pages, document_id)
 
-    text = "\n".join(pages_text)
+        logger.info(
+            "index_pdf document_id=%s chunks_created=%s engine=%s ocr_pages=%s",
+            document_id,
+            len(chunks),
+            extraction.engine_used,
+            getattr(extraction, "ocr_pages", 0),
+        )
 
+        update_document_metadata(
+            document_id,
+            extraction.total_pages,
+            len(chunks),
+        )
 
-    # ------------------------
-    # Chunking
-    # ------------------------
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200
-    )
+        if not chunks:
+            purge_document_index(document_id, delete_files=False)
+            mark_document_index_failed(document_id, INDEX_FAILURE_NO_TEXT)
+            try:
+                from app_platform.ops.events import record_index_failure
 
-    chunks = splitter.split_text(text)
+                record_index_failure(document_id, INDEX_FAILURE_NO_TEXT)
+            except Exception:
+                pass
+            logger.warning(
+                "index_pdf document_id=%s failed: no chunks (engine=%s pages_with_text=%s)",
+                document_id,
+                extraction.engine_used,
+                extraction.pages_with_text,
+            )
+            return
 
-    print(f"Chunks created: {len(chunks)}")
+        try:
+            evidence = build_document_evidence(
+                pdf_path,
+                document_id,
+                pages,
+                chunks,
+                text_engine=extraction.engine_used,
+            )
+            replace_document_evidence(document_id, evidence)
+        except Exception:
+            logger.exception(
+                "index_pdf document_id=%s evidence mapping failed; continuing index",
+                document_id,
+            )
 
+        client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
+        collection = client.get_or_create_collection(name=COLLECTION_NAME)
+        purge_chroma_document(document_id, collection=collection)
 
-    if not chunks:
-        print("⚠️ No text extracted from PDF.")
+        update_document_status(document_id, "embedding")
+
+        batch_size = 50
+        filename = os.path.basename(pdf_path)
+
+        for start in range(0, len(chunks), batch_size):
+            end = start + batch_size
+
+            batch_chunks = [chunk["text"] for chunk in chunks[start:end]]
+
+            logger.info(
+                "index_pdf document_id=%s embedding chunks %s to %s",
+                document_id,
+                start,
+                end,
+            )
+
+            batch_embeddings = list(model.embed(batch_chunks))
+            update_document_status(document_id, "indexing")
+            collection.add(
+                ids=[
+                    f"{document_id}_{i}"
+                    for i in range(start, min(end, len(chunks)))
+                ],
+                documents=batch_chunks,
+                embeddings=batch_embeddings,
+                metadatas=[
+                    chroma_metadata_for_chunk(
+                        chunk,
+                        document_id,
+                        filename,
+                    )
+                    for chunk in chunks[start:end]
+                ],
+            )
+
+            del batch_embeddings
+            gc.collect()
+
+        update_document_status(document_id, "ready")
+        update_document_index_error(document_id, None)
+        bm25_index.invalidate()
+
+        logger.info("index_pdf document_id=%s ready chunks=%s", document_id, len(chunks))
+        return document_id
+
+    except Exception as exc:
+        purge_document_index(document_id, delete_files=False)
+        message = f"Indexing failed: {exc.__class__.__name__}"
+        mark_document_index_failed(document_id, message)
+        try:
+            from app_platform.ops.events import record_index_failure
+
+            record_index_failure(document_id, message)
+        except Exception:
+            pass
+        logger.exception(
+            "index_pdf document_id=%s failed with exception",
+            document_id,
+        )
         return
-
-
-    # ------------------------
-    # Chroma DB setup
-    # ------------------------
-    client = chromadb.PersistentClient(
-        path=CHROMA_DB_PATH
-    )
-
-
-    # Clean old collection safely
-    if COLLECTION_NAME in [
-        c.name for c in client.list_collections()
-    ]:
-        client.delete_collection(COLLECTION_NAME)
-
-
-    collection = client.get_or_create_collection(
-        name=COLLECTION_NAME
-    )
-
-
-    # ------------------------
-    # Embeddings + Store in batches
-    # ------------------------
-
-    batch_size = 50
-
-
-    for start in range(0, len(chunks), batch_size):
-
-        end = start + batch_size
-
-        batch_chunks = chunks[start:end]
-
-
-        print(
-            f"Embedding chunks {start} to {end}"
-        )
-
-
-        batch_embeddings = list(
-            model.embed(batch_chunks)
-        )
-
-
-        collection.add(
-            ids=[
-                str(i)
-                for i in range(
-                    start,
-                    min(end, len(chunks))
-                )
-            ],
-
-            documents=batch_chunks,
-
-            embeddings=batch_embeddings,
-
-            metadatas=[
-                {
-                    "chunk_index": i
-                }
-                for i in range(
-                    start,
-                    min(end, len(chunks))
-                )
-            ]
-        )
-
-
-        # Free memory after each batch
-        del batch_embeddings
-        gc.collect()
-
-
-    print("✅ PDF indexed successfully!")

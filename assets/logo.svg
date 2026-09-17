@@ -1,0 +1,21 @@
+<svg width="220" height="40" viewBox="0 0 220 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>DocuSage</title>
+  <style>
+    .tile { fill: #4A5D23; }
+    .fold { fill: #6A8240; }
+    .hi { fill: #D5E4C8; }
+    .word { fill: #1C241F; }
+    @media (prefers-color-scheme: dark) {
+      .tile { fill: #9FBF86; }
+      .fold { fill: #C5D4B8; }
+      .hi { fill: #24301A; }
+      .word { fill: #F1F4F0; }
+    }
+  </style>
+  <svg x="0" y="4" width="32" height="32" viewBox="0 0 32 32">
+    <path class="tile" d="M10.5 3h6.65L26 11.9V25.5A2.5 2.5 0 0 1 23.5 28h-13A2.5 2.5 0 0 1 8 25.5v-20A2.5 2.5 0 0 1 10.5 3Z"/>
+    <path class="fold" d="M17.15 3 26 11.9H17.15V3Z"/>
+    <rect class="hi" x="11.25" y="15.35" width="10.25" height="3.7" rx="1.15"/>
+  </svg>
+  <text x="42" y="27" font-family="'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif" font-size="18" font-weight="600" letter-spacing="-0.04em" class="word">DocuSage</text>
+</svg>
