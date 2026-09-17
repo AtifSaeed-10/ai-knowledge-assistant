@@ -189,6 +189,7 @@ def init_db():
 _OWNERSHIP_COLUMNS = (
     ("documents", "owner_type", "TEXT"),
     ("documents", "owner_id", "TEXT"),
+    ("documents", "index_updated_at", "TEXT"),
     ("conversations", "owner_type", "TEXT"),
     ("conversations", "owner_id", "TEXT"),
 )

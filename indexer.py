@@ -16,6 +16,7 @@ from config import (
 )
 from database.document_store import (
     mark_document_index_failed,
+    touch_document_index,
     update_document_metadata,
     update_document_index_error,
     update_document_status,
@@ -46,9 +47,16 @@ def index_pdf(pdf_path: str, document_id: str):
     update_document_index_error(document_id, None)
 
     try:
+        def _on_extract_progress(info: dict) -> None:
+            pages = int(info.get("total_pages") or 0)
+            if pages:
+                update_document_metadata(document_id, pages, 0)
+            touch_document_index(document_id)
+
         extraction = extract_pages_from_pdf(
             pdf_path,
             document_id=document_id,
+            on_progress=_on_extract_progress,
         )
         pages = extraction.pages
 

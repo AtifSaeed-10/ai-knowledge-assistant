@@ -182,6 +182,7 @@ def extract_pages_from_pdf(
     *,
     document_id: str | None = None,
     min_primary_chars: int = MIN_PRIMARY_CHARS,
+    on_progress: Any | None = None,
 ) -> ExtractionResult:
     """
     Extract page text using PyMuPDF, falling back to pypdf when the primary
@@ -225,11 +226,15 @@ def extract_pages_from_pdf(
         per_page = primary_diag
         total_pages = primary_diag[0]["total_pages"] if primary_diag else 0
 
+    if on_progress and total_pages:
+        on_progress({"total_pages": total_pages, "ran": 0, "filled": 0})
+
     chosen_pages, ocr_stats = fill_low_text_pages_with_ocr(
         pdf_path,
         chosen_pages,
         total_pages,
         document_id=document_id,
+        on_progress=on_progress,
     )
     engine_used = _engine_used(chosen_pages, native_engine)
     total_chars = _total_chars(chosen_pages)

@@ -117,6 +117,7 @@ def fill_low_text_pages_with_ocr(
     total_pages: int,
     *,
     document_id: str | None = None,
+    on_progress: Any | None = None,
 ) -> tuple[list[PageDict], dict[str, Any]]:
     """
     OCR image pages that native extractors left empty or nearly empty.
@@ -192,7 +193,7 @@ def fill_low_text_pages_with_ocr(
                     "text_engine": OCR_ENGINE,
                 }
 
-            if stats["ran"] >= OCR_GIVE_UP_AFTER and hits == 0:
+            if stats["ran"] >= OCR_GIVE_UP_AFTER and hits == 0 and len(needed) <= OCR_GIVE_UP_AFTER + 4:
                 stats["stopped_early"] = True
                 logger.info(
                     "page_ocr document_id=%s stopping after %s unreadable scan pages",
@@ -200,6 +201,14 @@ def fill_low_text_pages_with_ocr(
                     stats["ran"],
                 )
                 break
+            if on_progress and (stats["ran"] == 1 or stats["ran"] % 5 == 0):
+                on_progress(
+                    {
+                        "total_pages": total_pages,
+                        "ran": stats["ran"],
+                        "filled": stats["filled"],
+                    }
+                )
     finally:
         doc.close()
 

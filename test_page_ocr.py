@@ -146,6 +146,26 @@ class TestFillLowTextPages(unittest.TestCase):
         self.assertEqual(mock_ocr.call_count, OCR_GIVE_UP_AFTER)
         self.assertEqual(pages, [])
 
+    def test_full_book_keeps_ocr_after_cover_pages(self):
+        path = os.path.join(self.tmp, "book.pdf")
+        page_count = 40
+        _write_image_pdf(path, page_count=page_count)
+        calls = {"n": 0}
+
+        def fake_ocr(_pixmap):
+            calls["n"] += 1
+            if calls["n"] <= OCR_GIVE_UP_AFTER:
+                return ""
+            return "Gregor Samsa woke from uneasy dreams."
+
+        with patch("page_ocr.tesseract_available", return_value=True), patch(
+            "page_ocr.ocr_pixmap", side_effect=fake_ocr
+        ):
+            pages, stats = fill_low_text_pages_with_ocr(path, [], page_count)
+        self.assertFalse(stats["stopped_early"])
+        self.assertGreater(stats["filled"], 0)
+        self.assertTrue(any("Gregor" in page["text"] for page in pages))
+
     def test_missing_tesseract_is_a_no_op(self):
         path = os.path.join(self.tmp, "scan-no-tess.pdf")
         _write_image_pdf(path)

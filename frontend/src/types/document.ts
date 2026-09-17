@@ -24,6 +24,7 @@ export interface Document {
   uploadedAt: Date;
   totalPages?: number;
   totalChunks?: number;
+  indexUpdatedAt?: string;
   /** Populated when status is 'failed'. */
   error?: string;
   evidenceSummary?: DocumentEvidenceSummary;
