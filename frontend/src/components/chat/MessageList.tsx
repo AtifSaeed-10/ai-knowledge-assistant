@@ -16,15 +16,24 @@ interface MessageListProps {
 
 const FOCUSED_PROMPTS = [
   { label: "Summarize this document", icon: ScrollText },
-  { label: "What are the main topics covered?", icon: ListTree },
-  { label: "Explain the main ideas in simple terms", icon: BookOpen },
+  { label: "Walk me through the key events", icon: ListTree },
+  { label: "Who are the main people, and what happens to them?", icon: BookOpen },
 ];
 
 const LIBRARY_PROMPTS = [
   { label: "Summarize the key findings", icon: ScrollText },
-  { label: "What are the main topics covered?", icon: ListTree },
+  { label: "Walk me through the key events", icon: ListTree },
   { label: "Explain the main ideas in simple terms", icon: BookOpen },
 ];
+
+const FOLLOW_UPS = [
+  "What happens after that?",
+  "Explain that in simpler words",
+  "What are the key points?",
+];
+
+const REFUSAL_RE =
+  /couldn['’]t find|not enough information|no relevant information|does not give a specific example/i;
 
 export function MessageList({ messages, isLoading, onSelectPrompt }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -62,7 +71,7 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
   }, [streamingLength, isPinned, scrollToBottom]);
 
   const liveStatus = useMemo(() => {
-    if (isLoading) return "Generating an answer from your documents.";
+    if (isLoading) return "Reading your documents and writing an answer.";
     if (lastMessage?.role !== "assistant") return "";
     if (lastMessage.status === "error") return "The answer could not be generated.";
     if (lastMessage.status === "stopped") return "Generation stopped.";
@@ -84,10 +93,11 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
           <div className="flex h-full min-h-0 items-center justify-center">
             <div className="w-full max-w-md animate-rise-in py-6">
               <h2 className="text-h2 font-semibold tracking-[-0.02em] text-ink">
-                Ask a question
+                Ask this document anything
               </h2>
               <p className="mt-1.5 text-ui leading-relaxed text-ink-muted">
-                Answers are grounded in your documents and link back to the exact page.
+                DocuSage answers only from your files — with a citation back to
+                the exact page. Try a summary, a later plot point, or a definition.
               </p>
 
               <div className="mt-5 space-y-1.5">
@@ -120,6 +130,25 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
                 }
               />
             ))}
+            {!isLoading &&
+              lastMessage?.role === "assistant" &&
+              lastMessage.status === "ok" &&
+              Boolean(lastMessage.content?.trim()) &&
+              !REFUSAL_RE.test(lastMessage.content) &&
+              canAsk && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {FOLLOW_UPS.map((label) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => onSelectPrompt(label)}
+                      className="rounded-full border border-line bg-surface px-3 py-1.5 text-meta font-medium text-ink-muted transition-colors hover:border-sage hover:bg-olive-soft hover:text-ink"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
           </div>
         )}
       </div>

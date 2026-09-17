@@ -312,6 +312,21 @@ def classify_retrieval_query(question: str) -> RetrievalQuery:
         extra_seen.add(key)
         extra_clean.append(item.strip())
 
+    from wide_recall import lexical_probe_queries
+
+    for probe in lexical_probe_queries(text):
+        key = probe.strip().lower()
+        if not key or key == text.lower() or key in extra_seen:
+            continue
+        extra_seen.add(key)
+        extra_clean.append(probe.strip())
+        if probe.strip() not in cleaned:
+            cleaned.append(probe.strip())
+
+    if extra_clean and reserved <= 0:
+        reserved = min(3, QUERY_TYPE_RESERVED_SLOTS)
+        boost = max(boost, QUERY_TYPE_CANDIDATE_BOOST)
+
     return RetrievalQuery(
         kind=kind,
         phrases=cleaned,

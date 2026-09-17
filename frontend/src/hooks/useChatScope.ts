@@ -51,7 +51,7 @@ export function useChatScope(): ChatScope {
   if (readyDocuments.length === 0) {
     blockedReason =
       processingCount > 0
-        ? "Your documents are still being prepared."
+        ? "Your documents are still being prepared — scanned books can take a few minutes."
         : "Add a PDF to start asking questions.";
   } else if (!focusedReady) {
     blockedReason = "Pick a ready document in the sidebar, or search all documents.";

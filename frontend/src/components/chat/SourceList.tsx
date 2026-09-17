@@ -6,7 +6,7 @@ import { Citation } from "@/types";
 import { CitationCard } from "./CitationCard";
 
 export const SourceList = ({ citations }: { citations?: Citation[] }) => {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
 
   if (!citations || citations.length === 0) return null;
 

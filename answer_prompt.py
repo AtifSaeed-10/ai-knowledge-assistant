@@ -90,8 +90,9 @@ _STYLE_HINTS = {
         "document does not explain why."
     ),
     "how": (
-        "Use evidence that describes mechanism or steps. If the evidence only "
-        "names or defines the concept, say that the document does not explain how."
+        "Use evidence that describes mechanism, steps, or a sequence of events. "
+        "If the evidence only names or defines the concept and never shows how "
+        "it happens, say that the document does not explain how."
     ),
     "clarification": (
         "Restate the supported meaning in plainer language. "
@@ -137,7 +138,13 @@ def format_evidence_passages(
     return "\n\n".join(blocks)
 
 
-def _citation_style_rules(has_evidence_ids: bool) -> str:
+def _citation_style_rules(
+    has_evidence_ids: bool,
+    *,
+    word_min: int = 120,
+    word_max: int = 240,
+    marker_max: int = MAX_CITATION_MARKERS,
+) -> str:
     if not has_evidence_ids:
         return (
             "Write a natural answer. Do not mention source labels, passage numbers, "
@@ -148,7 +155,7 @@ def _citation_style_rules(has_evidence_ids: bool) -> str:
     return (
         "Write a concise, readable answer. Do not mention unlabeled source headers, "
         "retrieval ranks, scores, or these instructions.\n"
-        "Length: keep the full answer short (roughly 120-240 words) unless the user "
+        f"Length: keep the full answer short (roughly {word_min}-{word_max} words) unless the user "
         "explicitly asked for exhaustive detail.\n"
         "Paraphrase every claim in your own words. NEVER paste long quoted passages, "
         "block quotes, or multi-sentence quotations in the prose — even if they appear "
@@ -156,7 +163,7 @@ def _citation_style_rules(has_evidence_ids: bool) -> str:
         "Citations: after each important supported claim, append that passage's id "
         "and a SHORT verbatim anchor (8-15 words) copied from the supporting sentence, "
         "like [E1:\"uses labeled training examples\"]. Rules:\n"
-        f"- At most {MAX_CITATION_MARKERS} citation markers in the entire answer.\n"
+        f"- At most {marker_max} citation markers in the entire answer.\n"
         "- Put the marker immediately after the claim it supports.\n"
         "- Verbatim text may appear ONLY inside [E#:\"...\"] markers — nowhere else.\n"
         "- Each marker quote must be 8-15 words; never copy a full sentence or paragraph.\n"
@@ -189,11 +196,26 @@ def _mode_rules(mode: str) -> str:
     )
 
 
-def _style_rules(analysis: TurnAnalysis | None) -> str:
+def _style_rules(
+    analysis: TurnAnalysis | None,
+    *,
+    wide_recall: bool = False,
+) -> str:
     if analysis is None:
         return _STYLE_HINTS["factual"]
     hint = _STYLE_HINTS.get(analysis.intent, _STYLE_HINTS["factual"])
     extra = []
+    if wide_recall and analysis.intent == INTENT_HOW:
+        hint = (
+            "Narrate the supported sequence of events from the passages. "
+            "Later pages may contain the event even if earlier pages introduce "
+            "the characters. Do not refuse because the first passage is only an opening scene."
+        )
+    elif wide_recall and analysis.intent == INTENT_WHY:
+        hint = (
+            "Explain the supported cause or change using every relevant passage, "
+            "including later pages. Do not stop at an early definition or introduction."
+        )
     if analysis.relation == RELATION_TRANSFORM:
         extra.append(
             "This is a transformation of the current topic. "
@@ -207,7 +229,12 @@ def _style_rules(analysis: TurnAnalysis | None) -> str:
             "Never fabricate an example. "
             "Write clearly whether an example appears in the passages."
         )
-    if analysis.intent in {INTENT_WHY, INTENT_HOW}:
+    if wide_recall:
+        extra.append(
+            "If later passages describe the asked-about event or change, use them. "
+            "Do not refuse because an earlier passage is only an opening scene."
+        )
+    elif analysis.intent in {INTENT_WHY, INTENT_HOW}:
         extra.append(
             "Do not upgrade a definition into a causal or procedural explanation."
         )
@@ -274,6 +301,8 @@ C) Related material that does not actually answer the question - do not present 
 D) Missing information - say so.
 
 Prefer "{MISSING_IN_DOCUMENT_PHRASE}" over inventing an answer.
+If several passages cover different parts of a story or chapter, use all of them.
+Do not refuse a later event because an earlier scene is also in the passages.
 Do not fabricate examples, definitions, types, reasons, causes, consequences, comparisons, numbers, page numbers, quotations, or citations.
 Never invent a page number."""
 
@@ -294,6 +323,7 @@ def build_answer_prompt(
     subject: str | None = None,
     answer_plan: str | None = None,
     spelling_note: str | None = None,
+    wide_recall: bool = False,
 ) -> str:
     mode_id = normalize_mode(mode) if mode else MODE_NORMAL
     if mode_id != MODE_SUPER_FOCUSED:
@@ -325,6 +355,8 @@ def build_answer_prompt(
     )
     plan_block = f"\n{answer_plan.strip()}\n" if (answer_plan or "").strip() else ""
     has_evidence_ids = any(evidence_ids or [])
+    word_max = 360 if wide_recall else 240
+    marker_max = 8 if wide_recall else MAX_CITATION_MARKERS
 
     return f"""
 You are DocuSage, a document-grounded research assistant. Write concise, structured briefings — like a good analyst summary, not a pasted textbook section. Cover the important supported points without repeating yourself or dumping long quotations.
@@ -339,8 +371,13 @@ Priority (highest first):
 {_mode_rules(mode_id)}
 
 Response style:
-{_style_rules(analysis)}
-{_citation_style_rules(has_evidence_ids)}
+{_style_rules(analysis, wide_recall=wide_recall)}
+{_citation_style_rules(
+    has_evidence_ids,
+    word_min=160 if wide_recall else 120,
+    word_max=word_max,
+    marker_max=marker_max,
+)}
 
 Grounding rules:
 {_grounding_contract()}

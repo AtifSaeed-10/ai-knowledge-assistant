@@ -33,6 +33,7 @@ from conversation_query import (
 from evidence_focus import ROLE_SUPPORT, passage_roles
 from evidence_mapping import make_snippet
 from evidence_state import looks_like_evidence_refusal
+from wide_recall import is_wide_recall_question, lexical_probe_queries
 
 # Style restyles of the current topic: any on-topic passage is enough.
 # Do not require the PDF to contain the words "simple" or "summary".
@@ -61,6 +62,8 @@ synthesize from the passages in context; do not look for a heading titled
 Summary or Simple.
 If you are still uncertain, quote the most relevant one or two sentences
 rather than refusing. Never invent facts that are not in the passages.
+If later pages in the passages describe the asked-about event, use them.
+Do not refuse because an earlier scene is also present.
 """
 
 EVIDENCE_PRESENT_LEAD = "The provided passages discuss this. Supporting excerpt:"
@@ -143,6 +146,8 @@ def _role_allows_chunk(
 ) -> bool:
     if analysis is None or analysis.intent not in _ROLE_GATED_INTENTS:
         return True
+    if is_wide_recall_question(question or "", analysis.intent):
+        return True
     roles = passage_roles([chunk], question, analysis)
     return bool(roles) and roles[0] == ROLE_SUPPORT
 
@@ -178,6 +183,12 @@ def find_context_support(
     rows = _pool_rows(sources, recall_candidates)
     intent = analysis.intent if analysis else ""
     question_text = _question_focus(question)
+    wide = is_wide_recall_question(question or "", intent)
+    focus_queries = [question_text]
+    if wide:
+        probes = lexical_probe_queries(question or "")
+        if probes:
+            focus_queries = probes
 
     if intent in SYNTHESIS_INTENTS:
         for row in rows:
@@ -202,27 +213,31 @@ def find_context_support(
             continue
         if not _role_allows_chunk(text, question or "", analysis):
             continue
-        support = score_text_support(question_text, text)
-        score = max(float(support.confidence or 0.0), float(support.coverage or 0.0))
-        strong = (
-            support.status in {STATUS_EXACT, STATUS_SENTENCE}
-            or float(support.coverage or 0.0) >= CLAIM_SUPPORT_MIN
-            or float(support.confidence or 0.0) >= CLAIM_SUPPORT_MIN
-        )
-        if not strong:
-            continue
-        hit = GroundingHit(
-            supported=True,
-            reason=str(support.status or "supported"),
-            chunk_id=str(row.get("chunk_id") or ""),
-            evidence_id=str(row.get("evidence_id") or ""),
-            span=(support.span or "").strip(),
-            snippet=make_snippet(text),
-            passage=text,
-            score=score,
-        )
-        if best is None or hit.score > best.score:
-            best = hit
+        for focus in focus_queries:
+            if not (focus or "").strip():
+                continue
+            support = score_text_support(focus, text)
+            score = max(float(support.confidence or 0.0), float(support.coverage or 0.0))
+            strong = (
+                support.status in {STATUS_EXACT, STATUS_SENTENCE}
+                or float(support.coverage or 0.0) >= CLAIM_SUPPORT_MIN
+                or float(support.confidence or 0.0) >= CLAIM_SUPPORT_MIN
+            )
+            if not strong:
+                continue
+            hit = GroundingHit(
+                supported=True,
+                reason=str(support.status or "supported"),
+                chunk_id=str(row.get("chunk_id") or ""),
+                evidence_id=str(row.get("evidence_id") or ""),
+                span=(support.span or "").strip(),
+                snippet=make_snippet(text),
+                passage=text,
+                score=score,
+            )
+            if best is None or hit.score > best.score:
+                best = hit
+            break
     return best or GroundingHit(supported=False, reason="unsupported")
 
 

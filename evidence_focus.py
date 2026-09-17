@@ -17,6 +17,7 @@ from conversation_query import (
     TurnAnalysis,
     tokenize_content,
 )
+from wide_recall import skip_mechanism_role_gating
 
 ROLE_SUPPORT = "support"
 ROLE_RELATED = "related"
@@ -164,6 +165,11 @@ def passage_reason_role(text: str, subject_tokens: set[str], *, how: bool = Fals
     return ROLE_UNKNOWN
 
 
+def _narrative_event(search_query: str, analysis: TurnAnalysis | None) -> bool:
+    intent = analysis.intent if analysis else ""
+    return skip_mechanism_role_gating(search_query or "", intent)
+
+
 def passage_roles(
     chunks: list[str],
     search_query: str,
@@ -171,15 +177,16 @@ def passage_roles(
 ) -> list[str]:
     subject_tokens = subject_tokens_from_query(search_query)
     intent = analysis.intent if analysis else ""
+    narrative = _narrative_event(search_query, analysis)
     roles: list[str] = []
     for chunk in chunks:
         if intent == INTENT_LISTING:
             roles.append(passage_taxonomy_role(chunk, subject_tokens))
         elif intent == INTENT_EXAMPLE:
             roles.append(passage_example_role(chunk, subject_tokens))
-        elif intent == INTENT_WHY:
+        elif intent == INTENT_WHY and not narrative:
             roles.append(passage_reason_role(chunk, subject_tokens, how=False))
-        elif intent == INTENT_HOW:
+        elif intent == INTENT_HOW and not narrative:
             roles.append(passage_reason_role(chunk, subject_tokens, how=True))
         else:
             if subject_tokens and _subject_mentioned(chunk, subject_tokens):
@@ -208,7 +215,9 @@ def citation_allowlist(
         return None
     intent = analysis.intent
     if intent not in {INTENT_LISTING, INTENT_EXAMPLE}:
-        if intent in {INTENT_WHY, INTENT_HOW}:
+        if intent in {INTENT_WHY, INTENT_HOW} and not _narrative_event(
+            search_query, analysis
+        ):
             roles = passage_roles(chunks, search_query, analysis)
             support = {i for i, role in enumerate(roles) if role == ROLE_SUPPORT}
             return support or None
@@ -233,6 +242,10 @@ def format_evidence_notes(
         INTENT_WHY,
         INTENT_HOW,
     }:
+        return ""
+    if analysis.intent in {INTENT_WHY, INTENT_HOW} and _narrative_event(
+        search_query, analysis
+    ):
         return ""
 
     roles = passage_roles(chunks, search_query, analysis)

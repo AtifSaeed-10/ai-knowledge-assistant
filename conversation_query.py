@@ -75,7 +75,12 @@ _INTENT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         r"\b(why|what causes?|what is the (?:cause|purpose|reason)|what happens (?:if|when))\b",
         re.I,
     )),
-    (INTENT_HOW, re.compile(r"\b(how (?:do|does|can|to|is|are)|step[ -]?by[ -]?step)\b", re.I)),
+    (INTENT_HOW, re.compile(
+        r"\b(how (?:do|does|did|can|to|is|are)|step[ -]?by[ -]?step|"
+        r"series of events|what events?|who throw[s]?|who threw|"
+        r"what happens(?! (?:if|when)))\b",
+        re.I,
+    )),
     (INTENT_LISTING, re.compile(
         r"\b(types?|kinds?|categor(?:y|ies)|classif(?:y|ication)|enumerate|"
         r"list(?:ing)?|forms?|approaches)\b",

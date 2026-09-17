@@ -129,6 +129,40 @@ class TestContextSupport(unittest.TestCase):
         self.assertTrue(hit.supported)
         self.assertEqual(hit.reason, "synthesis_context")
 
+    def test_apple_scene_supports_plot_how_question(self):
+        question = (
+            "What specific series of events leads to Gregor getting an apple "
+            "lodged in his back, and who throws it?"
+        )
+        analysis = analyze_turn(question, None)
+        apple = (
+            "His father had filled his pockets from the fruit bowl. He threw "
+            "apple after apple. One apple lodged in Gregor's back and stayed there."
+        )
+        hit = find_context_support(
+            question,
+            sources=[_source("k40", apple, page=40, evidence_id="E4")],
+            analysis=analysis,
+        )
+        self.assertTrue(hit.supported)
+
+    def test_opening_scene_does_not_support_apple_event(self):
+        question = (
+            "What specific series of events leads to Gregor getting an apple "
+            "lodged in his back, and who throws it?"
+        )
+        analysis = analyze_turn(question, None)
+        opening = (
+            "Gregor Samsa woke from uneasy dreams to find himself transformed "
+            "in his bed into a gigantic insect. A lady in furs hung in a gilt frame."
+        )
+        hit = find_context_support(
+            question,
+            sources=[_source("k1", opening, page=1, evidence_id="E1")],
+            analysis=analysis,
+        )
+        self.assertFalse(hit.supported)
+
 
 class TestVerifyAndRepair(unittest.TestCase):
     def test_unsupported_refusal_is_kept(self):
@@ -202,6 +236,28 @@ class TestPromptAntiRefusal(unittest.TestCase):
         lowered = prompt.lower()
         self.assertIn("synthesize", lowered)
         self.assertIn("summary", lowered)
+
+    def test_plot_prompt_tells_model_to_use_later_pages(self):
+        question = (
+            "What specific series of events leads to Gregor getting an apple "
+            "lodged in his back, and who throws it?"
+        )
+        analysis = analyze_turn(question, None)
+        prompt = build_answer_prompt(
+            question=question,
+            search_query=question,
+            history=None,
+            chunks=[
+                "His father threw apple after apple. One apple lodged in Gregor's back."
+            ],
+            metadata=[{"filename": "metamorphosis.pdf", "page_number": 40}],
+            evidence_ids=["E1"],
+            analysis=analysis,
+            wide_recall=True,
+        )
+        lowered = prompt.lower()
+        self.assertIn("later", lowered)
+        self.assertNotIn("do not upgrade a definition", lowered)
 
 
 class TestAskQuestionAntiRefusal(unittest.TestCase):

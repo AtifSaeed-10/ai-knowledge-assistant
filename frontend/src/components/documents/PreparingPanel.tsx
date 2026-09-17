@@ -89,7 +89,10 @@ export function PreparingPanel() {
           })}
         </ol>
 
-        <p className="mt-5 text-meta text-ink-subtle">Per-file progress is in the sidebar</p>
+        <p className="mt-5 text-meta leading-relaxed text-ink-subtle">
+          Scanned books can take several minutes to read. Keep this tab open —
+          per-file progress is in the sidebar.
+        </p>
       </div>
     </div>
   );

@@ -471,7 +471,6 @@ def chat_stream(
                 analysis=response.get("analysis"),
                 generate_fn=generate_response,
             )
-            repaired = grounding.get("action") in {"retry", "extractive"}
             finalize_result = finalize_answer_citations(
                 answer,
                 sources,
@@ -503,9 +502,8 @@ def chat_stream(
                     **owner,
                 )
 
-            # A repaired refusal invalidates the tokens already on screen.
-            # Send the saved answer so the client can replace them.
-            if repaired and answer != streamed_answer:
+            # A repaired or polished answer invalidates tokens already on screen.
+            if answer != streamed_answer:
                 yield (
                     f"__ANSWER_FINAL__{json.dumps(answer)}__END_ANSWER_FINAL__"
                 )
