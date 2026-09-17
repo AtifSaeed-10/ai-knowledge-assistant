@@ -86,16 +86,52 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
   }, [lastMessage, lastUser?.content]);
   const followUpDocumentIds = citedDocumentIds(lastMessage?.citations);
 
+  const focusScroller = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a, input, textarea, [contenteditable='true']")) return;
+    scrollRef.current?.focus({ preventScroll: true });
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.currentTarget !== event.target) return;
+    const element = scrollRef.current;
+    if (!element) return;
+    const page = Math.max(160, element.clientHeight * 0.85);
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      element.scrollBy({ top: 64 });
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      element.scrollBy({ top: -64 });
+    } else if (event.key === "PageDown" || event.key === " ") {
+      event.preventDefault();
+      element.scrollBy({ top: page });
+    } else if (event.key === "PageUp") {
+      event.preventDefault();
+      element.scrollBy({ top: -page });
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      element.scrollTo({ top: 0 });
+    } else if (event.key === "End") {
+      event.preventDefault();
+      element.scrollTo({ top: element.scrollHeight });
+    }
+  };
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={scrollRef}
+        tabIndex={0}
         onScroll={handleScroll}
+        onMouseDown={focusScroller}
+        onKeyDown={handleKeyDown}
         aria-busy={isLoading}
-        className="scroll-area min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
+        aria-label="Conversation"
+        className="scroll-area min-h-0 flex-1 overflow-y-auto outline-none"
       >
         {messages.length === 0 ? (
-          <div className="flex h-full min-h-0 items-center justify-center">
+          <div className="mx-auto flex min-h-full w-full max-w-3xl items-center justify-center px-4 py-8 sm:px-6">
             <div className="w-full max-w-md animate-rise-in py-6">
               <h2 className="text-h2 font-semibold tracking-[-0.02em] text-ink">
                 Ask this document anything
@@ -112,7 +148,7 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
                     type="button"
                     disabled={!canAsk}
                     onClick={() => onSelectPrompt(label)}
-                    className="group flex w-full items-center gap-2.5 rounded-xl border border-transparent bg-surface px-3 py-2.5 text-left shadow-card transition-colors hover:border-line hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-surface"
+                    className="group flex w-full items-center gap-2.5 rounded-xl bg-surface px-3 py-2.5 text-left shadow-card transition-colors hover:bg-olive-soft disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-surface"
                   >
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-olive-soft text-olive">
                       <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -125,7 +161,7 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6">
             {messages.map((message, index) => (
               <MessageBubble
                 key={message.id}
@@ -153,7 +189,7 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
                           followUpDocumentIds.length > 0 ? followUpDocumentIds : undefined
                         )
                       }
-                      className="max-w-full rounded-full border border-line bg-surface px-3 py-1.5 text-left text-meta font-medium text-ink-muted transition-colors hover:border-sage hover:bg-olive-soft hover:text-ink"
+                      className="max-w-full rounded-full bg-olive-soft px-3 py-1.5 text-left text-meta font-medium text-ink-muted transition-colors hover:bg-sage-soft hover:text-ink"
                     >
                       {label}
                     </button>
@@ -171,7 +207,7 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
             setIsPinned(true);
             scrollToBottom("smooth");
           }}
-          className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-meta font-medium text-ink shadow-raised transition-colors hover:bg-surface-muted"
+          className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-meta font-medium text-ink shadow-raised transition-colors hover:bg-olive-soft"
         >
           <ArrowDown className="h-3.5 w-3.5" />
           Jump to latest

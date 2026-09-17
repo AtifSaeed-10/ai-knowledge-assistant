@@ -69,7 +69,7 @@ export function ModeSwitcher() {
             className={cn(
               "rounded-md px-2.5 py-1.5 text-meta font-medium tracking-[-0.01em] transition-colors sm:px-2 sm:py-1",
               isActive
-                ? "bg-paper text-ink"
+                ? "bg-surface text-ink shadow-card"
                 : "text-ink-muted hover:text-ink"
             )}
           >
