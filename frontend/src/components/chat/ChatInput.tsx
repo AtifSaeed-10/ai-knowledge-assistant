@@ -66,8 +66,8 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
   const placeholder = !canAsk
     ? blockedReason || "Waiting for a ready document…"
     : isLoading
-      ? "Type your next question while this one answers…"
-      : "Ask a question about your documents…";
+      ? "Reading your documents…"
+      : "Ask anything that’s in your documents…";
 
   const readyToSend = Boolean(input.trim()) && !isLoading && canSendText;
 
@@ -126,7 +126,7 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
         {commandReady
           ? "This will move the PDF — it will not search the document."
           : canAsk || socialReady
-            ? "Enter to send · Shift + Enter for a new line"
+            ? "Enter to send · Shift + Enter for a new line · Answers cite the page they came from"
             : blockedReason || "Waiting for a ready document"}
       </p>
     </div>

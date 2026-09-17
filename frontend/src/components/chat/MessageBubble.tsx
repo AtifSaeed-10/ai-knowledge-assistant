@@ -79,7 +79,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
         {isStreaming && (
           <span className="inline-flex items-center gap-1.5 text-meta font-medium text-ink-muted">
             <span className="h-1.5 w-1.5 rounded-full bg-sage" aria-hidden />
-            {isSearching ? "Searching your documents" : "Writing"}
+            {isSearching ? "Reading across your documents" : "Writing"}
           </span>
         )}
 

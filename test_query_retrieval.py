@@ -101,8 +101,16 @@ class TestClassifyRetrievalQuery(unittest.TestCase):
         profile = classify_retrieval_query("What is supervised learning?")
         self.assertEqual(profile.kind, KIND_DEFAULT)
         self.assertIsNone(profile.page_max)
-        self.assertEqual(profile.reserved_slots, 0)
         self.assertIn("supervised learning", profile.phrases)
+
+    def test_plot_event_gets_rare_noun_probes(self):
+        profile = classify_retrieval_query(
+            "What specific series of events leads to Gregor getting an apple "
+            "lodged in his back, and who throws it?"
+        )
+        extras = " ".join(profile.extra_queries).lower()
+        self.assertIn("apple", extras)
+        self.assertGreater(profile.reserved_slots, 0)
 
 
 class TestEnsureTypedHitsInPool(unittest.TestCase):

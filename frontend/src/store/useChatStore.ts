@@ -24,9 +24,9 @@ import { shouldSkipConversationReload } from '@/lib/workspace/workspaceView';
 const ACTIVE_CONVERSATION_PREFIX = 'docusage_active_conversation';
 const MODE_KEY = 'docusage_product_mode';
 /** Retrieval + first token should not sit on "Searching" forever. */
-const ANSWER_TIMEOUT_MS = 75_000;
+const ANSWER_TIMEOUT_MS = 180_000;
 const ANSWER_TIMEOUT_MESSAGE =
-  'This search didn’t finish. Try again — the question is still here.';
+  'This is taking longer than usual. Try again — your question is still here.';
 const EMPTY_ANSWER_MESSAGE = 'No answer came back. Try again.';
 const FOCUSED_MODE_HINT =
   'Answered from that PDF. Switch the scope above to Focused to keep every question on it.';
@@ -303,6 +303,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         scopedIds,
         conversationId,
         (token) => {
+          armStreamTimeout();
           set((state) => ({
             messages: state.messages.map((msg) =>
               msg.id === assistantId ? { ...msg, content: msg.content + token } : msg
@@ -310,6 +311,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           }));
         },
         (citations) => {
+          armStreamTimeout();
           patchMessage(assistantId, { citations });
           if (
             shouldFollowAnswerCitation({
@@ -326,7 +328,10 @@ export const useChatStore = create<ChatState>((set, get) => {
         signal,
         regenerate,
         // The server corrected the streamed draft; show the saved answer instead.
-        (finalAnswer) => patchMessage(assistantId, { content: finalAnswer })
+        (finalAnswer) => {
+          armStreamTimeout();
+          patchMessage(assistantId, { content: finalAnswer });
+        }
       );
 
       const latest = get().messages.find((msg) => msg.id === assistantId);

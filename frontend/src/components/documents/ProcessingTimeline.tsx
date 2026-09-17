@@ -11,7 +11,7 @@ const STAGES = [
   {
     id: 'preparing',
     label: 'Preparing document',
-    detail: 'Scanned books can take several minutes to read',
+    detail: 'Reading pages — scanned books can take several minutes',
     statuses: ['uploaded', 'extracting'] as DocumentStatus[],
   },
   {
@@ -53,7 +53,8 @@ export function ProcessingTimeline({ status }: ProcessingTimelineProps) {
       <div className="flex items-start gap-2.5 py-1">
         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" strokeWidth={2} />
         <p className="text-ui leading-relaxed text-ink-muted">
-          Processing stopped before this document became searchable.
+          Processing stopped before this document became searchable. Re-upload
+          the PDF if it is a scan — reading pages can take several minutes.
         </p>
       </div>
     );

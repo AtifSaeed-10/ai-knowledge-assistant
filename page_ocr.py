@@ -14,14 +14,18 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 OCR_ENGINE = "tesseract-ocr"
-OCR_DPI = 200
-OCR_MAX_EDGE = 1600
+OCR_DPI = 220
+OCR_RETRY_DPI = 280
+OCR_BLANK_DPI = 72
+OCR_MAX_EDGE = 1800
 OCR_MIN_CHARS = 40
-OCR_TIMEOUT_SEC = 8
-OCR_MAX_PAGES = 150
+OCR_TIMEOUT_SEC = 15
+OCR_MAX_PAGES = 200
 OCR_GIVE_UP_AFTER = 8
 OCR_LANG = "eng"
-OCR_TESSERACT_CONFIG = "--oem 1 --psm 6"
+OCR_TESSERACT_CONFIGS = ("--oem 1 --psm 4", "--oem 1 --psm 6")
+OCR_RETRY_CONFIG = "--oem 1 --psm 3"
+OCR_MIN_LETTER_RATIO = 0.35
 
 PageDict = dict[str, Any]
 
@@ -54,6 +58,17 @@ def _strip_char_count(text: str | None) -> int:
     return len((text or "").strip())
 
 
+def text_is_searchable(text: str | None, *, min_chars: int = OCR_MIN_CHARS) -> bool:
+    """True when native extract already has enough real letters to search."""
+    stripped = (text or "").strip()
+    if len(stripped) < min_chars:
+        return False
+    letters = sum(ch.isalpha() for ch in stripped)
+    if letters < max(12, min_chars // 2):
+        return False
+    return (letters / len(stripped)) >= OCR_MIN_LETTER_RATIO
+
+
 def page_has_images(page: Any) -> bool:
     try:
         return bool(page.get_images())
@@ -72,15 +87,15 @@ def pages_needing_ocr(
     needed: list[int] = []
     for page_number in range(1, max(total_pages, 0) + 1):
         existing = by_page.get(page_number) or {}
-        if _strip_char_count(existing.get("text")) < min_chars:
+        if not text_is_searchable(existing.get("text"), min_chars=min_chars):
             needed.append(page_number)
     return needed
 
 
-def _render_page_gray(page: Any):
+def _render_page_gray(page: Any, *, dpi: int = OCR_DPI):
     import pymupdf as fitz
 
-    zoom = OCR_DPI / 72.0
+    zoom = dpi / 72.0
     width = float(page.rect.width) * zoom
     height = float(page.rect.height) * zoom
     longest = max(width, height, 1.0)
@@ -94,7 +109,24 @@ def _render_page_gray(page: Any):
     return pixmap
 
 
-def ocr_pixmap(pixmap: Any) -> str:
+def _pixmap_looks_blank(pixmap: Any, *, ink_ratio: float = 0.012) -> bool:
+    """Cheap ink check so blank digital pages skip Tesseract."""
+    samples = getattr(pixmap, "samples", None) or b""
+    if not samples:
+        return True
+    step = max(1, len(samples) // 20000)
+    checked = 0
+    dark = 0
+    for index in range(0, len(samples), step):
+        checked += 1
+        if samples[index] < 240:
+            dark += 1
+    if checked == 0:
+        return True
+    return (dark / checked) < ink_ratio
+
+
+def ocr_pixmap(pixmap: Any, *, config: str | None = None) -> str:
     import pytesseract
     from PIL import Image
 
@@ -104,11 +136,40 @@ def ocr_pixmap(pixmap: Any) -> str:
             image,
             lang=OCR_LANG,
             timeout=OCR_TIMEOUT_SEC,
-            config=OCR_TESSERACT_CONFIG,
+            config=config or OCR_TESSERACT_CONFIGS[0],
         )
     finally:
         image.close()
     return (text or "").strip()
+
+
+def ocr_page_text(page: Any) -> str:
+    """Try column layout, then uniform block, then a sharper render."""
+    best = ""
+    pixmap = None
+    try:
+        pixmap = _render_page_gray(page, dpi=OCR_DPI)
+        for config in OCR_TESSERACT_CONFIGS:
+            text = ocr_pixmap(pixmap, config=config)
+            if _strip_char_count(text) > _strip_char_count(best):
+                best = text
+            if _strip_char_count(best) >= OCR_MIN_CHARS:
+                return best
+    finally:
+        pixmap = None
+
+    retry = None
+    try:
+        retry = _render_page_gray(page, dpi=OCR_RETRY_DPI)
+        for config in (OCR_TESSERACT_CONFIGS[0], OCR_RETRY_CONFIG):
+            text = ocr_pixmap(retry, config=config)
+            if _strip_char_count(text) > _strip_char_count(best):
+                best = text
+            if _strip_char_count(best) >= OCR_MIN_CHARS:
+                return best
+    finally:
+        retry = None
+    return best
 
 
 def fill_low_text_pages_with_ocr(
@@ -164,15 +225,19 @@ def fill_low_text_pages_with_ocr(
                 continue
             page = doc.load_page(index)
             if not page_has_images(page):
-                stats["skipped_no_image"] += 1
-                continue
+                try:
+                    probe = _render_page_gray(page, dpi=OCR_BLANK_DPI)
+                    blank = _pixmap_looks_blank(probe)
+                except Exception:
+                    blank = True
+                if blank:
+                    stats["skipped_no_image"] += 1
+                    continue
 
             stats["ran"] += 1
-            pixmap = None
             text = ""
             try:
-                pixmap = _render_page_gray(page)
-                text = ocr_pixmap(pixmap)
+                text = ocr_page_text(page)
             except Exception:
                 logger.warning(
                     "page_ocr document_id=%s page=%s failed",
@@ -180,8 +245,6 @@ def fill_low_text_pages_with_ocr(
                     page_number,
                     exc_info=True,
                 )
-            finally:
-                pixmap = None
 
             existing = by_page.get(page_number) or {}
             if _strip_char_count(text) > _strip_char_count(existing.get("text")):

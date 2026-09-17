@@ -7,6 +7,7 @@ from query_rewriter import rewrite_query
 from conversation_query import analyze_turn, infer_subject_phrase
 from answer_prompt import build_answer_prompt
 from answer_planner import format_plan_for_prompt, plan_answer
+from wide_recall import lexical_probe_queries, recall_settings
 from evidence_focus import citation_allowlist, format_evidence_notes
 from modes import normalize_mode, insufficient_context_payload
 from config import (
@@ -397,35 +398,135 @@ def _merge_retrieval_results(
     return out
 
 
+def _chunks_from_ids(chunk_ids: list[str]) -> dict:
+    """Load stored chunks by id so neighboring pages can join the recall pool."""
+    empty = {"ids": [], "chunks": [], "metadata": []}
+    wanted = [item for item in chunk_ids if item]
+    if not wanted:
+        return empty
+    try:
+        payload = get_collection().get(ids=wanted, include=["documents", "metadatas"])
+    except Exception:
+        return empty
+    got_ids = payload.get("ids") or []
+    documents = payload.get("documents") or []
+    metadatas = payload.get("metadatas") or []
+    ids: list[str] = []
+    chunks: list[str] = []
+    metadata: list[dict] = []
+    for index, chunk_id in enumerate(got_ids):
+        if not chunk_id:
+            continue
+        text = documents[index] if index < len(documents) else ""
+        if not isinstance(text, str) or not text.strip():
+            continue
+        meta = metadatas[index] if index < len(metadatas) else {}
+        ids.append(chunk_id)
+        chunks.append(text)
+        metadata.append(meta if isinstance(meta, dict) else {})
+    return {"ids": ids, "chunks": chunks, "metadata": metadata}
+
+
+def _retrieval_from_hits(hits: list[dict], limit: int) -> dict:
+    """Shape BM25/dense hits like retrieve_candidates so they can merge."""
+    ids: list[str] = []
+    chunks: list[str] = []
+    metadata: list[dict] = []
+    for hit in hits[: max(0, limit)]:
+        chunk_id = str(hit.get("id") or "")
+        text = hit.get("text") or ""
+        if not chunk_id or not isinstance(text, str) or not text.strip():
+            continue
+        ids.append(chunk_id)
+        chunks.append(text)
+        meta = hit.get("metadata") or {}
+        metadata.append(meta if isinstance(meta, dict) else {})
+    n = len(ids)
+    return {
+        "ids": ids,
+        "chunks": chunks,
+        "metadata": metadata,
+        "distances": [None] * n,
+        "relevances": [0] * n,
+        "citation_eligible": [True] * n,
+        "recall_fallbacks": [False] * n,
+    }
+
+
+def _attach_neighbor_chunks(result: dict, limit: int) -> dict:
+    if limit <= 0 or not result.get("ids"):
+        return result
+    have = set(result.get("ids") or [])
+    wanted: list[str] = []
+    # Later/supplemental chunks first so a rare event still gets its page neighbors.
+    for meta in reversed(list(result.get("metadata") or [])):
+        meta = meta or {}
+        for key in ("next_chunk_id", "prev_chunk_id"):
+            neighbor = str(meta.get(key) or "").strip()
+            if neighbor and neighbor not in have and neighbor not in wanted:
+                wanted.append(neighbor)
+            if len(wanted) >= limit:
+                break
+        if len(wanted) >= limit:
+            break
+    fetched = _chunks_from_ids(wanted)
+    if not fetched["ids"]:
+        return result
+    n = len(fetched["ids"])
+    supplemental = {
+        "ids": fetched["ids"],
+        "chunks": fetched["chunks"],
+        "metadata": fetched["metadata"],
+        "distances": [None] * n,
+        "relevances": [0] * n,
+        "citation_eligible": [True] * n,
+        "recall_fallbacks": [False] * n,
+    }
+    return _merge_retrieval_results(result, supplemental, max_extra=limit)
+
+
 def _retrieve_with_plan(
     search_query: str,
     plan,
     document_ids=None,
 ) -> dict:
-    """Primary hybrid retrieval, optionally augmented by plan sub-queries."""
-    primary = retrieve_candidates(search_query, document_ids)
+    """Primary hybrid retrieval, plus cheap lexical probes and page neighbors."""
+    wide = bool(getattr(plan, "wide_recall", False) or getattr(plan, "multi_topic", False))
+    settings = recall_settings(wide=wide)
+    primary = retrieve_candidates(
+        search_query,
+        document_ids,
+        candidate_k=settings["candidate_k"],
+        rerank_candidate_k=settings["rerank_candidate_k"],
+        top_k=settings["top_k"],
+    )
     sub_queries = [
         item.strip()
         for item in (getattr(plan, "sub_queries", None) or [])
         if item and item.strip()
     ]
-    if not sub_queries:
-        return primary
-
-    normalized_primary = search_query.strip().lower()
+    probe_keys = {
+        item.strip().lower() for item in lexical_probe_queries(search_query)
+    }
     result = primary
-    extras_budget = 6 if getattr(plan, "multi_topic", False) else 2
-    per_query_k = 4 if getattr(plan, "multi_topic", False) else 2
-    for sub_query in sub_queries[:4]:
-        if extras_budget <= 0:
+    extras_budget = settings["extras_budget"]
+    per_query_k = settings["per_query_k"]
+    normalized_primary = search_query.strip().lower()
+    hybrid_left = 2
+    for sub_query in sub_queries[:6]:
+        if extras_budget <= 0 or hybrid_left <= 0:
             break
-        if sub_query.strip().lower() == normalized_primary:
+        key = sub_query.strip().lower()
+        if key == normalized_primary or key in probe_keys:
             continue
         supplemental = retrieve_candidates(
             sub_query,
             document_ids,
             top_k=per_query_k,
+            candidate_k=settings["candidate_k"],
+            rerank_candidate_k=settings["rerank_candidate_k"],
         )
+        hybrid_left -= 1
         before = len(result.get("ids") or [])
         result = _merge_retrieval_results(
             result,
@@ -433,7 +534,29 @@ def _retrieve_with_plan(
             max_extra=extras_budget,
         )
         extras_budget -= max(0, len(result.get("ids") or []) - before)
-    return result
+
+    if extras_budget > 0:
+        for probe in lexical_probe_queries(search_query):
+            if extras_budget <= 0:
+                break
+            try:
+                hits = retrieve_bm25(
+                    probe,
+                    collection=get_collection(),
+                    document_ids=document_ids,
+                    k=per_query_k,
+                )
+            except Exception:
+                continue
+            before = len(result.get("ids") or [])
+            result = _merge_retrieval_results(
+                result,
+                _retrieval_from_hits(hits, per_query_k),
+                max_extra=extras_budget,
+            )
+            extras_budget -= max(0, len(result.get("ids") or []) - before)
+
+    return _attach_neighbor_chunks(result, settings["neighbors"])
 
 
 def ask_question(
@@ -622,6 +745,7 @@ def ask_question(
         subject=subject,
         answer_plan=plan_text,
         spelling_note=spelling_note,
+        wide_recall=bool(getattr(answer_plan_obj, "wide_recall", False)),
     )
 
 

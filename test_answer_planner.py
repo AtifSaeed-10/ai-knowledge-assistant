@@ -101,5 +101,30 @@ class TestConjunctiveTopics(unittest.TestCase):
         self.assertIn("multi-topic", format_plan_for_prompt(plan).lower())
 
 
+class TestWideNarrativePlans(unittest.TestCase):
+    def test_apple_event_plans_lexical_probes(self):
+        question = (
+            "What specific series of events leads to Gregor getting an apple "
+            "lodged in his back, and who throws it?"
+        )
+        analysis = analyze_turn(question, None)
+        plan = plan_answer(question, question, analysis)
+        self.assertTrue(plan.wide_recall)
+        joined = " ".join(plan.sub_queries).lower()
+        self.assertIn("apple", joined)
+        text = format_plan_for_prompt(plan).lower()
+        self.assertIn("later", text)
+
+    def test_grete_arc_is_wide_summary(self):
+        question = (
+            "Summarize the changing attitudes of Gregor's sister, Grete, "
+            "toward him from Chapter 1 to his death at the end."
+        )
+        analysis = analyze_turn(question, None)
+        self.assertEqual(analysis.intent, INTENT_SUMMARY)
+        plan = plan_answer(question, question, analysis)
+        self.assertTrue(plan.wide_recall)
+
+
 if __name__ == "__main__":
     unittest.main()

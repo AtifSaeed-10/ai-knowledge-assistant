@@ -17,6 +17,7 @@ from page_ocr import (
     fill_low_text_pages_with_ocr,
     pages_needing_ocr,
     reset_tesseract_cache,
+    text_is_searchable,
 )
 from pdf_extraction import PRIMARY_ENGINE, extract_pages_from_pdf
 from evidence_mapping import SOURCE_NONE, infer_content_type, map_chunk_to_evidence
@@ -87,6 +88,12 @@ class TestPagesNeedingOcr(unittest.TestCase):
         self.assertEqual(pages_needing_ocr(pages, 2), [2])
         self.assertEqual(pages_needing_ocr(pages, 1), [])
 
+    def test_garbage_letters_are_not_searchable(self):
+        garbage = "~~~~ #### **** ~~~~ #### **** ~~~~ #### ****"
+        self.assertFalse(text_is_searchable(garbage))
+        pages = [{"page_number": 1, "text": garbage}]
+        self.assertEqual(pages_needing_ocr(pages, 1), [1])
+
 
 class TestFillLowTextPages(unittest.TestCase):
     def setUp(self):
@@ -115,7 +122,7 @@ class TestFillLowTextPages(unittest.TestCase):
         _write_image_pdf(path)
         ocr_text = "Supervised learning trains models from labeled examples."
         with patch("page_ocr.tesseract_available", return_value=True), patch(
-            "page_ocr.ocr_pixmap", return_value=ocr_text
+            "page_ocr.ocr_page_text", return_value=ocr_text
         ):
             pages, stats = fill_low_text_pages_with_ocr(path, [], 1)
         self.assertEqual(stats["filled"], 1)
@@ -139,7 +146,7 @@ class TestFillLowTextPages(unittest.TestCase):
         path = os.path.join(self.tmp, "covers.pdf")
         _write_image_pdf(path, page_count=OCR_GIVE_UP_AFTER + 3)
         with patch("page_ocr.tesseract_available", return_value=True), patch(
-            "page_ocr.ocr_pixmap", return_value=""
+            "page_ocr.ocr_page_text", return_value=""
         ) as mock_ocr:
             pages, stats = fill_low_text_pages_with_ocr(path, [], OCR_GIVE_UP_AFTER + 3)
         self.assertTrue(stats["stopped_early"])
@@ -152,14 +159,14 @@ class TestFillLowTextPages(unittest.TestCase):
         _write_image_pdf(path, page_count=page_count)
         calls = {"n": 0}
 
-        def fake_ocr(_pixmap):
+        def fake_ocr(_page):
             calls["n"] += 1
             if calls["n"] <= OCR_GIVE_UP_AFTER:
                 return ""
             return "Gregor Samsa woke from uneasy dreams."
 
         with patch("page_ocr.tesseract_available", return_value=True), patch(
-            "page_ocr.ocr_pixmap", side_effect=fake_ocr
+            "page_ocr.ocr_page_text", side_effect=fake_ocr
         ):
             pages, stats = fill_low_text_pages_with_ocr(path, [], page_count)
         self.assertFalse(stats["stopped_early"])
@@ -176,6 +183,19 @@ class TestFillLowTextPages(unittest.TestCase):
         mock_ocr.assert_not_called()
         self.assertFalse(stats["tried"])
         self.assertEqual(pages, [])
+
+    def test_flattened_scan_without_image_xobject_still_ocr(self):
+        path = os.path.join(self.tmp, "flat.pdf")
+        _write_blank_pdf(path)
+        ocr_text = "One apple lodged in his back after his father threw it."
+        with patch("page_ocr.tesseract_available", return_value=True), patch(
+            "page_ocr.page_has_images", return_value=False
+        ), patch("page_ocr._pixmap_looks_blank", return_value=False), patch(
+            "page_ocr.ocr_page_text", return_value=ocr_text
+        ):
+            pages, stats = fill_low_text_pages_with_ocr(path, [], 1)
+        self.assertEqual(stats["filled"], 1)
+        self.assertEqual(pages[0]["text"], ocr_text)
 
 
 class TestExtractPagesOcr(unittest.TestCase):

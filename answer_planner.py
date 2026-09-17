@@ -23,6 +23,7 @@ from conversation_query import (
     TurnAnalysis,
     split_conjunctive_topics,
 )
+from wide_recall import is_wide_recall_question, lexical_probe_queries
 
 # Soft word budget for briefing-style answers.
 BRIEFING_WORD_MIN = 120
@@ -44,6 +45,7 @@ class AnswerPlan:
     sub_queries: list[str] = field(default_factory=list)
     briefing: bool = False
     multi_topic: bool = False
+    wide_recall: bool = False
 
 
 _COMPONENT_LIBRARY: dict[str, list[AnswerComponent]] = {
@@ -127,7 +129,10 @@ def plan_answer(
     if len(topics) >= 2:
         sub_queries.extend(topics)
         briefing = True
-    if briefing and subject and len(topics) < 2:
+    probes = lexical_probe_queries(question)
+    sub_queries.extend(probes)
+    wide = is_wide_recall_question(question, intent) or len(topics) >= 2
+    if briefing and subject and len(topics) < 2 and not wide:
         role_queries = {
             "definition": f"What is {subject}?",
             "types": f"What are the types of {subject}?",
@@ -152,27 +157,45 @@ def plan_answer(
             continue
         seen.add(key)
         unique.append(item)
-    sub_queries = unique[:4]
+    sub_queries = unique[:6]
 
     return AnswerPlan(
         components=components,
         sub_queries=sub_queries,
-        briefing=briefing,
+        briefing=briefing or wide,
         multi_topic=len(topics) >= 2,
+        wide_recall=wide,
     )
 
 
 def format_plan_for_prompt(plan: AnswerPlan) -> str:
-    if not plan.components:
+    if not plan.components and not plan.wide_recall:
         return ""
+
+    word_max = 360 if plan.wide_recall else BRIEFING_WORD_MAX
+    marker_max = 8 if plan.wide_recall else MAX_CITATION_MARKERS
 
     lines = [
         "Answer plan (internal; do not mention this section to the user):",
-        f"Target length: {BRIEFING_WORD_MIN}-{BRIEFING_WORD_MAX} words total.",
-        f"Use at most {MAX_CITATION_MARKERS} citation markers.",
+        f"Target length: {BRIEFING_WORD_MIN}-{word_max} words total.",
+        f"Use at most {marker_max} citation markers.",
     ]
 
-    if plan.briefing:
+    if plan.wide_recall:
+        lines.append(
+            "This question spans a story or a long stretch of the document. "
+            "Use every supporting passage, including later pages. Do not refuse "
+            "a later event because an earlier scene is also in context. If the "
+            "passages only cover part of the arc, answer that part fully and "
+            "say what is missing."
+        )
+        lines.append(
+            "Write a clear narrative briefing: short paragraphs or bullets. "
+            "Cover the opening, the turning point, and the later outcome when "
+            "those parts are in the passages. Do not pad with a textbook template."
+        )
+
+    if plan.briefing and not plan.wide_recall:
         lines.extend(
             [
                 "Format as a concise research briefing:",
@@ -182,12 +205,12 @@ def format_plan_for_prompt(plan: AnswerPlan) -> str:
                 "Omit any section with no supporting passage. Do not repeat the same idea twice.",
             ]
         )
-        if plan.multi_topic:
-            lines.append(
-                "This is a multi-topic request. Answer each topic from the passages "
-                "that support it. If a topic has no supporting passage, say so for "
-                "that topic only — do not drop the other topics."
-            )
+    if plan.multi_topic:
+        lines.append(
+            "This is a multi-topic request. Answer each topic from the passages "
+            "that support it. If a topic has no supporting passage, say so for "
+            "that topic only — do not drop the other topics."
+        )
 
     for component in plan.components:
         req = "required" if component.required else "include only if supported"

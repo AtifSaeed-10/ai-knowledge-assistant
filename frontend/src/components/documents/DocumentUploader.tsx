@@ -164,7 +164,7 @@ export const DocumentUploader = ({ onComplete }: DocumentUploaderProps = {}) => 
             ? usage?.tier === "guest"
               ? `The trial covers ${usage?.pdfsLimit ?? 1} document — signing in is free`
               : "Delete a document to free a slot"
-            : `PDF only · up to ${maxFileMb} MB each · multiple files supported`}
+            : `PDF only · scanned pages are read automatically · up to ${maxFileMb} MB each`}
         </span>
       </button>
 
