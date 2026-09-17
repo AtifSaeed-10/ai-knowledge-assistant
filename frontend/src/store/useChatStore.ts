@@ -167,7 +167,7 @@ interface ChatState {
   renameConversation: (id: string, title: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
 
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (content: string, options?: { documentIds?: string[] }) => Promise<void>;
   stopGeneration: () => void;
   retryLastAnswer: () => Promise<void>;
 }
@@ -600,7 +600,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
     },
 
-    sendMessage: async (raw: string) => {
+    sendMessage: async (raw: string, options?: { documentIds?: string[] }) => {
       const content = raw.trim();
       if (!content || get().isLoading) return;
 
@@ -651,12 +651,18 @@ export const useChatStore = create<ChatState>((set, get) => {
         return;
       }
 
-      const decision = decideQuestionScope(
-        content,
-        get().productMode,
-        get().messages,
-        get().pinnedDocumentId
-      );
+      const hintedIds = [
+        ...new Set((options?.documentIds || []).map((id) => id.trim()).filter(Boolean)),
+      ];
+      const decision =
+        hintedIds.length > 0 && get().productMode !== "super_focused"
+          ? { kind: "ready" as const, documentIds: hintedIds, reason: "cited" }
+          : decideQuestionScope(
+              content,
+              get().productMode,
+              get().messages,
+              get().pinnedDocumentId
+            );
 
       if (decision.kind === 'clarify') {
         const stamp = Date.now();

@@ -5,13 +5,17 @@ import { ArrowDown, ArrowRight, BookOpen, ListTree, ScrollText } from "lucide-re
 import { Message } from "@/types";
 import { MessageBubble } from "./MessageBubble";
 import { useChatScope } from "@/hooks/useChatScope";
+import {
+  citedDocumentIds,
+  suggestFollowUps,
+} from "@/lib/workspace/followUpSuggestions";
 
 const PIN_THRESHOLD_PX = 96;
 
 interface MessageListProps {
   messages: Message[];
   isLoading: boolean;
-  onSelectPrompt: (prompt: string) => void;
+  onSelectPrompt: (prompt: string, documentIds?: string[]) => void;
 }
 
 const FOCUSED_PROMPTS = [
@@ -24,12 +28,6 @@ const LIBRARY_PROMPTS = [
   { label: "Summarize the key findings", icon: ScrollText },
   { label: "Walk me through the key events", icon: ListTree },
   { label: "Explain the main ideas in simple terms", icon: BookOpen },
-];
-
-const FOLLOW_UPS = [
-  "What happens after that?",
-  "Explain that in simpler words",
-  "What are the key points?",
 ];
 
 const REFUSAL_RE =
@@ -80,6 +78,13 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
   }, [isLoading, lastMessage]);
 
   const prompts = mode === "super_focused" && selectedDocument ? FOCUSED_PROMPTS : LIBRARY_PROMPTS;
+
+  const lastUser = [...messages].reverse().find((item) => item.role === "user");
+  const followUps = useMemo(() => {
+    if (lastMessage?.role !== "assistant" || !lastMessage.content?.trim()) return [];
+    return suggestFollowUps(lastUser?.content || "", lastMessage.content);
+  }, [lastMessage, lastUser?.content]);
+  const followUpDocumentIds = citedDocumentIds(lastMessage?.citations);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -135,14 +140,20 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
               lastMessage.status === "ok" &&
               Boolean(lastMessage.content?.trim()) &&
               !REFUSAL_RE.test(lastMessage.content) &&
-              canAsk && (
+              canAsk &&
+              followUps.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pt-1">
-                  {FOLLOW_UPS.map((label) => (
+                  {followUps.map((label) => (
                     <button
                       key={label}
                       type="button"
-                      onClick={() => onSelectPrompt(label)}
-                      className="rounded-full border border-line bg-surface px-3 py-1.5 text-meta font-medium text-ink-muted transition-colors hover:border-sage hover:bg-olive-soft hover:text-ink"
+                      onClick={() =>
+                        onSelectPrompt(
+                          label,
+                          followUpDocumentIds.length > 0 ? followUpDocumentIds : undefined
+                        )
+                      }
+                      className="max-w-full rounded-full border border-line bg-surface px-3 py-1.5 text-left text-meta font-medium text-ink-muted transition-colors hover:border-sage hover:bg-olive-soft hover:text-ink"
                     >
                       {label}
                     </button>
