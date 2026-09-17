@@ -239,7 +239,7 @@ def _env_float(name: str, default: float) -> float:
 LLM_PRIMARY_PROVIDER = _normalize_provider_name(
     os.getenv("LLM_PRIMARY_PROVIDER")
     or os.getenv("PRIMARY_LLM")
-    or "groq"
+    or "gemini"
 )
 
 _fallback_raw = os.getenv("LLM_FALLBACK_PROVIDERS")
@@ -248,7 +248,7 @@ if _fallback_raw is None:
     if legacy:
         LLM_FALLBACK_PROVIDERS = _csv_providers(legacy)
     else:
-        LLM_FALLBACK_PROVIDERS = ["gemini", "cerebras", "openrouter", "mistral"]
+        LLM_FALLBACK_PROVIDERS = ["groq", "cerebras", "openrouter", "mistral"]
 else:
     LLM_FALLBACK_PROVIDERS = _csv_providers(_fallback_raw)
 
