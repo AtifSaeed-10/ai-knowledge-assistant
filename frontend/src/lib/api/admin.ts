@@ -7,11 +7,16 @@ export interface AdminPerson {
   email: string | null;
   created_at: string | null;
   last_seen_at: string | null;
+  country: string | null;
+  region: string | null;
   pdfs: number;
   failed_pdfs: number;
   ready_pdfs: number;
   questions: number;
   chats: number;
+  errors: number;
+  unanswered: number;
+  answers: number;
   migrated_to: string | null;
 }
 
@@ -78,10 +83,35 @@ export interface AdminAzure {
   as_of: string;
 }
 
+export interface AdminPlace {
+  country: string | null;
+  people: number;
+  questions: number;
+  errors: number;
+}
+
+export interface AdminUnansweredKind {
+  category: string;
+  label: string;
+  count: number;
+  last_at: string | null;
+  last_question: string | null;
+}
+
+export interface AdminProvider {
+  provider: string;
+  count: number;
+  last_at: string | null;
+}
+
 export interface AdminOverview {
   generated_at: string;
   totals: AdminTotals;
   people: AdminPerson[];
+  places: AdminPlace[];
+  unanswered: AdminUnansweredKind[];
+  providers: AdminProvider[];
+  answers: AdminEvent[];
   uploads: AdminUpload[];
   events: AdminEvent[];
   groq: AdminGroq;

@@ -28,6 +28,8 @@ def _row_to_user(row) -> dict[str, Any] | None:
         "email": row[2],
         "created_at": row[3],
         "last_seen_at": row[4] if len(row) > 4 else None,
+        "country": row[5] if len(row) > 5 else None,
+        "region": row[6] if len(row) > 6 else None,
     }
 
 
@@ -49,7 +51,7 @@ def upsert_user(auth_subject: str, email: str | None = None) -> dict[str, Any]:
     connection.commit()
     cursor.execute(
         """
-        SELECT user_id, auth_subject, email, created_at, last_seen_at
+        SELECT user_id, auth_subject, email, created_at, last_seen_at, country, region
         FROM users
         WHERE auth_subject = ?
         """,
@@ -65,7 +67,7 @@ def get_user(user_id: str) -> dict[str, Any] | None:
     cursor = connection.cursor()
     cursor.execute(
         """
-        SELECT user_id, auth_subject, email, created_at, last_seen_at
+        SELECT user_id, auth_subject, email, created_at, last_seen_at, country, region
         FROM users
         WHERE user_id = ?
         """,
@@ -81,7 +83,7 @@ def list_users() -> list[dict[str, Any]]:
     cursor = connection.cursor()
     cursor.execute(
         """
-        SELECT user_id, auth_subject, email, created_at, last_seen_at
+        SELECT user_id, auth_subject, email, created_at, last_seen_at, country, region
         FROM users
         ORDER BY last_seen_at DESC, created_at DESC
         """
@@ -94,3 +96,26 @@ def list_users() -> list[dict[str, Any]]:
         if user:
             users.append(user)
     return users
+
+
+def update_user_location(
+    user_id: str,
+    country: str | None,
+    region: str | None,
+) -> None:
+    if not user_id or (not country and not region):
+        return
+    connection = get_connection()
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        UPDATE users
+        SET
+            country = COALESCE(?, country),
+            region = COALESCE(?, region)
+        WHERE user_id = ?
+        """,
+        (country or None, region or None, user_id),
+    )
+    connection.commit()
+    connection.close()

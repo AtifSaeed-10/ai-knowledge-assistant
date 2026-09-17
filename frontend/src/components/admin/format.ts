@@ -49,7 +49,44 @@ export function kindLabel(kind: string | null | undefined): string {
       return "Quota";
     case "http":
       return "Request";
+    case "unanswered":
+      return "Couldn't answer";
+    case "answer":
+      return "Answered";
     default:
       return statusLabel(kind);
+  }
+}
+
+export function providerLabel(provider: string | null | undefined): string {
+  const key = (provider || "").trim().toLowerCase();
+  switch (key) {
+    case "groq":
+      return "Groq";
+    case "gemini":
+      return "Gemini";
+    case "cerebras":
+      return "Cerebras";
+    case "openrouter":
+      return "OpenRouter";
+    case "mistral":
+      return "Mistral";
+    case "ollama":
+      return "Ollama";
+    case "":
+    case "unknown":
+      return "Unknown";
+    default:
+      return statusLabel(provider);
+  }
+}
+
+export function countryName(code: string | null | undefined): string {
+  const value = (code || "").trim().toUpperCase();
+  if (!value) return "Unknown";
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(value) || value;
+  } catch {
+    return value;
   }
 }

@@ -179,6 +179,7 @@ def init_db():
 
     _add_missing_columns(cursor)
     _run_sql_migrations(cursor)
+    _add_missing_columns(cursor)
 
     connection.commit()
 
@@ -192,6 +193,10 @@ _OWNERSHIP_COLUMNS = (
     ("documents", "index_updated_at", "TEXT"),
     ("conversations", "owner_type", "TEXT"),
     ("conversations", "owner_id", "TEXT"),
+    ("users", "country", "TEXT"),
+    ("users", "region", "TEXT"),
+    ("guest_sessions", "country", "TEXT"),
+    ("guest_sessions", "region", "TEXT"),
 )
 
 

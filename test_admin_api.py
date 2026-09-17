@@ -106,6 +106,71 @@ class TestAdminOverview(AdminApiTestCase):
         self.assertTrue(any(event["category"] == "rate_limit" for event in body["events"]))
         self.assertIn("credit_start_usd", body["azure"])
         self.assertIn("remaining_requests", body["groq"])
+        self.assertIn("providers", body)
+        self.assertIn("answers", body)
+        self.assertIn("places", body)
+        self.assertIn("unanswered", body)
+
+
+class TestAdminOperatorExtras(AdminApiTestCase):
+    def test_operator_usage_is_unlimited_and_private_to_admin(self):
+        admin_usage = self.admin.get("/me/usage").json()
+        other_usage = self.other.get("/me/usage").json()
+        guest_usage = self.guest.get("/me/usage").json()
+
+        self.assertTrue(admin_usage["unlimited"])
+        self.assertEqual(admin_usage["pdfs_limit"], 0)
+        self.assertEqual(admin_usage["questions_limit"], 0)
+        self.assertFalse(other_usage["unlimited"])
+        self.assertFalse(guest_usage["unlimited"])
+        self.assertNotIn("providers", other_usage)
+        self.assertNotIn("places", other_usage)
+        self.assertNotIn("country", other_usage)
+
+    def test_overview_shows_which_llm_answered_and_hides_answers_from_issues(self):
+        from app_platform.auth.context import user_context
+        from app_platform.ops.events import record_answer, record_unanswered
+        from answer_prompt import MISSING_IN_DOCUMENT_PHRASE
+
+        self.other.get("/me/usage")
+        actor = user_context(_user_id(self.other), "other@example.com")
+        record_answer(
+            question="What happens to Gregor?",
+            actor=actor,
+            provider="groq",
+            model="llama-3.3-70b",
+        )
+        record_unanswered(
+            question="Who is the president?",
+            answer=MISSING_IN_DOCUMENT_PHRASE,
+            actor=actor,
+            provider="gemini",
+            model="gemini-2.0-flash",
+        )
+
+        body = self.admin.get("/admin/overview").json()
+        providers = {row["provider"]: row["count"] for row in body["providers"]}
+        self.assertGreaterEqual(providers.get("groq", 0), 1)
+        self.assertTrue(any(item["provider"] == "groq" for item in body["answers"]))
+        self.assertFalse(any(event["kind"] == "answer" for event in body["events"]))
+        self.assertTrue(
+            any(item["category"] == "not_in_document" for item in body["unanswered"])
+        )
+        person = next(row for row in body["people"] if row["email"] == "other@example.com")
+        self.assertGreaterEqual(person["answers"], 1)
+        self.assertGreaterEqual(person["unanswered"], 1)
+
+    def test_overview_records_country_from_cdn_headers(self):
+        self.other.get(
+            "/me/usage",
+            headers={"CF-IPCountry": "PK", "CF-IPCity": "Lahore"},
+        )
+        body = self.admin.get("/admin/overview").json()
+        person = next(row for row in body["people"] if row["email"] == "other@example.com")
+        self.assertEqual(person["country"], "PK")
+        self.assertEqual(person["region"], "Lahore")
+        self.assertTrue(any(place["country"] == "PK" for place in body["places"]))
+        self.assertNotIn("country", self.other.get("/me/usage").json())
 
 
 def _user_id(client) -> str:
