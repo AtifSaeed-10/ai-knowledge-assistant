@@ -13,6 +13,7 @@ export interface UsageSnapshot {
   maxPdfMb: number;
   authAvailable: boolean;
   admin: boolean;
+  unlimited: boolean;
 }
 
 interface UsageApiResponse {
@@ -25,6 +26,7 @@ interface UsageApiResponse {
   max_pdf_mb?: number;
   auth_available?: boolean;
   admin?: boolean;
+  unlimited?: boolean;
 }
 
 export interface AuthUser {
@@ -60,6 +62,7 @@ function mapUsage(data: UsageApiResponse): UsageSnapshot {
     maxPdfMb: data.max_pdf_mb ?? 25,
     authAvailable: data.auth_available === true,
     admin: data.admin === true,
+    unlimited: data.unlimited === true || data.admin === true,
   };
 }
 
@@ -106,12 +109,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
 /** True when the actor has no questions left in the current window. */
 export function questionsExhausted(usage: UsageSnapshot | null): boolean {
-  if (!usage || usage.questionsLimit <= 0) return false;
+  if (!usage || usage.unlimited || usage.admin || usage.questionsLimit <= 0) return false;
   return usage.questionsUsed >= usage.questionsLimit;
 }
 
 /** True when the actor cannot upload another document. */
 export function uploadsExhausted(usage: UsageSnapshot | null): boolean {
-  if (!usage || usage.pdfsLimit <= 0) return false;
+  if (!usage || usage.unlimited || usage.admin || usage.pdfsLimit <= 0) return false;
   return usage.pdfsUsed >= usage.pdfsLimit;
 }

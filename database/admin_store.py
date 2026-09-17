@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from database.db import get_connection
-from database.event_store import count_events_since, list_recent_events
+from database.event_store import (
+    count_events_since,
+    event_counts_by_actor,
+    list_recent_events,
+    unanswered_breakdown,
+)
 from database.guest_store import list_guest_sessions
 from database.provider_store import get_snapshot
 from database.usage_store import current_period
@@ -82,11 +87,13 @@ def list_people() -> list[dict[str, Any]]:
     chats = _counts_by_owner("conversations")
     monthly = _questions_this_month()
     emails = _user_email_map()
+    events = event_counts_by_actor()
     people: list[dict[str, Any]] = []
 
     for user in list_users():
         key = ("user", user["user_id"])
         stat = docs.get(key, {"pdfs": 0, "failed": 0, "ready": 0})
+        hit = events.get(key, {"errors": 0, "unanswered": 0, "answers": 0})
         people.append(
             {
                 "actor_type": "user",
@@ -95,11 +102,16 @@ def list_people() -> list[dict[str, Any]]:
                 "email": user.get("email"),
                 "created_at": user.get("created_at"),
                 "last_seen_at": user.get("last_seen_at"),
+                "country": user.get("country"),
+                "region": user.get("region"),
                 "pdfs": stat["pdfs"],
                 "failed_pdfs": stat["failed"],
                 "ready_pdfs": stat["ready"],
                 "questions": monthly.get(user["user_id"], 0),
                 "chats": chats.get(key, 0),
+                "errors": hit.get("errors", 0),
+                "unanswered": hit.get("unanswered", 0),
+                "answers": hit.get("answers", 0),
                 "migrated_to": None,
             }
         )
@@ -107,6 +119,7 @@ def list_people() -> list[dict[str, Any]]:
     for guest in list_guest_sessions():
         key = ("guest", guest["session_id"])
         stat = docs.get(key, {"pdfs": 0, "failed": 0, "ready": 0})
+        hit = events.get(key, {"errors": 0, "unanswered": 0, "answers": 0})
         migrated_id = guest.get("migrated_to_user_id")
         people.append(
             {
@@ -116,11 +129,16 @@ def list_people() -> list[dict[str, Any]]:
                 "email": None,
                 "created_at": guest.get("created_at"),
                 "last_seen_at": guest.get("last_seen_at"),
+                "country": guest.get("country"),
+                "region": guest.get("region"),
                 "pdfs": stat["pdfs"],
                 "failed_pdfs": stat["failed"],
                 "ready_pdfs": stat["ready"],
                 "questions": int(guest.get("question_count") or 0),
                 "chats": chats.get(key, 0),
+                "errors": hit.get("errors", 0),
+                "unanswered": hit.get("unanswered", 0),
+                "answers": hit.get("answers", 0),
                 "migrated_to": emails.get(migrated_id) if migrated_id else None,
             }
         )
@@ -177,10 +195,10 @@ def list_uploads(limit: int = 100) -> list[dict[str, Any]]:
     return uploads
 
 
-def list_labeled_events(limit: int = 50) -> list[dict[str, Any]]:
+def _label_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     emails = _user_email_map()
-    events = []
-    for event in list_recent_events(limit):
+    labeled = []
+    for event in events:
         actor_type = event.get("actor_type")
         actor_id = event.get("actor_id")
         if actor_type == "user":
@@ -189,8 +207,16 @@ def list_labeled_events(limit: int = 50) -> list[dict[str, Any]]:
             label = _guest_label(actor_id)
         else:
             label = "System"
-        events.append({**event, "actor_label": label})
-    return events
+        labeled.append({**event, "actor_label": label})
+    return labeled
+
+
+def list_labeled_events(limit: int = 50) -> list[dict[str, Any]]:
+    return _label_events(list_recent_events(limit))
+
+
+def list_labeled_answers(limit: int = 40) -> list[dict[str, Any]]:
+    return _label_events(list_recent_events(limit, kinds=("answer",)))
 
 
 def totals(*, events_since: str, today: str) -> dict[str, int]:
@@ -227,6 +253,29 @@ def totals(*, events_since: str, today: str) -> dict[str, int]:
         "questions_today": questions_today,
         "errors_recent": count_events_since(events_since),
     }
+
+
+def places_summary(people: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for person in people:
+        code = str(person.get("country") or "").strip().upper() or "UN"
+        row = grouped.get(code)
+        if row is None:
+            row = {
+                "country": None if code == "UN" else code,
+                "people": 0,
+                "questions": 0,
+                "errors": 0,
+            }
+            grouped[code] = row
+        row["people"] += 1
+        row["questions"] += int(person.get("questions") or 0)
+        row["errors"] += int(person.get("errors") or 0)
+    ranked = sorted(
+        grouped.values(),
+        key=lambda item: (-int(item["people"]), str(item["country"] or "ZZ")),
+    )
+    return ranked
 
 
 def groq_status() -> dict[str, Any]:

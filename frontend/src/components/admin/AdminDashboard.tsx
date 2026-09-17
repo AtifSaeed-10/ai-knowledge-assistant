@@ -6,7 +6,10 @@ import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   Cloud,
+  Cpu,
   FileText,
+  Globe,
+  HelpCircle,
   LayoutDashboard,
   MessageSquare,
   RefreshCw,
@@ -17,7 +20,16 @@ import {
   Zap,
 } from "lucide-react";
 
-import { adminApi, type AdminOverview, type AdminPerson } from "@/lib/api/admin";
+import {
+  adminApi,
+  type AdminEvent,
+  type AdminOverview,
+  type AdminPerson,
+  type AdminPlace,
+  type AdminProvider,
+  type AdminUnansweredKind,
+  type AdminUpload,
+} from "@/lib/api/admin";
 import {
   AuthRequiredError,
   ForbiddenError,
@@ -32,10 +44,12 @@ import { UserMenu } from "@/components/auth/UserMenu";
 import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/lib/cn";
 import {
+  countryName,
   formatMoney,
   formatNumber,
   formatWhen,
   kindLabel,
+  providerLabel,
   statusLabel,
 } from "./format";
 
@@ -148,7 +162,7 @@ export function AdminDashboard() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
+      <main className="mx-auto w-full min-w-0 max-w-6xl flex-1 overflow-x-hidden px-4 py-8 sm:px-6 sm:py-10">
         {gate === "error" && (
           <GateCard
             title="Couldn’t load operations"
@@ -192,11 +206,23 @@ function DashboardBody({
   onRefresh: () => void;
 }) {
   const needle = query.trim().toLowerCase();
+  const places = data.places ?? [];
+  const unanswered = data.unanswered ?? [];
+  const providers = data.providers ?? [];
+  const answers = data.answers ?? [];
+
   const people = useMemo(() => {
     return data.people.filter((person) => {
       if (peopleFilter !== "all" && person.actor_type !== peopleFilter) return false;
       if (!needle) return true;
-      return [person.label, person.email, person.migrated_to]
+      return [
+        person.label,
+        person.email,
+        person.migrated_to,
+        person.country,
+        person.region,
+        countryName(person.country),
+      ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle));
     });
@@ -220,6 +246,15 @@ function DashboardBody({
     );
   }, [data.events, needle]);
 
+  const filteredAnswers = useMemo(() => {
+    if (!needle) return answers;
+    return answers.filter((item) =>
+      [item.actor_label, item.provider, item.message, providerLabel(item.provider)]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(needle))
+    );
+  }, [answers, needle]);
+
   return (
     <div className="animate-rise-in">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -231,8 +266,8 @@ function DashboardBody({
             Operations
           </h1>
           <p className="mt-1.5 max-w-xl text-body text-ink-muted">
-            Everyone using DocuSage — guests and signed-in accounts — plus uploads,
-            errors, and remaining provider budget.
+            Everyone using DocuSage — guests and signed-in accounts — plus where
+            they are, which model answered, and what the app could not answer.
           </p>
         </div>
         <button
@@ -290,18 +325,45 @@ function DashboardBody({
         <AzureCard azure={data.azure} />
       </section>
 
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <section className="mt-4 grid gap-3 lg:grid-cols-3">
+        <Panel
+          title="Answers by model"
+          count={providers.length}
+          empty="No grounded answers recorded yet. After the next question, Groq, Gemini, and the other models will show up here."
+        >
+          <ProviderList providers={providers} />
+        </Panel>
+        <Panel
+          title="Where people are"
+          count={places.length}
+          empty="No country headers yet. Locations appear after traffic through Vercel or Cloudflare."
+        >
+          <PlacesList places={places} />
+        </Panel>
+        <Panel
+          title="Couldn't answer"
+          count={unanswered.length}
+          empty="No unanswered questions yet. Document refusals will group here by kind."
+        >
+          <UnansweredList items={unanswered} />
+        </Panel>
+      </section>
+
+      <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
         <label className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-icon" />
-          <span className="sr-only">Search people, uploads, and errors</span>
+          <span className="sr-only">Search people, uploads, models, and errors</span>
           <input
             value={query}
             onChange={(event) => onQuery(event.target.value)}
-            placeholder="Search people, files, or errors"
-            className="w-full rounded-xl border border-line bg-surface py-2.5 pl-9 pr-3 text-ui text-ink shadow-card outline-none placeholder:text-ink-subtle"
+            placeholder="Search people, files, models, or errors"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            className="w-full min-w-0 rounded-xl border border-line bg-surface py-3 pl-10 pr-3 text-title text-ink shadow-card outline-none placeholder:text-ink-subtle"
           />
         </label>
-        <div className="flex rounded-xl border border-line bg-surface p-1 shadow-card">
+        <div className="flex min-w-0 flex-wrap rounded-xl border border-line bg-surface p-1 shadow-card">
           {(
             [
               ["all", "Everyone"],
@@ -314,7 +376,7 @@ function DashboardBody({
               type="button"
               onClick={() => onPeopleFilter(id)}
               className={cn(
-                "rounded-lg px-3 py-1.5 text-meta font-medium transition-colors",
+                "min-h-10 flex-1 rounded-lg px-3 py-2 text-meta font-medium transition-colors sm:flex-none",
                 peopleFilter === id
                   ? "bg-olive text-white"
                   : "text-ink-muted hover:text-ink"
@@ -326,7 +388,7 @@ function DashboardBody({
         </div>
       </div>
 
-      <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]">
+      <section className="mt-4 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(16rem,0.8fr)]">
         <Panel
           title="People"
           count={people.length}
@@ -343,7 +405,14 @@ function DashboardBody({
         </Panel>
       </section>
 
-      <section className="mt-4">
+      <section className="mt-4 grid min-w-0 gap-4 xl:grid-cols-2">
+        <Panel
+          title="Recent answers"
+          count={filteredAnswers.length}
+          empty="No answers recorded yet."
+        >
+          <AnswerList answers={filteredAnswers} />
+        </Panel>
         <Panel
           title="Uploads"
           count={uploads.length}
@@ -560,7 +629,7 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
       <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
         <h2 className="text-title font-semibold text-ink">{title}</h2>
         <span className="text-meta text-ink-subtle">{count}</span>
@@ -574,86 +643,239 @@ function Panel({
   );
 }
 
+function placeLabel(person: AdminPerson): string {
+  const country = countryName(person.country);
+  if (person.region && person.country) return `${person.region}, ${country}`;
+  if (person.region) return person.region;
+  return country;
+}
+
 function PeopleTable({ people }: { people: AdminPerson[] }) {
   return (
-    <div className="scroll-area overflow-x-auto">
-      <table className="min-w-full text-left text-ui">
-        <thead className="text-label font-semibold uppercase tracking-[0.06em] text-ink-subtle">
-          <tr className="border-b border-line">
-            <th className="px-4 py-2.5 font-semibold sm:px-5">Who</th>
-            <th className="px-3 py-2.5 font-semibold">Type</th>
-            <th className="px-3 py-2.5 font-semibold">Last seen</th>
-            <th className="px-3 py-2.5 font-semibold">PDFs</th>
-            <th className="px-3 py-2.5 font-semibold">Questions</th>
-            <th className="px-4 py-2.5 font-semibold sm:px-5">Note</th>
-          </tr>
-        </thead>
-        <tbody>
-          {people.map((person) => (
-            <tr key={`${person.actor_type}:${person.actor_id}`} className="border-b border-line last:border-0">
-              <td className="px-4 py-3 sm:px-5">
-                <p className="font-medium text-ink">{person.label}</p>
-                <p className="text-meta text-ink-subtle">
-                  Joined {formatWhen(person.created_at)}
+    <>
+      <ul className="divide-y divide-line md:hidden">
+        {people.map((person) => (
+          <li key={`${person.actor_type}:${person.actor_id}`} className="px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate font-medium text-ink">{person.label}</p>
+                <p className="mt-0.5 text-meta text-ink-muted">
+                  {placeLabel(person)} · {formatWhen(person.last_seen_at)}
                 </p>
-              </td>
-              <td className="px-3 py-3">
-                <TypeBadge type={person.actor_type} />
-              </td>
-              <td className="px-3 py-3 text-ink-muted">{formatWhen(person.last_seen_at)}</td>
-              <td className="px-3 py-3 text-ink">
-                {formatNumber(person.pdfs)}
-                {person.failed_pdfs > 0 && (
-                  <span className="ml-1 text-meta text-danger">{person.failed_pdfs} failed</span>
-                )}
-              </td>
-              <td className="px-3 py-3 text-ink">{formatNumber(person.questions)}</td>
-              <td className="px-4 py-3 text-ink-muted sm:px-5">
-                {person.migrated_to ? `Moved to ${person.migrated_to}` : "—"}
-              </td>
+              </div>
+              <TypeBadge type={person.actor_type} />
+            </div>
+            <p className="mt-2 text-meta text-ink-subtle">
+              {formatNumber(person.pdfs)} PDFs · {formatNumber(person.questions)} questions
+              {person.errors > 0 ? ` · ${formatNumber(person.errors)} errors` : ""}
+              {person.unanswered > 0 ? ` · ${formatNumber(person.unanswered)} unanswered` : ""}
+            </p>
+            {person.migrated_to && (
+              <p className="mt-1 text-meta text-ink-muted">Moved to {person.migrated_to}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-x-auto md:block">
+        <table className="min-w-full text-left text-ui">
+          <thead className="text-label font-semibold uppercase tracking-[0.06em] text-ink-subtle">
+            <tr className="border-b border-line">
+              <th className="px-4 py-2.5 font-semibold sm:px-5">Who</th>
+              <th className="px-3 py-2.5 font-semibold">Place</th>
+              <th className="px-3 py-2.5 font-semibold">Last seen</th>
+              <th className="px-3 py-2.5 font-semibold">PDFs</th>
+              <th className="px-3 py-2.5 font-semibold">Questions</th>
+              <th className="px-3 py-2.5 font-semibold">Issues</th>
+              <th className="px-4 py-2.5 font-semibold sm:px-5">Note</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {people.map((person) => (
+              <tr key={`${person.actor_type}:${person.actor_id}`} className="border-b border-line last:border-0">
+                <td className="px-4 py-3 sm:px-5">
+                  <p className="font-medium text-ink">{person.label}</p>
+                  <p className="text-meta text-ink-subtle">
+                    <TypeBadge type={person.actor_type} /> · Joined {formatWhen(person.created_at)}
+                  </p>
+                </td>
+                <td className="px-3 py-3 text-ink-muted">{placeLabel(person)}</td>
+                <td className="px-3 py-3 text-ink-muted">{formatWhen(person.last_seen_at)}</td>
+                <td className="px-3 py-3 text-ink">
+                  {formatNumber(person.pdfs)}
+                  {person.failed_pdfs > 0 && (
+                    <span className="ml-1 text-meta text-danger">{person.failed_pdfs} failed</span>
+                  )}
+                </td>
+                <td className="px-3 py-3 text-ink">{formatNumber(person.questions)}</td>
+                <td className="px-3 py-3 text-ink-muted">
+                  {person.errors || person.unanswered
+                    ? `${formatNumber(person.errors)} err · ${formatNumber(person.unanswered)} unanswered`
+                    : "—"}
+                </td>
+                <td className="px-4 py-3 text-ink-muted sm:px-5">
+                  {person.migrated_to ? `Moved to ${person.migrated_to}` : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
-function UploadsTable({ uploads }: { uploads: AdminOverview["uploads"] }) {
+function UploadsTable({ uploads }: { uploads: AdminUpload[] }) {
   return (
-    <div className="scroll-area overflow-x-auto">
-      <table className="min-w-full text-left text-ui">
-        <thead className="text-label font-semibold uppercase tracking-[0.06em] text-ink-subtle">
-          <tr className="border-b border-line">
-            <th className="px-4 py-2.5 font-semibold sm:px-5">File</th>
-            <th className="px-3 py-2.5 font-semibold">Owner</th>
-            <th className="px-3 py-2.5 font-semibold">Status</th>
-            <th className="px-3 py-2.5 font-semibold">Pages</th>
-            <th className="px-4 py-2.5 font-semibold sm:px-5">When</th>
-          </tr>
-        </thead>
-        <tbody>
-          {uploads.map((item) => (
-            <tr key={item.document_id} className="border-b border-line last:border-0">
-              <td className="px-4 py-3 sm:px-5">
-                <p className="max-w-[16rem] truncate font-medium text-ink" title={item.filename}>
-                  {item.filename}
-                </p>
-                {item.index_error && (
-                  <p className="mt-0.5 max-w-sm text-meta text-danger">{item.index_error}</p>
-                )}
-              </td>
-              <td className="px-3 py-3 text-ink-muted">{item.owner_label}</td>
-              <td className="px-3 py-3">
-                <StatusBadge status={item.status} />
-              </td>
-              <td className="px-3 py-3 text-ink-muted">{item.total_pages || "—"}</td>
-              <td className="px-4 py-3 text-ink-muted sm:px-5">{formatWhen(item.uploaded_at)}</td>
+    <>
+      <ul className="divide-y divide-line md:hidden">
+        {uploads.map((item) => (
+          <li key={item.document_id} className="px-4 py-3">
+            <p className="truncate font-medium text-ink" title={item.filename}>
+              {item.filename}
+            </p>
+            <p className="mt-0.5 text-meta text-ink-muted">
+              {item.owner_label} · {statusLabel(item.status)} · {formatWhen(item.uploaded_at)}
+            </p>
+            {item.index_error && (
+              <p className="mt-1 text-meta text-danger">{item.index_error}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-x-auto md:block">
+        <table className="min-w-full text-left text-ui">
+          <thead className="text-label font-semibold uppercase tracking-[0.06em] text-ink-subtle">
+            <tr className="border-b border-line">
+              <th className="px-4 py-2.5 font-semibold sm:px-5">File</th>
+              <th className="px-3 py-2.5 font-semibold">Owner</th>
+              <th className="px-3 py-2.5 font-semibold">Status</th>
+              <th className="px-3 py-2.5 font-semibold">Pages</th>
+              <th className="px-4 py-2.5 font-semibold sm:px-5">When</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {uploads.map((item) => (
+              <tr key={item.document_id} className="border-b border-line last:border-0">
+                <td className="px-4 py-3 sm:px-5">
+                  <p className="max-w-[16rem] truncate font-medium text-ink" title={item.filename}>
+                    {item.filename}
+                  </p>
+                  {item.index_error && (
+                    <p className="mt-0.5 max-w-sm text-meta text-danger">{item.index_error}</p>
+                  )}
+                </td>
+                <td className="px-3 py-3 text-ink-muted">{item.owner_label}</td>
+                <td className="px-3 py-3">
+                  <StatusBadge status={item.status} />
+                </td>
+                <td className="px-3 py-3 text-ink-muted">{item.total_pages || "—"}</td>
+                <td className="px-4 py-3 text-ink-muted sm:px-5">{formatWhen(item.uploaded_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function ProviderList({ providers }: { providers: AdminProvider[] }) {
+  const total = providers.reduce((sum, row) => sum + row.count, 0) || 1;
+  return (
+    <ul className="divide-y divide-line">
+      {providers.map((row) => (
+        <li key={row.provider} className="px-4 py-3 sm:px-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <Cpu className="h-4 w-4 shrink-0 text-olive" />
+              <p className="truncate font-medium text-ink">{providerLabel(row.provider)}</p>
+            </div>
+            <p className="shrink-0 text-meta text-ink-muted">
+              {formatNumber(row.count)} · {formatWhen(row.last_at)}
+            </p>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-sunken">
+            <div
+              className="h-full rounded-full bg-olive"
+              style={{ width: `${Math.max(6, (row.count / total) * 100)}%` }}
+            />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function PlacesList({ places }: { places: AdminPlace[] }) {
+  return (
+    <ul className="divide-y divide-line">
+      {places.map((place) => (
+        <li key={place.country || "unknown"} className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2">
+            <Globe className="h-4 w-4 shrink-0 text-ink-icon" />
+            <div className="min-w-0">
+              <p className="truncate font-medium text-ink">{countryName(place.country)}</p>
+              <p className="text-meta text-ink-subtle">{formatNumber(place.questions)} questions</p>
+            </div>
+          </div>
+          <p className="shrink-0 text-meta text-ink-muted">
+            {formatNumber(place.people)} {place.people === 1 ? "person" : "people"}
+          </p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function UnansweredList({ items }: { items: AdminUnansweredKind[] }) {
+  return (
+    <ul className="divide-y divide-line">
+      {items.map((item) => (
+        <li key={item.category} className="px-4 py-3 sm:px-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-2">
+              <HelpCircle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+              <div className="min-w-0">
+                <p className="font-medium text-ink">{item.label}</p>
+                {item.last_question && (
+                  <p className="mt-0.5 break-anywhere text-meta text-ink-subtle">
+                    {item.last_question}
+                  </p>
+                )}
+              </div>
+            </div>
+            <p className="shrink-0 text-meta text-ink-muted">{formatNumber(item.count)}</p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AnswerList({ answers }: { answers: AdminEvent[] }) {
+  return (
+    <ul className="divide-y divide-line">
+      {answers.slice(0, 20).map((event) => (
+        <li key={event.event_id} className="px-4 py-3 sm:px-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-ui font-medium text-ink">
+                {providerLabel(event.provider)}
+              </p>
+              <p className="mt-0.5 text-meta text-ink-muted">{event.actor_label}</p>
+              {event.message && (
+                <p className="mt-1 break-anywhere text-meta leading-relaxed text-ink-subtle">
+                  {event.message}
+                </p>
+              )}
+            </div>
+            <time className="shrink-0 text-meta text-ink-subtle">
+              {formatWhen(event.created_at)}
+            </time>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -666,7 +888,7 @@ function EventList({ events }: { events: AdminOverview["events"] }) {
             <div className="min-w-0">
               <p className="text-ui font-medium text-ink">
                 {kindLabel(event.kind)}
-                {event.provider ? ` · ${event.provider}` : ""}
+                {event.provider ? ` · ${providerLabel(event.provider)}` : ""}
                 {event.category ? ` · ${event.category.replace(/_/g, " ")}` : ""}
               </p>
               <p className="mt-0.5 text-meta text-ink-muted">

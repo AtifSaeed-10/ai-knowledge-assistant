@@ -49,21 +49,27 @@ def usage_summary(context: RequestContext) -> dict[str, Any]:
     from app_platform.auth.admin import is_admin
 
     limits = limits_for(context)
+    admin = is_admin(context)
     return {
         "tier": context.tier,
         "actor_type": context.actor_type,
         "pdfs_used": pdfs_used(context),
-        "pdfs_limit": limits.max_pdfs,
+        "pdfs_limit": 0 if admin else limits.max_pdfs,
         "questions_used": questions_used(context),
-        "questions_limit": limits.max_questions,
+        "questions_limit": 0 if admin else limits.max_questions,
         "questions_window": limits.questions_window,
         "max_pdf_mb": settings.QUOTA_MAX_PDF_MB,
         "auth_available": settings.auth_enabled(),
-        "admin": is_admin(context),
+        "admin": admin,
+        "unlimited": admin,
     }
 
 
 def check_upload_allowed(context: RequestContext) -> None:
+    from app_platform.auth.admin import is_admin
+
+    if is_admin(context):
+        return
     limits = limits_for(context)
     used = pdfs_used(context)
     if used < limits.max_pdfs:
@@ -88,6 +94,10 @@ def check_upload_allowed(context: RequestContext) -> None:
 
 
 def check_question_allowed(context: RequestContext) -> None:
+    from app_platform.auth.admin import is_admin
+
+    if is_admin(context):
+        return
     limits = limits_for(context)
     used = questions_used(context)
     if used < limits.max_questions:

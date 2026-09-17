@@ -162,6 +162,42 @@ def _owner_fields(context: RequestContext) -> dict:
     return {"owner_type": context.actor_type, "owner_id": context.actor_id}
 
 
+def _note_generation(
+    *,
+    question: str,
+    answer: str,
+    context: RequestContext,
+    route: str,
+    used_llm: bool = True,
+) -> None:
+    """Operator-only: which LLM answered, and whether it could not answer."""
+    try:
+        from app_platform.ops.events import record_answer, record_unanswered
+        from llm.router import get_router
+
+        hit = get_router().last_success() if used_llm else None
+        provider = hit.provider if hit else None
+        model = hit.model if hit else None
+        unanswered = record_unanswered(
+            question=question,
+            answer=answer,
+            actor=context,
+            route=route,
+            provider=provider,
+            model=model,
+        )
+        if used_llm and not unanswered:
+            record_answer(
+                question=question,
+                actor=context,
+                route=route,
+                provider=provider,
+                model=model,
+            )
+    except Exception:
+        return
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -286,6 +322,13 @@ def chat(
                 answer,
                 **owner,
             )
+        _note_generation(
+            question=request.question,
+            answer=answer,
+            context=context,
+            route="/chat",
+            used_llm=False,
+        )
         return early
 
     # 2. Ask RAG system
@@ -322,6 +365,12 @@ def chat(
             **owner,
                 )
 
+    _note_generation(
+        question=request.question,
+        answer=answer,
+        context=context,
+        route="/chat",
+    )
 
     return response
  
@@ -501,6 +550,13 @@ def chat_stream(
                     citations=final_sources,
                     **owner,
                 )
+
+            _note_generation(
+                question=request.question,
+                answer=answer,
+                context=context,
+                route="/chat/stream",
+            )
 
             # A repaired or polished answer invalidates tokens already on screen.
             if answer != streamed_answer:

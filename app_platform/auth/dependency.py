@@ -54,4 +54,10 @@ def get_request_context(
     context = resolve_context(authorization, x_guest_session)
     request.state.actor = context
     bind_actor(context)
+    try:
+        from app_platform.ops.location import apply_request_location
+
+        apply_request_location(context, request)
+    except Exception:
+        pass
     return context

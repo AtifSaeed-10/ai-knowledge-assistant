@@ -110,3 +110,52 @@ def record_http_exception(
         message=_clip(message),
         **_actor_fields(actor),
     )
+
+
+def record_unanswered(
+    *,
+    question: str,
+    answer: str,
+    actor: RequestContext | None = None,
+    route: str = "/chat",
+    provider: str | None = None,
+    model: str | None = None,
+) -> bool:
+    """Log a blanket 'couldn't answer' so the operator can see the failure kind."""
+    from app_platform.ops.unanswered import unanswered_category, unanswered_label
+
+    category = unanswered_category(answer)
+    if not category:
+        return False
+    clipped_question = _clip(question) or unanswered_label(category)
+    record_safe(
+        kind="unanswered",
+        route=(route or "/chat")[:120],
+        provider=provider,
+        category=category,
+        message=clipped_question,
+        **_actor_fields(actor),
+    )
+    return True
+
+
+def record_answer(
+    *,
+    question: str,
+    actor: RequestContext | None = None,
+    route: str = "/chat",
+    provider: str | None = None,
+    model: str | None = None,
+) -> None:
+    """Log which LLM produced a grounded answer. Never stores the answer text."""
+    if not provider:
+        return
+    detail = " ".join(part for part in (model, _clip(question)) if part)
+    record_safe(
+        kind="answer",
+        route=(route or "/chat")[:120],
+        provider=provider,
+        category="answered",
+        message=_clip(detail),
+        **_actor_fields(actor),
+    )
