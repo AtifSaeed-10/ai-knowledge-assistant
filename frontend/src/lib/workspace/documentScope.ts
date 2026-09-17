@@ -101,6 +101,9 @@ const DOC_TYPE_WORDS = new Set([
 const MULTI_DOC_RE =
   /\b(compar(?:e|ison|ing)|versus|\bvs\.?\b|both|all (?:the )?(?:documents|pdfs|files)|every (?:document|pdf|file)|across (?:the )?(?:documents|pdfs|files)|search (?:all|everything)|entire (?:library|workspace)|and also|as well as)\b/i;
 
+const QUESTION_JOIN_RE =
+  /\s*(?:,|;|\band)\s+(?=(?:what|who|how|why|when|where|which)\b)/i;
+
 const DEICTIC_RE =
   /\b(?:this|that)\s+(?:pdf|document|file|one|outline|syllabus|handbook|course|paper|book)\b|\bthe\s+(?:pdf|document|file|outline|syllabus|handbook)(?!\s+of\b)\b|\b(?:summar(?:y|ize|ise)|explain|describe|overview).{0,24}\bthis\b|\b(?:is|ye|yeh)\s+(?:(?:wale?|wali)\s+)?(?:pdf|outline|document|file|course)\b|\b(?:iska|is ka)\b/i;
 
@@ -177,6 +180,17 @@ export function isMultiDocumentQuestion(question: string): boolean {
     /\s+(?:and\s+also|and\s+tell\s+me(?:\s+about)?|as\s+well\s+as)\s+/i
   );
   if (strong.length >= 2) return true;
+
+  const questionParts = stripped
+    .split(QUESTION_JOIN_RE)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (
+    questionParts.length >= 2 &&
+    questionParts.every((part) => distinctiveQuestionTokens(part).length >= 1)
+  ) {
+    return true;
+  }
 
   const weak = stripped.split(/\s+and\s+/i);
   if (weak.length === 2) {

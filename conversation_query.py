@@ -334,6 +334,11 @@ _STRONG_TOPIC_SPLIT_RE = re.compile(
     r"|and\s+tell\s+me(?:\s+about)?|as\s+well\s+as)\s+",
     re.I,
 )
+# "who was X and what is Y" — a new question starts after and/comma.
+_QUESTION_JOIN_RE = re.compile(
+    r"\s*(?:,|;|\band)\s+(?=(?:what|who|how|why|when|where|which)\b)",
+    re.I,
+)
 
 
 def strip_search_all_prefix(question: str) -> str:
@@ -346,6 +351,7 @@ def split_conjunctive_topics(question: str) -> list[str]:
 
     Bare “and” only splits when both sides name their own topic
     (two+ distinctive tokens). “father and son” stays one clause.
+    “who was X and what is Y” also splits — each half is its own question.
     """
     text = strip_search_all_prefix(question)
     if not text:
@@ -358,6 +364,16 @@ def split_conjunctive_topics(question: str) -> list[str]:
     ]
     if len(parts) >= 2:
         return parts[:4]
+
+    question_parts = [
+        part.strip(" ?.!")
+        for part in _QUESTION_JOIN_RE.split(text)
+        if part.strip(" ?.!")
+    ]
+    if len(question_parts) >= 2 and all(
+        distinctive_topic_tokens(part) for part in question_parts[:4]
+    ):
+        return question_parts[:4]
 
     weak = re.split(r"\s+and\s+", text, maxsplit=1, flags=re.I)
     if len(weak) == 2:
