@@ -89,6 +89,28 @@ class TestConjunctiveTopics(unittest.TestCase):
         parts = split_conjunctive_topics("the father and son conflict")
         self.assertEqual(parts, ["the father and son conflict"])
 
+    def test_two_plain_questions_joined_by_and(self):
+        parts = split_conjunctive_topics(
+            "who was Hitler's mother and what is entropy?"
+        )
+        self.assertEqual(len(parts), 2)
+        self.assertIn("mother", parts[0].lower())
+        self.assertIn("entropy", parts[1].lower())
+
+    def test_father_and_mother_stays_one_who_question(self):
+        parts = split_conjunctive_topics("who were Hitler's father and mother")
+        self.assertEqual(len(parts), 1)
+
+    def test_plain_and_question_plans_each_topic(self):
+        question = "who was Hitler's mother and what is entropy?"
+        self.assertEqual(detect_intent(question), INTENT_MIXED)
+        analysis = analyze_turn(question, None)
+        plan = plan_answer(question, question, analysis)
+        self.assertTrue(plan.multi_topic)
+        joined = " ".join(plan.sub_queries).lower()
+        self.assertIn("mother", joined)
+        self.assertIn("entropy", joined)
+
     def test_mixed_intent_and_plan_retrieves_each_topic(self):
         question = "search all documents: Hitler's early life and supervised learning"
         self.assertEqual(detect_intent(question), INTENT_MIXED)

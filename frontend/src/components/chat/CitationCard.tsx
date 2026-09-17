@@ -50,17 +50,17 @@ export const CitationCard = ({
       aria-label={`Open source ${index ?? ""} from ${documentName}, ${pageLabel}`}
       title={`${documentName} · ${pageLabel}`}
       className={cn(
-        "group relative w-full rounded-xl border bg-surface py-3 pl-3 pr-7 text-left transition-colors sm:py-2.5",
+        "group relative min-w-0 w-full overflow-hidden rounded-lg border bg-surface py-1.5 pl-2 pr-6 text-left transition-colors",
         isActive
           ? "border-sage ring-1 ring-sage"
           : "border-line hover:border-sage hover:bg-surface-muted"
       )}
     >
-      <div className="flex items-start gap-2.5">
+      <div className="flex min-w-0 items-start gap-1.5">
         {typeof index === "number" && (
           <span
             className={cn(
-              "mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-label font-semibold tabular-nums",
+              "mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-semibold tabular-nums leading-none",
               isActive ? "bg-olive-dark text-white" : "bg-olive text-white"
             )}
           >
@@ -69,15 +69,15 @@ export const CitationCard = ({
         )}
 
         <span className="min-w-0 flex-1">
-          <span className="inline-flex flex-wrap items-center gap-1">
-            <span className="inline-flex rounded bg-surface-sunken px-1.5 py-0.5 text-meta font-medium tabular-nums text-ink-muted">
+          <span className="inline-flex max-w-full flex-wrap items-center gap-1">
+            <span className="inline-flex rounded bg-surface-sunken px-1 py-px text-label font-medium tabular-nums text-ink-muted">
               {citation.pageNumber ? `p. ${citation.pageNumber}` : "page n/a"}
             </span>
 
             {statusLabel && (
               <span
                 className={cn(
-                  "inline-flex rounded px-1.5 py-0.5 text-meta font-medium",
+                  "inline-flex rounded px-1 py-px text-label font-medium",
                   presentation === "invalid_quote" || presentation === "missing_metadata"
                     ? "bg-warn-soft text-warn"
                     : "bg-surface-sunken text-ink-muted"
@@ -89,7 +89,7 @@ export const CitationCard = ({
           </span>
 
           {preview && (
-            <span className="mt-1.5 line-clamp-3 block text-meta leading-relaxed text-ink-muted">
+            <span className="mt-0.5 line-clamp-2 block text-label leading-snug text-ink-muted">
               “{preview}”
             </span>
           )}
@@ -99,7 +99,7 @@ export const CitationCard = ({
       <ChevronRight
         aria-hidden
         className={cn(
-          "absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 transition-colors",
+          "absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 transition-colors",
           isActive ? "text-olive" : "text-ink-icon group-hover:text-olive"
         )}
       />

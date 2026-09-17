@@ -18,7 +18,7 @@ export const SourceList = ({ citations }: { citations?: Citation[] }) => {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex items-center gap-1.5 rounded-md px-2 py-2 text-meta font-medium text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink sm:py-1"
+        className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1.5 text-meta font-medium text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink sm:py-1"
       >
         {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         Sources
@@ -26,7 +26,7 @@ export const SourceList = ({ citations }: { citations?: Citation[] }) => {
       </button>
 
       {open && (
-        <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+        <div className="mt-1.5 grid min-w-0 grid-cols-1 gap-1.5 sm:grid-cols-2">
           {citations.map((citation, index) => (
             <CitationCard
               key={citation.id || `${citation.evidenceId}-${index}`}

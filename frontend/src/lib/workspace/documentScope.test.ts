@@ -121,6 +121,15 @@ describe("resolveDocumentScope", () => {
     expect(
       decide("tell me about hitler early life and also tell me supervised learning")
     ).toEqual({ kind: "ready", documentIds: ["outline", "hitler"], reason: "multi" });
+    expect(decide("who was Hitler's mother and what is entropy?")).toEqual({
+      kind: "ready",
+      documentIds: ["outline", "hitler"],
+      reason: "multi",
+    });
+    expect(isMultiDocumentQuestion("who was Hitler's mother and what is entropy?")).toBe(
+      true
+    );
+    expect(isMultiDocumentQuestion("who were Hitler's father and mother")).toBe(false);
   });
 
   it("reads a single last-cited file and ignores mixed citations", () => {
