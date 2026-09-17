@@ -367,6 +367,7 @@ export function shouldRememberScopePin(decision: ScopeDecision): boolean {
     decision.kind === "ready" &&
     decision.documentIds.length === 1 &&
     decision.reason !== "multi" &&
-    decision.reason !== "all"
+    decision.reason !== "all" &&
+    decision.reason !== "cited"
   );
 }

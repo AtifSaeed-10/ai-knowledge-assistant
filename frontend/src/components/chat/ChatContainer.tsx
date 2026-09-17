@@ -43,8 +43,8 @@ export function ChatContainer() {
   const showPreparing =
     messages.length === 0 && readyDocuments.length === 0 && documents.length > 0;
 
-  const handleSend = (content: string) => {
-    void sendMessage(content);
+  const handleSend = (content: string, documentIds?: string[]) => {
+    void sendMessage(content, documentIds ? { documentIds } : undefined);
   };
 
   return (
