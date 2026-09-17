@@ -2,21 +2,25 @@ import { create } from 'zustand';
 import { Document, DocumentStatus } from '@/types';
 import { documentsApi } from '@/lib/api/documents';
 import { QuotaExceededError, toUserMessage } from '@/lib/api/client';
+import {
+  activityKey,
+  shouldMarkProcessingStalled,
+} from '@/lib/documents/processingStall';
 import { useAuthStore } from './useAuthStore';
 import { usePdfPanelStore } from './usePdfPanelStore';
 import { notify } from './useToastStore';
 
-/** Poll cadence, and the point at which a silent backend is treated as a failure. */
+/** Poll cadence. Long scans OCR for many minutes; do not treat that as a hang. */
 const POLL_INTERVAL_MS = 1500;
 const SLOW_POLL_AFTER_MS = 30_000;
 const SLOW_POLL_INTERVAL_MS = 4000;
-const STALL_TIMEOUT_MS = 120_000;
 const MAX_CONSECUTIVE_ERRORS = 4;
 
 interface PollRecord {
   timer: ReturnType<typeof setTimeout> | null;
   startedAt: number;
   lastChangeAt: number;
+  lastActivity: string;
   lastStatus: DocumentStatus;
   errorCount: number;
 }
@@ -73,6 +77,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
       timer: null,
       startedAt: now,
       lastChangeAt: now,
+      lastActivity: activityKey(current || {}),
       lastStatus: current?.status ?? 'uploaded',
       errorCount: 0,
     };
@@ -87,15 +92,21 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
 
         record.errorCount = 0;
 
+        const nextActivity = activityKey(updated);
+        if (nextActivity !== record.lastActivity) {
+          record.lastActivity = nextActivity;
+          record.lastChangeAt = Date.now();
+        }
+
         if (updated.status !== record.lastStatus) {
           record.lastStatus = updated.status;
-          record.lastChangeAt = Date.now();
         }
 
         patchDocument(documentId, {
           status: updated.status,
           totalPages: updated.totalPages,
           totalChunks: updated.totalChunks,
+          indexUpdatedAt: updated.indexUpdatedAt,
           error: updated.status === 'failed' ? updated.error : undefined,
         });
 
@@ -112,10 +123,16 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
           return;
         }
 
-        if (Date.now() - record.lastChangeAt > STALL_TIMEOUT_MS) {
+        if (
+          shouldMarkProcessingStalled({
+            lastChangeAt: record.lastChangeAt,
+            now: Date.now(),
+            serverStatus: updated.status,
+          })
+        ) {
           markFailed(
             documentId,
-            'Processing stopped responding. The file may be scanned, empty or password protected.'
+            'This scan is taking too long. Leave the tab open and press Check again in a few minutes — processing may still finish on the server.'
           );
           return;
         }
@@ -254,14 +271,30 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
       }
     },
 
-    /** Clears the failed state and resumes watching the server. */
+    /** Asks the server again. A scan can finish after the UI gave up. */
     retryProcessing: (id: string) => {
       const doc = get().documents.find((item) => item.id === id);
       if (!doc) return;
 
       stopPolling(id);
-      patchDocument(id, { status: 'uploaded', error: undefined });
-      startPolling(id);
+      void (async () => {
+        try {
+          const updated = await documentsApi.getDocument(id);
+          patchDocument(id, {
+            status: updated.status,
+            totalPages: updated.totalPages,
+            totalChunks: updated.totalChunks,
+            indexUpdatedAt: updated.indexUpdatedAt,
+            error: updated.status === 'failed' ? updated.error : undefined,
+          });
+          if (updated.status === 'ready' || updated.status === 'failed') {
+            return;
+          }
+        } catch {
+          patchDocument(id, { status: 'uploaded', error: undefined });
+        }
+        startPolling(id);
+      })();
     },
   };
 });

@@ -11,7 +11,7 @@ const STAGES = [
   {
     id: 'preparing',
     label: 'Preparing document',
-    detail: 'Reading text; scans take a little longer',
+    detail: 'Scanned books can take several minutes to read',
     statuses: ['uploaded', 'extracting'] as DocumentStatus[],
   },
   {

@@ -9,6 +9,7 @@ interface ApiDocument {
   total_pages?: number;
   total_chunks?: number;
   index_error?: string | null;
+  index_updated_at?: string | null;
 }
 
 interface UploadApiResponse {
@@ -25,6 +26,7 @@ function mapApiDocumentToDocument(doc: ApiDocument): Document {
     uploadedAt: new Date(doc.upload_time),
     totalPages: doc.total_pages,
     totalChunks: doc.total_chunks,
+    indexUpdatedAt: doc.index_updated_at || undefined,
     error:
       doc.status === 'failed' && doc.index_error
         ? doc.index_error

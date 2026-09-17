@@ -89,6 +89,7 @@ def document_to_dict(document):
         "index_error": document[6] if len(document) > 6 else None,
         "owner_type": document[7] if len(document) > 7 else None,
         "owner_id": document[8] if len(document) > 8 else None,
+        "index_updated_at": document[9] if len(document) > 9 else None,
     }
 
 
@@ -379,6 +380,24 @@ def update_document_index_error(
         (message, document_id),
     )
 
+    connection.commit()
+    connection.close()
+
+
+def touch_document_index(document_id: str) -> None:
+    """Heartbeat so the UI knows a long extract (OCR) is still alive."""
+    if not document_id:
+        return
+    connection = get_connection()
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        UPDATE documents
+        SET index_updated_at = ?
+        WHERE document_id = ?
+        """,
+        (datetime.now().isoformat(), document_id),
+    )
     connection.commit()
     connection.close()
 
