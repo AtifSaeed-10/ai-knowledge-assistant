@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, FileText, PanelLeft, PanelLeftClose, Plus, X } from "lucide-react";
+import { CheckCircle2, FileText, PanelLeftClose, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { Logo, LogoMark } from "@/components/ui/Logo";
 import { Dialog } from "@/components/ui/Dialog";
@@ -123,13 +123,19 @@ export function Sidebar({ isOpen, onClose, forceExpanded = false }: SidebarProps
           )}
         >
           {isCompact ? (
-            <Link
-              href="/"
-              aria-label="DocuSage home"
-              className="inline-flex h-10 items-center rounded-md sm:h-8"
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              aria-label="Open sidebar"
+              aria-expanded={false}
+              className="logo-expand group/expand relative hidden h-11 w-11 items-center justify-center rounded-2xl lg:flex"
             >
-              <LogoMark className="h-7 w-7" />
-            </Link>
+              <span aria-hidden className="absolute -inset-y-5 -left-2 -right-6" />
+              <LogoMark decorative className="relative h-7 w-7 transition-transform duration-300 ease-out group-hover/expand:scale-[1.06] group-focus-visible/expand:scale-[1.06]" />
+              <span className="pointer-events-none absolute left-[calc(100%+12px)] top-1/2 z-50 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md bg-ink px-2 py-1 text-label font-medium tracking-[-0.01em] text-paper opacity-0 shadow-raised transition-all duration-200 ease-out group-hover/expand:translate-x-0 group-hover/expand:opacity-100 group-focus-visible/expand:translate-x-0 group-focus-visible/expand:opacity-100">
+                Open sidebar
+              </span>
+            </button>
           ) : (
             <Link
               href="/"
@@ -163,18 +169,6 @@ export function Sidebar({ isOpen, onClose, forceExpanded = false }: SidebarProps
         </div>
 
         <div className="shrink-0 space-y-1.5 px-3 py-3">
-          {isCompact && (
-            <button
-              type="button"
-              onClick={toggleCollapsed}
-              aria-label="Expand sidebar"
-              title="Expand sidebar"
-              className="hidden h-9 w-full items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-sunken hover:text-olive lg:flex"
-            >
-              <PanelLeft size={18} />
-            </button>
-          )}
-
           <button
             type="button"
             onClick={() => setIsUploadOpen(true)}

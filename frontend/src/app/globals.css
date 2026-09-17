@@ -5,27 +5,28 @@
 @layer base {
   /* The paper palette. Tailwind reads these through rgb(var(--token)). */
   :root {
-    --color-paper: 246 247 244;
+    /* Moss paper: light enough to read as day, never a blank white page. */
+    --color-paper: 238 242 232;
 
-    --color-surface: 255 255 255;
-    --color-surface-muted: 251 251 250;
-    --color-surface-sunken: 241 243 239;
+    --color-surface: 249 251 245;
+    --color-surface-muted: 227 234 218;
+    --color-surface-sunken: 221 230 210;
 
-    --color-line: 235 239 234;
-    --color-line-strong: 220 226 217;
+    --color-line: 210 221 198;
+    --color-line-strong: 190 205 176;
 
     --color-ink: 28 36 31;
     --color-ink-soft: 42 50 46;
-    --color-ink-muted: 91 104 88;
+    --color-ink-muted: 84 98 80;
     --color-ink-subtle: 99 112 95;
-    --color-ink-icon: 124 136 119;
+    --color-ink-icon: 118 132 112;
 
     --color-olive: 74 93 35;
     --color-olive-dark: 62 78 29;
-    --color-olive-soft: 239 241 236;
+    --color-olive-soft: 224 233 212;
 
     --color-sage: 135 171 114;
-    --color-sage-soft: 197 212 184;
+    --color-sage-soft: 186 205 168;
 
     --color-danger: 180 35 24;
     --color-danger-dark: 145 32 24;
@@ -37,12 +38,13 @@
     --color-warn-line: 234 223 192;
 
     --color-scrim: 28 36 31;
+    --canvas-glow: 176 196 150;
 
     --focus-ring: #4a5d23;
-    --scrollbar-thumb: #dce2d9;
-    --scrollbar-thumb-hover: #cbd3c7;
-    --skeleton-base: #eff1ec;
-    --skeleton-shine: #f7f8f5;
+    --scrollbar-thumb: #c5d0b8;
+    --scrollbar-thumb-hover: #aebca0;
+    --skeleton-base: #e4ecda;
+    --skeleton-shine: #f4f7ef;
   }
 
   /* Night palette: the same paper design at low luminance, so contrast
@@ -81,6 +83,7 @@
     --color-warn-line: 74 64 31;
 
     --color-scrim: 5 7 4;
+    --canvas-glow: 0 0 0;
 
     --focus-ring: #9cc186;
     --scrollbar-thumb: #3a4231;
@@ -165,6 +168,37 @@
     );
     background-size: 200% 100%;
     @apply animate-shimmer rounded;
+  }
+
+  /* Chat canvas: a quiet olive wash instead of a blank field. */
+  .workspace-canvas {
+    background-color: rgb(var(--color-paper));
+    background-image: radial-gradient(
+      ellipse 90% 42% at 50% -8%,
+      rgb(var(--canvas-glow) / 0.32),
+      transparent 68%
+    );
+  }
+
+  .dark .workspace-canvas {
+    background-image: none;
+  }
+
+  /* Collapsed rail: the mark is quiet until the pointer is near it. */
+  .logo-expand {
+    background: transparent;
+    transition:
+      box-shadow 280ms ease,
+      background-color 280ms ease;
+  }
+
+  .logo-expand:hover,
+  .logo-expand:focus-visible {
+    background: rgb(var(--color-olive) / 0.12);
+    box-shadow:
+      0 0 0 1px rgb(var(--color-sage) / 0.5),
+      0 0 14px rgb(var(--color-sage) / 0.45),
+      0 0 28px rgb(var(--color-olive) / 0.28);
   }
 }
 

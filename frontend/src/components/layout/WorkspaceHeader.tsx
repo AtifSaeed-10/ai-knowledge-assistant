@@ -41,7 +41,7 @@ export function WorkspaceHeader({ onOpenSidebar }: WorkspaceHeaderProps) {
   };
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-2 bg-paper px-2 sm:h-16 sm:gap-3 sm:px-6">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-2 px-3 sm:h-16 sm:gap-3 sm:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2.5">
         <button
           type="button"

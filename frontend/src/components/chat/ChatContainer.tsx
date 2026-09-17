@@ -50,9 +50,9 @@ export function ChatContainer() {
   return (
     <div
       data-tour="chat"
-      className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-paper"
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
     >
-      <div className="flex min-h-0 flex-1 flex-col bg-paper">
+      <div className="flex min-h-0 flex-1 flex-col">
         {isSwitching ? (
           <TranscriptSkeleton />
         ) : conversationError ? (
@@ -86,14 +86,20 @@ export function ChatContainer() {
         )}
       </div>
 
-      <div className="shrink-0 bg-paper px-2.5 py-2.5 sm:px-4 sm:py-3">
-        <ScopeBar />
-        <ChatInput
-          onSend={handleSend}
-          isLoading={isLoading}
-          canAsk={canAsk}
-          blockedReason={blockedReason}
+      <div className="relative shrink-0">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 -top-10 h-10 bg-gradient-to-t from-paper to-transparent"
         />
+        <div className="mx-auto w-full max-w-3xl px-4 pb-3 pt-1 sm:px-6">
+          <ScopeBar />
+          <ChatInput
+            onSend={handleSend}
+            isLoading={isLoading}
+            canAsk={canAsk}
+            blockedReason={blockedReason}
+          />
+        </div>
       </div>
 
       <CitationDrawer />

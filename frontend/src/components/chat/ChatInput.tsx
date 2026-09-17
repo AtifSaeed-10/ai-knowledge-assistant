@@ -75,9 +75,9 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
     <div>
       <div
         className={cn(
-          "flex items-end gap-2 rounded-2xl bg-surface-sunken p-1.5 pl-3.5 transition-colors",
+          "flex items-end gap-2 rounded-2xl bg-surface p-1.5 pl-3.5 shadow-card transition-shadow",
           canSendText
-            ? "focus-within:bg-surface"
+            ? "focus-within:shadow-raised"
             : "opacity-80"
         )}
       >
