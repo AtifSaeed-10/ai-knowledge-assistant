@@ -39,6 +39,31 @@ AGENTIC_MODE_ENABLED = os.getenv(
     "false"
 ).strip().lower() in {"1", "true", "yes", "on"}
 
+# Web fallback: documents first, optional second pass when retrieval is empty.
+# The user toggle is still required on every chat request.
+WEB_FALLBACK_ENABLED = os.getenv(
+    "WEB_FALLBACK_ENABLED",
+    "true"
+).strip().lower() in {"1", "true", "yes", "on"}
+
+# auto = Tavily if TAVILY_API_KEY is set, else Brave if BRAVE_SEARCH_API_KEY
+# is set, else mock preview hits.
+WEB_SEARCH_PROVIDER = os.getenv("WEB_SEARCH_PROVIDER", "auto").strip().lower()
+
+WEB_MAX_SOURCES = int(os.getenv("WEB_MAX_SOURCES", "5"))
+WEB_MIN_TRUSTED_HITS = int(os.getenv("WEB_MIN_TRUSTED_HITS", "2"))
+WEB_SEARCH_RESULT_COUNT = int(os.getenv("WEB_SEARCH_RESULT_COUNT", "10"))
+WEB_SEARCH_TIMEOUT = float(os.getenv("WEB_SEARCH_TIMEOUT", "12"))
+WEB_INCLUDE_DOMAIN_LIMIT = int(os.getenv("WEB_INCLUDE_DOMAIN_LIMIT", "80"))
+WEB_SEARCH_RESTRICT_DOMAINS = os.getenv(
+    "WEB_SEARCH_RESTRICT_DOMAINS",
+    "false",
+).strip().lower() in {"1", "true", "yes", "on"}
+WEB_DOMAINS_PATH = os.getenv("WEB_DOMAINS_PATH", "").strip()
+
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY") or ""
+BRAVE_SEARCH_API_KEY = os.getenv("BRAVE_SEARCH_API_KEY") or os.getenv("BRAVE_API_KEY") or ""
+
 TOP_K = int(
     os.getenv("TOP_K", 5)
 )
@@ -239,7 +264,7 @@ def _env_float(name: str, default: float) -> float:
 LLM_PRIMARY_PROVIDER = _normalize_provider_name(
     os.getenv("LLM_PRIMARY_PROVIDER")
     or os.getenv("PRIMARY_LLM")
-    or "gemini"
+    or "groq"
 )
 
 _fallback_raw = os.getenv("LLM_FALLBACK_PROVIDERS")
@@ -248,7 +273,7 @@ if _fallback_raw is None:
     if legacy:
         LLM_FALLBACK_PROVIDERS = _csv_providers(legacy)
     else:
-        LLM_FALLBACK_PROVIDERS = ["groq", "cerebras", "openrouter", "mistral"]
+        LLM_FALLBACK_PROVIDERS = ["gemini", "cerebras", "openrouter", "mistral"]
 else:
     LLM_FALLBACK_PROVIDERS = _csv_providers(_fallback_raw)
 

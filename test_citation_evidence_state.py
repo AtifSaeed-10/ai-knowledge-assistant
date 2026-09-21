@@ -102,6 +102,11 @@ class TestVisibleSourcePolicy(unittest.TestCase):
                 "I couldn't find that in the provided document."
             )
         )
+        self.assertTrue(
+            looks_like_evidence_refusal(
+                "I couldn\u2019t find that in the provided document."
+            )
+        )
         sources = [
             {
                 "evidence_id": "E1",

@@ -28,4 +28,11 @@ export interface Citation {
   contentType?: string | null;
   evidenceState?: string | null;
   citationEligible?: boolean | null;
+  kind?: "pdf" | "web";
+  url?: string | null;
+  domain?: string | null;
+  title?: string | null;
+  preview?: boolean | null;
+  provider?: string | null;
+  tier?: string | null;
 }

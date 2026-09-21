@@ -6,6 +6,20 @@ export const API_CONFIG = {
   useMock: process.env.NEXT_PUBLIC_USE_MOCK === 'true',
 };
 
+if (process.env.NODE_ENV === 'development') {
+  try {
+    const host = new URL(API_CONFIG.baseUrl).hostname;
+    if (host !== 'localhost' && host !== '127.0.0.1') {
+      console.warn(
+        `DocuSage is calling ${API_CONFIG.baseUrl}, not your local backend. ` +
+          'Set NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 in frontend/.env.local and restart npm run dev.'
+      );
+    }
+  } catch {
+    /* ignore invalid URL */
+  }
+}
+
 /** Which allowance ran out, so the UI can explain the right next step. */
 export type QuotaResource = 'pdfs' | 'questions';
 

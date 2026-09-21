@@ -582,6 +582,8 @@ def ask_question(
             "answer": small_talk_answer(small_talk),
             "sources": [],
             "prompt": None,
+            "search_query": question,
+            "question": question,
         }
 
     product_mode = normalize_mode(mode)
@@ -757,26 +759,56 @@ def ask_question(
     # Generate Answer (optional)
     # ------------------------
 
+    prepared = {
+        "answer": "",
+        "sources": sources,
+        "prompt": prompt,
+        "recall_candidates": recall_candidates,
+        "analysis": analysis,
+        "search_query": search_query,
+        "question": question,
+    }
     if not generate:
         # Streaming callers generate once via generate_response_stream(prompt).
-        return {
-            "answer": "",
-            "sources": sources,
-            "prompt": prompt,
-            "recall_candidates": recall_candidates,
-            "analysis": analysis,
-        }
+        return prepared
+    return complete_generation(question, prepared)
+
+
+def complete_generation(
+    question: str,
+    prepared: dict,
+    *,
+    skip_repair: bool = False,
+) -> dict:
+    """
+    Run the document LLM on a retrieve-only ask_question result.
+
+    skip_repair: Web-on coverage miss. Keep the model's gap note so trusted-site
+    fill can run; anti-refusal repair would replace it with a related excerpt.
+    """
+    prompt = prepared.get("prompt")
+    sources = list(prepared.get("sources") or [])
+    recall_candidates = prepared.get("recall_candidates")
+    analysis = prepared.get("analysis")
+    if not prompt:
+        return prepared
 
     answer = resolve_answer(generate_response(prompt), sources)
-    answer, _grounding = verify_and_repair_refusal(
-        answer,
-        question=question,
-        prompt=prompt,
-        sources=sources,
-        recall_candidates=recall_candidates,
-        analysis=analysis,
-        generate_fn=generate_response,
-    )
+    if skip_repair:
+        print(
+            "Grounding: skipped repair; document pages miss the ask",
+            flush=True,
+        )
+    else:
+        answer, _grounding = verify_and_repair_refusal(
+            answer,
+            question=question,
+            prompt=prompt,
+            sources=sources,
+            recall_candidates=recall_candidates,
+            analysis=analysis,
+            generate_fn=generate_response,
+        )
     answer, sources = finalize_answer_citations(
         answer,
         sources,
@@ -787,11 +819,12 @@ def ask_question(
         answer,
         recall_candidates=recall_candidates,
     )
-
     return {
+        **prepared,
         "answer": answer,
         "sources": sources,
-        "prompt": prompt
+        "prompt": prompt,
+        "recall_candidates": recall_candidates,
     }
 
 

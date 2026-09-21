@@ -10,6 +10,8 @@ export interface UsageSnapshot {
   questionsUsed: number;
   questionsLimit: number;
   questionsWindow: 'trial' | 'month';
+  webQuestionsUsed: number;
+  webQuestionsLimit: number;
   maxPdfMb: number;
   authAvailable: boolean;
   admin: boolean;
@@ -23,6 +25,8 @@ interface UsageApiResponse {
   questions_used?: number;
   questions_limit?: number;
   questions_window?: string;
+  web_questions_used?: number;
+  web_questions_limit?: number;
   max_pdf_mb?: number;
   auth_available?: boolean;
   admin?: boolean;
@@ -59,6 +63,8 @@ function mapUsage(data: UsageApiResponse): UsageSnapshot {
     questionsUsed: data.questions_used ?? 0,
     questionsLimit: data.questions_limit ?? 0,
     questionsWindow: data.questions_window === 'month' ? 'month' : 'trial',
+    webQuestionsUsed: data.web_questions_used ?? 0,
+    webQuestionsLimit: data.web_questions_limit ?? 0,
     maxPdfMb: data.max_pdf_mb ?? 25,
     authAvailable: data.auth_available === true,
     admin: data.admin === true,

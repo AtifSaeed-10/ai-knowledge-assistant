@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Citation } from "@/types";
 import { CitationCard } from "./CitationCard";
+import { isPreviewWebCitation, isWebCitation } from "@/lib/citations/web";
 
 export const SourceList = ({ citations }: { citations?: Citation[] }) => {
   const [open, setOpen] = useState(true);
@@ -11,9 +12,16 @@ export const SourceList = ({ citations }: { citations?: Citation[] }) => {
   if (!citations || citations.length === 0) return null;
 
   const count = citations.length;
+  const webOnly = citations.every(isWebCitation);
+  const preview = citations.some(isPreviewWebCitation);
+  const label = webOnly
+    ? preview
+      ? "Preview sources"
+      : "Web sources"
+    : "Sources";
 
   return (
-    <section className="mt-3" aria-label="Sources">
+    <section className="mt-3" aria-label={label}>
       <button
         type="button"
         aria-expanded={open}
@@ -21,7 +29,7 @@ export const SourceList = ({ citations }: { citations?: Citation[] }) => {
         className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1.5 text-meta font-medium text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink sm:py-1"
       >
         {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        Sources
+        {label}
         <span className="tabular-nums text-ink-subtle">{count}</span>
       </button>
 

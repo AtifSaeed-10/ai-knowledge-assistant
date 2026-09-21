@@ -14,6 +14,7 @@ from app_platform.auth.context import RequestContext
 
 RESOURCE_PDFS = "pdfs"
 RESOURCE_QUESTIONS = "questions"
+RESOURCE_WEB_QUESTIONS = "web_questions"
 
 # Guests have no billing period; their allowance is for the whole trial.
 GUEST_PERIOD = "trial"
@@ -23,6 +24,7 @@ GUEST_PERIOD = "trial"
 class TierLimits:
     max_pdfs: int
     max_questions: int
+    max_web_questions: int
     questions_window: str  # "trial" or "month"
 
 
@@ -31,10 +33,12 @@ def limits_for(context: RequestContext) -> TierLimits:
         return TierLimits(
             max_pdfs=settings.QUOTA_GUEST_MAX_PDFS,
             max_questions=settings.QUOTA_GUEST_MAX_QUESTIONS,
+            max_web_questions=settings.QUOTA_GUEST_MAX_WEB_QUESTIONS,
             questions_window="trial",
         )
     return TierLimits(
         max_pdfs=settings.QUOTA_USER_MAX_PDFS,
         max_questions=settings.QUOTA_USER_MAX_QUESTIONS_MONTHLY,
+        max_web_questions=settings.QUOTA_USER_MAX_WEB_QUESTIONS_MONTHLY,
         questions_window="month",
     )

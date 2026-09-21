@@ -5,6 +5,8 @@ import { ArrowDown, ArrowRight, BookOpen, ListTree, ScrollText } from "lucide-re
 import { Message } from "@/types";
 import { MessageBubble } from "./MessageBubble";
 import { useChatScope } from "@/hooks/useChatScope";
+import { useChatStore } from "@/store/useChatStore";
+import { isDocumentRefusal, isWebCitation } from "@/lib/citations/web";
 import {
   citedDocumentIds,
   suggestFollowUps,
@@ -37,6 +39,7 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isPinned, setIsPinned] = useState(true);
   const { mode, selectedDocument, canAsk } = useChatScope();
+  const webFallbackEnabled = useChatStore((state) => state.webFallbackEnabled);
 
   const lastMessage = messages[messages.length - 1];
   const streamingLength =
@@ -69,13 +72,17 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
   }, [streamingLength, isPinned, scrollToBottom]);
 
   const liveStatus = useMemo(() => {
-    if (isLoading) return "Reading your documents and writing an answer.";
+    if (isLoading) {
+      return webFallbackEnabled
+        ? "Checking your documents first, then the web if needed."
+        : "Reading your documents and writing an answer.";
+    }
     if (lastMessage?.role !== "assistant") return "";
     if (lastMessage.status === "error") return "The answer could not be generated.";
     if (lastMessage.status === "stopped") return "Generation stopped.";
     if (lastMessage.content) return "Answer ready.";
     return "";
-  }, [isLoading, lastMessage]);
+  }, [isLoading, lastMessage, webFallbackEnabled]);
 
   const prompts = mode === "super_focused" && selectedDocument ? FOCUSED_PROMPTS : LIBRARY_PROMPTS;
 
@@ -137,8 +144,9 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
                 Ask this document anything
               </h2>
               <p className="mt-1.5 text-ui leading-relaxed text-ink-muted">
-                DocuSage answers only from your files — with a citation back to
-                the exact page. Try a summary, a later plot point, or a definition.
+                {webFallbackEnabled
+                  ? "Answers come from your files first. If they don’t cover the question, DocuSage can look it up as a backup."
+                  : "DocuSage answers only from your files — with a citation back to the exact page. Try a summary, a later plot point, or a definition."}
               </p>
 
               <div className="mt-5 space-y-1.5">
@@ -176,6 +184,8 @@ export function MessageList({ messages, isLoading, onSelectPrompt }: MessageList
               lastMessage.status === "ok" &&
               Boolean(lastMessage.content?.trim()) &&
               !REFUSAL_RE.test(lastMessage.content) &&
+              !isDocumentRefusal(lastMessage.content) &&
+              !(lastMessage.citations || []).some(isWebCitation) &&
               canAsk &&
               followUps.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pt-1">

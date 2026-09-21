@@ -182,6 +182,16 @@ class TestGuestQuotas(TemporaryDatabase):
         self.assertEqual(summary["questions_used"], 1)
         self.assertEqual(summary["questions_limit"], 3)
         self.assertEqual(summary["questions_window"], "trial")
+        self.assertEqual(summary["web_questions_used"], 0)
+        self.assertEqual(summary["web_questions_limit"], 30)
+
+    def test_guest_web_lookups_stop_at_the_trial_cap(self):
+        with patch.object(settings, "QUOTA_GUEST_MAX_WEB_QUESTIONS", 2):
+            for _ in range(2):
+                self.assertTrue(quotas.web_lookup_allowed(self.guest))
+                quotas.record_web_lookup(self.guest)
+            self.assertFalse(quotas.web_lookup_allowed(self.guest))
+            self.assertIn("trusted-site lookups", quotas.web_lookup_limit_message(self.guest))
 
 
 class TestSupabaseTokens(unittest.TestCase):

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, ExternalLink } from "lucide-react";
 import { Citation } from "@/types";
 import { useChatStore } from "@/store/useChatStore";
 import { useDocumentStore } from "@/store/useDocumentStore";
@@ -11,6 +11,12 @@ import {
   evidencePresentationStatus,
   evidenceStatusLabel,
 } from "@/lib/citations/evidenceStatus";
+import {
+  hostnameFromUrl,
+  isPreviewWebCitation,
+  isWebCitation,
+  webSourceBadge,
+} from "@/lib/citations/web";
 import { cn } from "@/lib/cn";
 
 export function relevancePercent(relevance?: number | null): number | null {
@@ -32,6 +38,9 @@ export const CitationCard = ({
   const documents = useDocumentStore((state) => state.documents);
 
   const isActive = citationsMatch(activeCitation, citation);
+  if (isWebCitation(citation)) {
+    return <WebCitationCard citation={citation} index={index} />;
+  }
   const pageLabel = citation.pageNumber ? `page ${citation.pageNumber}` : "page unknown";
   const preview = (citation.quote || citation.snippet || "").trim();
   const presentation = evidencePresentationStatus(citation);
@@ -106,3 +115,75 @@ export const CitationCard = ({
     </button>
   );
 };
+
+function WebCitationCard({
+  citation,
+  index,
+}: {
+  citation: Citation;
+  index?: number;
+}) {
+  const href = citation.url || "";
+  const domain =
+    citation.domain || hostnameFromUrl(href) || "web source";
+  const title = citation.title || citation.documentName || domain;
+  const snippet = (citation.snippet || citation.quote || "").trim();
+  const preview = isPreviewWebCitation(citation);
+  const label = webSourceBadge(citation);
+
+  const inner = (
+    <>
+      <div className="flex min-w-0 items-start gap-1.5">
+        {typeof index === "number" && (
+          <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded bg-olive text-[10px] font-semibold tabular-nums leading-none text-white">
+            {index}
+          </span>
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="inline-flex max-w-full flex-wrap items-center gap-1">
+            <span className="inline-flex rounded bg-surface-sunken px-1 py-px text-label font-medium text-ink-muted">
+              {label}
+            </span>
+          </span>
+          <span className="mt-0.5 line-clamp-2 block text-label font-medium leading-snug text-ink">
+            {title}
+          </span>
+          {snippet && (
+            <span className="mt-0.5 line-clamp-1 block text-label leading-snug text-ink-muted">
+              {snippet}
+            </span>
+          )}
+        </span>
+      </div>
+      <ExternalLink
+        aria-hidden
+        className="absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-icon group-hover:text-olive"
+      />
+    </>
+  );
+
+  const className =
+    "group relative min-w-0 w-full overflow-hidden rounded-lg border border-line bg-surface py-1.5 pl-2 pr-6 text-left transition-colors hover:border-sage hover:bg-surface-muted";
+
+  if (!href || preview) {
+    return (
+      <div className={className} title={preview ? "Preview source — not a live page" : title}>
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-citation-chip="true"
+      aria-label={`Open web source ${index ?? ""}: ${title}`}
+      title={`${domain} — opens in a new tab`}
+      className={className}
+    >
+      {inner}
+    </a>
+  );
+}

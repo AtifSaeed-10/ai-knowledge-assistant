@@ -193,6 +193,21 @@ def _validated_claims(payload_b64: str) -> dict[str, Any]:
     return claims
 
 
+def token_email(claims: dict[str, Any]) -> str | None:
+    """Google/Supabase may put the address on the token or in metadata."""
+    email = claims.get("email")
+    if isinstance(email, str) and "@" in email.strip():
+        return email.strip()
+    for key in ("user_metadata", "app_metadata"):
+        meta = claims.get(key)
+        if not isinstance(meta, dict):
+            continue
+        nested = meta.get("email")
+        if isinstance(nested, str) and "@" in nested.strip():
+            return nested.strip()
+    return None
+
+
 def verify_token(token: str) -> dict[str, Any]:
     """
     Validate signature and expiry; return the claim set.

@@ -31,7 +31,7 @@ def ensure_guest_session(session_id: str) -> dict[str, Any]:
     cursor.execute(
         """
         SELECT session_id, created_at, last_seen_at, pdf_count, question_count,
-               migrated_to_user_id, country, region
+               migrated_to_user_id, country, region, web_question_count
         FROM guest_sessions
         WHERE session_id = ?
         """,
@@ -52,6 +52,7 @@ def _row_to_guest(row) -> dict[str, Any]:
         "migrated_to_user_id": row[5],
         "country": row[6] if len(row) > 6 else None,
         "region": row[7] if len(row) > 7 else None,
+        "web_question_count": int(row[8] or 0) if len(row) > 8 else 0,
     }
 
 
@@ -61,7 +62,7 @@ def get_guest_session(session_id: str) -> dict[str, Any] | None:
     cursor.execute(
         """
         SELECT session_id, created_at, last_seen_at, pdf_count, question_count,
-               migrated_to_user_id, country, region
+               migrated_to_user_id, country, region, web_question_count
         FROM guest_sessions
         WHERE session_id = ?
         """,
@@ -79,7 +80,7 @@ def list_guest_sessions() -> list[dict[str, Any]]:
     cursor = connection.cursor()
     cursor.execute(
         """
-        SELECT session_id, created_at, last_seen_at, pdf_count, question_count, migrated_to_user_id, country, region
+        SELECT session_id, created_at, last_seen_at, pdf_count, question_count, migrated_to_user_id, country, region, web_question_count
         FROM guest_sessions
         ORDER BY last_seen_at DESC, created_at DESC
         """
@@ -111,6 +112,22 @@ def increment_guest_question_count(session_id: str) -> None:
         """
         UPDATE guest_sessions
         SET question_count = question_count + 1, last_seen_at = ?
+        WHERE session_id = ?
+        """,
+        (_now(), session_id),
+    )
+    connection.commit()
+    connection.close()
+
+
+def increment_guest_web_question_count(session_id: str) -> None:
+    connection = get_connection()
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        UPDATE guest_sessions
+        SET web_question_count = COALESCE(web_question_count, 0) + 1,
+            last_seen_at = ?
         WHERE session_id = ?
         """,
         (_now(), session_id),

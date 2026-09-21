@@ -79,6 +79,7 @@ DATABASE_URL = _env_str("DATABASE_URL", "sqlite:///./data/documents.db")
 # ========================
 CORS_ORIGINS = _env_csv("CORS_ORIGINS", [
     "http://localhost:3000",
+    "http://127.0.0.1:3000",
     "https://www.docusage.tech",
     "https://docusage.tech",
 ])
@@ -99,8 +100,13 @@ GUEST_TRIAL_ENABLED = _env_bool("GUEST_TRIAL_ENABLED", True)
 # ========================
 QUOTA_GUEST_MAX_PDFS = _env_int("QUOTA_GUEST_MAX_PDFS", 1)
 QUOTA_GUEST_MAX_QUESTIONS = _env_int("QUOTA_GUEST_MAX_QUESTIONS", 15)
+QUOTA_GUEST_MAX_WEB_QUESTIONS = _env_int("QUOTA_GUEST_MAX_WEB_QUESTIONS", 30)
 QUOTA_USER_MAX_PDFS = _env_int("QUOTA_USER_MAX_PDFS", 5)
 QUOTA_USER_MAX_QUESTIONS_MONTHLY = _env_int("QUOTA_USER_MAX_QUESTIONS_MONTHLY", 100)
+QUOTA_USER_MAX_WEB_QUESTIONS_MONTHLY = _env_int(
+    "QUOTA_USER_MAX_WEB_QUESTIONS_MONTHLY",
+    100,
+)
 QUOTA_MAX_PDF_MB = _env_int("QUOTA_MAX_PDF_MB", 25)
 
 # ========================

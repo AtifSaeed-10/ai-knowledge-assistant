@@ -22,6 +22,7 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
 
   const stopGeneration = useChatStore((state) => state.stopGeneration);
   const focusToken = useChatStore((state) => state.composerFocusToken);
+  const webFallbackEnabled = useChatStore((state) => state.webFallbackEnabled);
 
   useEffect(() => {
     if (focusToken > 0) textareaRef.current?.focus();
@@ -66,8 +67,12 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
   const placeholder = !canAsk
     ? blockedReason || "Waiting for a ready document…"
     : isLoading
-      ? "Reading your documents…"
-      : "Ask anything that’s in your documents…";
+      ? webFallbackEnabled
+        ? "Checking your documents…"
+        : "Reading your documents…"
+      : webFallbackEnabled
+        ? "Ask your documents — the web is only a backup…"
+        : "Ask anything that’s in your documents…";
 
   const readyToSend = Boolean(input.trim()) && !isLoading && canSendText;
 
@@ -126,7 +131,9 @@ export function ChatInput({ onSend, isLoading, canAsk, blockedReason }: ChatInpu
         {commandReady
           ? "This will move the PDF — it will not search the document."
           : canAsk || socialReady
-            ? "Enter to send · Shift + Enter for a new line · Answers cite the page they came from"
+            ? webFallbackEnabled
+              ? "Enter to send · Documents first · Web only if they don’t cover it"
+              : "Enter to send · Shift + Enter for a new line · Answers cite the page they came from"
             : blockedReason || "Waiting for a ready document"}
       </p>
     </div>

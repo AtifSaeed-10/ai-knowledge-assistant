@@ -3,6 +3,7 @@
 import React from "react";
 import { AlertTriangle, Crosshair, Layers, Loader2, PanelRight, PanelRightClose } from "lucide-react";
 import { ModeSwitcher } from "./ModeSwitcher";
+import { WebFallbackToggle } from "./WebFallbackToggle";
 import { useChatScope } from "@/hooks/useChatScope";
 import { useChatStore } from "@/store/useChatStore";
 import { usePdfPanelStore } from "@/store/usePdfPanelStore";
@@ -40,6 +41,7 @@ export function ScopeBar() {
   return (
     <div className="mb-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 sm:gap-x-2.5">
       <ModeSwitcher />
+      <WebFallbackToggle />
 
       {missingSelection ? (
         <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-warn-soft px-2 py-1 text-meta text-warn">

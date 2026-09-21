@@ -21,4 +21,6 @@ export interface Message {
   pendingQuestion?: string;
   /** Shown once, under the answer the reader had to disambiguate. */
   scopeHint?: string;
+  /** Live pipeline label while the server is retrieving or searching. */
+  streamStatus?: string | null;
 }

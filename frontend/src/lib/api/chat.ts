@@ -5,11 +5,19 @@ import {
   displayNumberFromEvidenceId,
   incompleteBracketLength,
 } from "@/lib/citations/markers";
+import { displayNumberFromWebId, mergeAnswerCitations } from "@/lib/citations/web";
 import type { EvidenceRegion } from "@/types/citation";
 
 export interface ApiSource {
   document_id?: string;
   filename?: string;
+  title?: string;
+  url?: string;
+  domain?: string;
+  kind?: string;
+  preview?: boolean | null;
+  provider?: string | null;
+  tier?: string | null;
   page?: number | null;
   page_number?: number | null;
   chunk_id?: string;
@@ -36,10 +44,20 @@ export interface ApiSource {
 const CITATIONS_START = "__CITATIONS__";
 const CITATIONS_FINAL_START = "__CITATIONS_FINAL__";
 const CITATIONS_END = "__END_CITATIONS__";
+const WEB_SOURCES_START = "__WEB_SOURCES__";
+const WEB_SOURCES_END = "__END_WEB_SOURCES__";
 const ANSWER_FINAL_START = "__ANSWER_FINAL__";
 const ANSWER_FINAL_END = "__END_ANSWER_FINAL__";
+const STATUS_START = "__STATUS__";
+const STATUS_END = "__END_STATUS__";
 
-const FRAME_STARTS = [CITATIONS_FINAL_START, CITATIONS_START, ANSWER_FINAL_START];
+const FRAME_STARTS = [
+  CITATIONS_FINAL_START,
+  CITATIONS_START,
+  WEB_SOURCES_START,
+  ANSWER_FINAL_START,
+  STATUS_START,
+];
 
 export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
   const rawPage = src.page ?? src.page_number;
@@ -48,7 +66,9 @@ export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
       ? Math.floor(rawPage)
       : null;
   const evidenceId = src.evidence_id || src.evidenceId || null;
-  const displayNumber = displayNumberFromEvidenceId(evidenceId);
+  const displayNumber =
+    displayNumberFromEvidenceId(evidenceId) ??
+    displayNumberFromWebId(evidenceId);
   const quotes = Array.isArray(src.quotes)
     ? src.quotes.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     : [];
@@ -56,15 +76,25 @@ export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
     typeof src.quote === "string" && src.quote.trim()
       ? src.quote.trim()
       : quotes[0] ?? null;
+  const url = typeof src.url === "string" && src.url.trim() ? src.url.trim() : null;
+  const isWeb =
+    src.kind === "web" ||
+    (src.content_type || "").toLowerCase() === "web" ||
+    Boolean(url);
+  const title =
+    (typeof src.title === "string" && src.title.trim()) ||
+    (typeof src.filename === "string" && src.filename.trim()) ||
+    (typeof src.domain === "string" && src.domain.trim()) ||
+    (isWeb ? "Web source" : "Unknown document");
 
   return {
-    id: src.chunk_id || `cit-${Date.now()}-${idx}`,
-    documentName: src.filename || "Unknown document",
+    id: src.chunk_id || url || `cit-${Date.now()}-${idx}`,
+    documentName: title,
     pageNumber,
     snippet: src.snippet ?? src.text,
     relevance: src.relevance ?? null,
     chunk_id: src.chunk_id ?? null,
-    documentId: src.document_id ?? null,
+    documentId: src.document_id || null,
     evidenceId,
     displayNumber,
     quote,
@@ -91,6 +121,13 @@ export function mapSourceToCitation(src: ApiSource, idx: number): Citation {
     evidenceState: typeof src.evidence_state === "string" ? src.evidence_state : null,
     citationEligible:
       typeof src.citation_eligible === "boolean" ? src.citation_eligible : null,
+    kind: isWeb ? "web" : "pdf",
+    url,
+    domain: typeof src.domain === "string" && src.domain.trim() ? src.domain.trim() : null,
+    title: typeof src.title === "string" && src.title.trim() ? src.title.trim() : null,
+    preview: src.preview === true,
+    provider: typeof src.provider === "string" ? src.provider : null,
+    tier: typeof src.tier === "string" && src.tier.trim() ? src.tier.trim() : null,
   };
 }
 
@@ -124,9 +161,34 @@ function tryParseAnswer(payload: string): string | null {
   }
 }
 
+function tryParseStatus(payload: string): string {
+  try {
+    const raw = JSON.parse(payload) as { message?: unknown };
+    return typeof raw.message === "string" ? raw.message : "";
+  } catch {
+    return "";
+  }
+}
+
 type ControlEvent =
   | { kind: "citations"; citations: Citation[]; final: boolean }
-  | { kind: "answer"; answer: string };
+  | { kind: "web_sources"; citations: Citation[] }
+  | { kind: "answer"; answer: string }
+  | { kind: "status"; message: string };
+
+type FrameDef = {
+  start: string;
+  end: string;
+  kind: ControlEvent["kind"] | "citations_final";
+};
+
+const FRAME_DEFS: FrameDef[] = [
+  { start: STATUS_START, end: STATUS_END, kind: "status" },
+  { start: ANSWER_FINAL_START, end: ANSWER_FINAL_END, kind: "answer" },
+  { start: WEB_SOURCES_START, end: WEB_SOURCES_END, kind: "web_sources" },
+  { start: CITATIONS_FINAL_START, end: CITATIONS_END, kind: "citations_final" },
+  { start: CITATIONS_START, end: CITATIONS_END, kind: "citations" },
+];
 
 /** Remove the first complete control frame from the buffer, if there is one. */
 function takeControlFrame(buffer: string): {
@@ -134,36 +196,63 @@ function takeControlFrame(buffer: string): {
   event: ControlEvent | null;
   consumed: boolean;
 } {
-  const answerBegin = buffer.indexOf(ANSWER_FINAL_START);
-  if (answerBegin !== -1) {
-    const from = answerBegin + ANSWER_FINAL_START.length;
-    const answerEnd = buffer.indexOf(ANSWER_FINAL_END, from);
-    if (answerEnd !== -1) {
-      const answer = tryParseAnswer(buffer.slice(from, answerEnd));
-      const next =
-        buffer.slice(0, answerBegin) + buffer.slice(answerEnd + ANSWER_FINAL_END.length);
-      return {
-        buffer: next,
-        event: answer === null ? null : { kind: "answer", answer },
-        consumed: true,
-      };
+  let winner: { def: FrameDef; begin: number } | null = null;
+  for (const def of FRAME_DEFS) {
+    const begin = buffer.indexOf(def.start);
+    if (begin === -1) continue;
+    if (
+      !winner ||
+      begin < winner.begin ||
+      (begin === winner.begin && def.start.length > winner.def.start.length)
+    ) {
+      winner = { def, begin };
     }
   }
-
-  for (const [start, final] of [
-    [CITATIONS_FINAL_START, true],
-    [CITATIONS_START, false],
-  ] as const) {
-    const begin = buffer.indexOf(start);
-    const end = buffer.indexOf(CITATIONS_END);
-    if (begin !== -1 && end !== -1 && end > begin) {
-      const citations = tryParseCitations(buffer.slice(begin + start.length, end));
-      const next = buffer.slice(0, begin) + buffer.slice(end + CITATIONS_END.length);
-      return { buffer: next, event: { kind: "citations", citations, final }, consumed: true };
-    }
+  if (!winner) {
+    return { buffer, event: null, consumed: false };
   }
 
-  return { buffer, event: null, consumed: false };
+  const { def, begin } = winner;
+  const from = begin + def.start.length;
+  const end = buffer.indexOf(def.end, from);
+  if (end === -1) {
+    return { buffer, event: null, consumed: false };
+  }
+
+  const payload = buffer.slice(from, end);
+  const next = buffer.slice(0, begin) + buffer.slice(end + def.end.length);
+
+  if (def.kind === "status") {
+    return {
+      buffer: next,
+      event: { kind: "status", message: tryParseStatus(payload) },
+      consumed: true,
+    };
+  }
+  if (def.kind === "answer") {
+    const answer = tryParseAnswer(payload);
+    return {
+      buffer: next,
+      event: answer === null ? null : { kind: "answer", answer },
+      consumed: true,
+    };
+  }
+  if (def.kind === "web_sources") {
+    return {
+      buffer: next,
+      event: { kind: "web_sources", citations: tryParseCitations(payload) },
+      consumed: true,
+    };
+  }
+  return {
+    buffer: next,
+    event: {
+      kind: "citations",
+      citations: tryParseCitations(payload),
+      final: def.kind === "citations_final",
+    },
+    consumed: true,
+  };
 }
 
 export interface StreamHandlers {
@@ -171,6 +260,7 @@ export interface StreamHandlers {
   onCitations: (citations: Citation[]) => void;
   /** Server-validated answer that supersedes every token streamed so far. */
   onFinalAnswer?: (answer: string) => void;
+  onStatus?: (message: string) => void;
 }
 
 /**
@@ -183,6 +273,7 @@ export function createStreamParser(handlers: StreamHandlers) {
   let buffer = "";
   let citationsSent = false;
   let answerReplaced = false;
+  let lastCitations: Citation[] = [];
 
   const drainFrames = () => {
     while (true) {
@@ -190,12 +281,23 @@ export function createStreamParser(handlers: StreamHandlers) {
       buffer = parsed.buffer;
       if (!parsed.consumed) break;
       if (!parsed.event) continue;
+      if (parsed.event.kind === "status") {
+        handlers.onStatus?.(parsed.event.message);
+        continue;
+      }
       if (parsed.event.kind === "answer") {
         answerReplaced = true;
         handlers.onFinalAnswer?.(parsed.event.answer);
         continue;
       }
+      if (parsed.event.kind === "web_sources") {
+        lastCitations = mergeAnswerCitations(lastCitations, parsed.event.citations);
+        handlers.onCitations(lastCitations);
+        citationsSent = true;
+        continue;
+      }
       if (parsed.event.final || !citationsSent) {
+        lastCitations = parsed.event.citations;
         handlers.onCitations(parsed.event.citations);
         citationsSent = true;
       }
@@ -265,7 +367,9 @@ export const chatApi = {
     mode: ProductMode = "normal",
     signal?: AbortSignal,
     regenerate: boolean = false,
-    onFinalAnswer?: (answer: string) => void
+    onFinalAnswer?: (answer: string) => void,
+    webFallbackEnabled: boolean = false,
+    onStatus?: (message: string) => void
   ): Promise<void> {
     const response = await apiFetch("/chat/stream", {
       method: "POST",
@@ -276,6 +380,7 @@ export const chatApi = {
         document_ids: documentIds,
         mode,
         regenerate,
+        web_fallback_enabled: webFallbackEnabled,
       }),
       signal,
       errorMessage:
@@ -288,7 +393,12 @@ export const chatApi = {
     }
 
     const decoder = new TextDecoder();
-    const parser = createStreamParser({ onChunk, onCitations, onFinalAnswer });
+    const parser = createStreamParser({
+      onChunk,
+      onCitations,
+      onFinalAnswer,
+      onStatus,
+    });
 
     while (true) {
       const { done, value } = await reader.read();

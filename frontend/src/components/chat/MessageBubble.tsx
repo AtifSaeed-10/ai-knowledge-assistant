@@ -7,7 +7,13 @@ import { SourceList } from "./SourceList";
 import { AnswerMarkdown } from "./AnswerMarkdown";
 import { MessageActions } from "./MessageActions";
 import { useChatStore } from "@/store/useChatStore";
-import { withAnswerQuotes, usedCitationsWithFallback } from "@/lib/citations/markers";
+import { withAnswerQuotes } from "@/lib/citations/markers";
+import {
+  isDocumentRefusal,
+  isWebCitation,
+  listedAnswerSources,
+  stripWebMarkers,
+} from "@/lib/citations/web";
 
 interface MessageBubbleProps {
   message: Message;
@@ -18,17 +24,27 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
   const isLoading = useChatStore((state) => state.isLoading);
   const messages = useChatStore((state) => state.messages);
   const retryLastAnswer = useChatStore((state) => state.retryLastAnswer);
+  const webFallbackEnabled = useChatStore((state) => state.webFallbackEnabled);
+  const enableWebFallbackAndRetry = useChatStore(
+    (state) => state.enableWebFallbackAndRetry
+  );
 
   const hasContent = Boolean(message.content?.trim());
   const isSearching = !hasContent && isStreaming;
   const citations = withAnswerQuotes(message.citations, message.content);
-  const citedSources = usedCitationsWithFallback(message.citations, message.content);
+  const citedSources = listedAnswerSources(message.citations, message.content);
 
   const chooseDocumentScope = useChatStore((state) => state.chooseDocumentScope);
   const lastAssistant = [...messages].reverse().find((item) => item.role === "assistant");
   const isLastAssistant = lastAssistant?.id === message.id;
   const canRetry = isLastAssistant && !isStreaming && !isLoading && !message.scopeChoices?.length;
   const scopeChoices = message.scopeChoices || [];
+  const fromWeb = citedSources.some(isWebCitation);
+  const showWebNudge =
+    canRetry &&
+    !fromWeb &&
+    !webFallbackEnabled &&
+    isDocumentRefusal(message.content);
 
   if (message.role === "user") {
     return (
@@ -76,10 +92,16 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
           DocuSage
         </span>
 
-        {isStreaming && (
+            {isStreaming && (
           <span className="inline-flex items-center gap-1.5 text-meta font-medium text-ink-muted">
-            <span className="h-1.5 w-1.5 rounded-full bg-sage" aria-hidden />
-            {isSearching ? "Reading across your documents" : "Writing"}
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sage" aria-hidden />
+            {message.streamStatus
+              ? message.streamStatus
+              : isSearching
+                ? webFallbackEnabled
+                  ? "Checking your documents…"
+                  : "Reading across your documents"
+                : "Writing"}
           </span>
         )}
 
@@ -98,7 +120,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
           <div className="skeleton h-3 w-[56%]" />
         </div>
       ) : (
-        <AnswerMarkdown content={message.content} citations={citations} />
+        <AnswerMarkdown content={stripWebMarkers(message.content)} citations={citations} />
       )}
 
       {scopeChoices.length > 0 && (
@@ -130,6 +152,22 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
       )}
 
       {!isStreaming && citedSources.length > 0 && <SourceList citations={citedSources} />}
+
+      {showWebNudge && (
+        <div className="mt-3 rounded-xl border border-line bg-surface px-3.5 py-3">
+          <p className="text-ui leading-relaxed text-ink-muted">
+            Nothing in your documents covers this. You can look it up — your PDFs
+            will still come first on the next question.
+          </p>
+          <button
+            type="button"
+            onClick={() => enableWebFallbackAndRetry()}
+            className="mt-2.5 inline-flex items-center rounded-lg bg-olive px-3 py-1.5 text-meta font-medium text-white transition-colors hover:bg-olive-dark"
+          >
+            Search the web for this
+          </button>
+        </div>
+      )}
 
       {!isStreaming && hasContent && scopeChoices.length === 0 && (
         <MessageActions

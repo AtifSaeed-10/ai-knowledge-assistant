@@ -1,0 +1,131 @@
+# Authentic-source policy for DocuSage web fallback (Phase 2).
+#
+# T1 — primary authorities (laws, regulators, official bodies)
+# T2 — reputable references (encyclopedias, universities)
+# T3 — everything else that is not blocked; used only if T1+T2 are too thin
+# block — never used as evidence
+#
+# Matching is by host suffix: "wikipedia.org" matches en.wikipedia.org.
+# Edit this file to tighten or widen what counts as trusted.
+
+block:
+  - quora.com
+  - answers.com
+  - pinterest.com
+  - reddit.com
+  - facebook.com
+  - instagram.com
+  - tiktok.com
+  - twitter.com
+  - x.com
+  - youtube.com
+  - medium.com
+  - blogspot.com
+  - wordpress.com
+  - tumblr.com
+  - wikihow.com
+  - fandom.com
+  - scribblehub.com
+  - linkedin.com
+  - yahoo.com
+  - msn.com
+  - ask.com
+  - ehow.com
+  - slideplayer.com
+  - slideshare.net
+  - scribd.com
+  - coursehero.com
+  - chegg.com
+  - brainly.com
+  - weebly.com
+  - wixsite.com
+  - substack.com
+
+tier1:
+  suffixes:
+    - .gov
+    - .gov.uk
+    - .gov.au
+    - .govt.nz
+    - .mil
+    - .int
+  hosts:
+    - theifab.com
+    - fifa.com
+    - uefa.com
+    - who.int
+    - un.org
+    - europa.eu
+    - ec.europa.eu
+    - nih.gov
+    - cdc.gov
+    - fda.gov
+    - nasa.gov
+    - nist.gov
+    - iso.org
+    - w3.org
+    - ietf.org
+    - imf.org
+    - worldbank.org
+    - bis.org
+    - oecd.org
+    - wto.org
+    - icc-cpi.int
+    - olympics.com
+    - ioc.ch
+
+tier2:
+  suffixes:
+    - .edu
+    - .ac.uk
+    - .edu.au
+  hosts:
+    - wikipedia.org
+    - wikimedia.org
+    - britannica.com
+    - nba.com
+    - basketball-reference.com
+    - sports-reference.com
+    - espn.com
+    - skysports.com
+    - flashscore.com
+    - sofascore.com
+    - coindesk.com
+    - coinmarketcap.com
+    - coingecko.com
+    - bloomberg.com
+    - forbes.com
+    - fortune.com
+    - marketwatch.com
+    - investing.com
+    - cnbc.com
+    - merriam-webster.com
+    - dictionary.com
+    - stanford.edu
+    - mit.edu
+    - harvard.edu
+    - ox.ac.uk
+    - cam.ac.uk
+    - nature.com
+    - science.org
+    - pubmed.ncbi.nlm.nih.gov
+    - scholar.google.com
+    - developer.mozilla.org
+    - docs.python.org
+    - python.org
+    - rfc-editor.org
+    - bbc.co.uk
+    - bbc.com
+    - reuters.com
+    - apnews.com
+    - npr.org
+    - theguardian.com
+    - nytimes.com
+    - washingtonpost.com
+    - ft.com
+    - economist.com
+    - nationalgeographic.com
+    - smithsonianmag.com
+    - khanacademy.org
+    - coursera.org
+    - edx.org

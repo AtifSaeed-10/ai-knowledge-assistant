@@ -12,7 +12,7 @@ from fastapi import Header, Request
 from app_platform import errors, settings
 from app_platform.auth.context import RequestContext, guest_context, user_context
 from app_platform.auth.guest import normalize_session_id
-from app_platform.auth.supabase_jwt import TokenError, bearer_token, verify_token
+from app_platform.auth.supabase_jwt import TokenError, bearer_token, token_email, verify_token
 from app_platform.ops.request_actor import bind_actor
 from database.guest_store import ensure_guest_session
 from database.user_store import upsert_user
@@ -31,7 +31,7 @@ def resolve_context(
             claims = verify_token(token)
         except TokenError as exc:
             raise errors.auth_required("Your session has expired. Sign in again.") from exc
-        profile = upsert_user(str(claims["sub"]), claims.get("email"))
+        profile = upsert_user(str(claims["sub"]), token_email(claims))
         return user_context(profile["user_id"], profile.get("email"))
 
     if not settings.GUEST_TRIAL_ENABLED:

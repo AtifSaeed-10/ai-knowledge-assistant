@@ -32,7 +32,7 @@ from conversation_query import (
 )
 from evidence_focus import ROLE_SUPPORT, passage_roles
 from evidence_mapping import make_snippet
-from evidence_state import looks_like_evidence_refusal
+from evidence_state import looks_like_evidence_refusal, normalize_evidence_text
 from wide_recall import is_wide_recall_question, lexical_probe_queries
 
 # Style restyles of the current topic: any on-topic passage is enough.
@@ -83,7 +83,7 @@ class GroundingHit:
 
 def is_blanket_refusal(answer: str) -> bool:
     """True only for a short, evidence-empty refusal — not a partial answer."""
-    text = (answer or "").strip()
+    text = normalize_evidence_text(answer)
     if not text or not looks_like_evidence_refusal(text):
         return False
     words = re.findall(r"[a-z0-9]+", text.lower())

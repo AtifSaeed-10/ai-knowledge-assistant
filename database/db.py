@@ -197,6 +197,8 @@ _OWNERSHIP_COLUMNS = (
     ("users", "region", "TEXT"),
     ("guest_sessions", "country", "TEXT"),
     ("guest_sessions", "region", "TEXT"),
+    ("guest_sessions", "web_question_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("usage_counters", "web_question_count", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 

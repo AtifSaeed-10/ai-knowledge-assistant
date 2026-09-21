@@ -175,6 +175,68 @@ sudo docker compose up -d
 
 ---
 
+## Step 6b — Professional Google sign-in (hide `….supabase.co`)
+
+Google shows **“to continue to ondqhivitknekobigtdi.supabase.co”** because the OAuth redirect host is your Supabase project URL. The DocuSage UI cannot change that line. Do this in order.
+
+### 1. Name the app in Google (required)
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/) → the project that owns the OAuth client  
+2. **APIs & Services → OAuth consent screen**  
+3. Set:
+   - **App name:** `DocuSage`
+   - **User support email:** `saeedatif199@gmail.com`
+   - **App logo:** a square PNG (optional but looks finished)
+   - **Application home page:** `https://www.docusage.tech` (or your live Vercel URL)
+   - **Authorized domains:** `docusage.tech` and `supabase.co`
+4. **Save**
+5. **Audience:** keep **Testing** for now. Under **Test users**, add `saeedatif199@gmail.com` (and any demo Gmail). Only those accounts can sign in until the app is published.
+
+### 2. Point Supabase at your real site (required)
+
+Supabase → **Authentication → URL Configuration**
+
+- **Site URL:** `https://www.docusage.tech` (production) — for local demos also keep `http://localhost:3000` in **Redirect URLs**
+- **Redirect URLs** (one per line):
+  - `http://localhost:3000`
+  - `http://localhost:3000/**`
+  - `https://www.docusage.tech`
+  - `https://www.docusage.tech/**`
+  - your Vercel URL if different
+
+Wait 1–2 minutes after saving.
+
+### 3. Custom auth domain (this removes `….supabase.co` from Google)
+
+Google always prints the **callback hostname**. To show `auth.docusage.tech` instead of `ondqhivitknekobigtdi.supabase.co`:
+
+1. You need a domain you control (`docusage.tech`)
+2. Supabase → **Project Settings → Custom Domains** (Auth custom domain; Pro plan)  
+   or follow [Custom domains for Auth](https://supabase.com/docs/guides/platform/custom-domains)
+3. Add a DNS CNAME, e.g. `auth.docusage.tech` → the host Supabase gives you
+4. When it is **Active**, Google Cloud → **Credentials → Web client**:
+   - **Authorized JavaScript origins:** `https://www.docusage.tech`, `http://localhost:3000`
+   - **Authorized redirect URIs:**  
+     `https://auth.docusage.tech/auth/v1/callback`  
+     (keep the old `https://ondqhivitknekobigtdi.supabase.co/auth/v1/callback` until the new one works, then remove it)
+5. Supabase → **Authentication → URL Configuration** → set Site URL to `https://www.docusage.tech`
+
+After DNS + Google both update, the consent screen reads like **Sign in to DocuSage** / **to continue to auth.docusage.tech**.
+
+### 4. Unlimited questions for the operator account
+
+On the **API** `.env` (laptop and Azure VM):
+
+```env
+ADMIN_EMAILS=saeedatif199@gmail.com
+```
+
+Restart the API (`uvicorn` locally, or `sudo docker compose up -d` on the VM). Sign in with that Google account. Only this email is unlimited; every other signed-in user stays on the normal monthly cap.
+
+**Check:** after sign-in, `/me/usage` has `"admin": true` and `"unlimited": true`. Asking many questions does not open the signup/limit modal.
+
+---
+
 ## Step 7 — HTTPS for the API
 
 An HTTPS page cannot call `http://135.235.219.214:8000`; the browser blocks it. Put a free Cloudflare Tunnel in front of the API. On the VM:

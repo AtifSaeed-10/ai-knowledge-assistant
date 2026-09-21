@@ -67,6 +67,7 @@ export function SignupModal() {
   const benefits = [
     `${usage?.tier === "guest" ? "5 documents" : "More documents"} instead of ${usage?.pdfsLimit ?? 1}`,
     "100 questions every month",
+    "100 trusted-site answers a month after you sign in",
     "Your PDFs and chats saved to your account",
   ];
 

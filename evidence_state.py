@@ -37,13 +37,37 @@ _REFUSAL_SNIPPETS = tuple(
         "could not find",
         "don't have enough information",
         "do not have enough information",
+        "don't have that information",
+        "do not have that information",
+        "don't have this information",
+        "do not have this information",
+        "i don't have that information",
+        "i do not have that information",
+        "no information in the provided",
         "not in the provided document",
+        "not in the provided documents",
         "not in the provided context",
         "i couldn't locate",
         "i could not locate",
     )
     if phrase
 )
+
+
+_APOSTROPHE_TRANSLATION = str.maketrans(
+    {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201b": "'",
+        "\u2032": "'",
+        "`": "'",
+    }
+)
+
+
+def normalize_evidence_text(answer: str) -> str:
+    """Lowercase and flatten curly quotes so refusal matching is encoding-safe."""
+    return (answer or "").strip().lower().translate(_APOSTROPHE_TRANSLATION)
 
 
 def evidence_state_for_chunk(
@@ -64,7 +88,7 @@ def evidence_state_for_chunk(
 
 def looks_like_evidence_refusal(answer: str) -> bool:
     """True when the answer is a grounded 'not found' / insufficient-context refusal."""
-    text = (answer or "").strip().lower()
+    text = normalize_evidence_text(answer)
     if not text:
         return True
     return any(snippet in text for snippet in _REFUSAL_SNIPPETS)

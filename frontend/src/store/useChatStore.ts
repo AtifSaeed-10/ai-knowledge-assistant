@@ -11,6 +11,7 @@ import { useDocumentStore } from './useDocumentStore';
 import { usePdfPanelStore } from './usePdfPanelStore';
 import { notify } from './useToastStore';
 import { shouldFollowAnswerCitation } from '@/lib/workspace/pdfPanel';
+import { isWebCitation } from '@/lib/citations/web';
 import { classifyChatCommand } from '@/lib/workspace/chatCommand';
 import { runWorkspaceCommand } from '@/lib/workspace/applyChatCommand';
 import {
@@ -23,6 +24,7 @@ import { shouldSkipConversationReload } from '@/lib/workspace/workspaceView';
 
 const ACTIVE_CONVERSATION_PREFIX = 'docusage_active_conversation';
 const MODE_KEY = 'docusage_product_mode';
+const WEB_FALLBACK_KEY = 'docusage_web_fallback';
 /** Retrieval + first token should not sit on "Searching" forever. */
 const ANSWER_TIMEOUT_MS = 180_000;
 const ANSWER_TIMEOUT_MESSAGE =
@@ -147,6 +149,7 @@ interface ChatState {
   isSwitching: boolean;
   conversationError: string | null;
   productMode: ProductMode;
+  webFallbackEnabled: boolean;
   activeCitation: Citation | null;
   composerFocusToken: number;
   /** One-file pin for this chat so follow-ups stay on the PDF the reader picked. */
@@ -154,6 +157,8 @@ interface ChatState {
 
   setActiveCitation: (citation: Citation | null) => void;
   setProductMode: (mode: ProductMode) => void;
+  setWebFallbackEnabled: (enabled: boolean) => void;
+  enableWebFallbackAndRetry: () => void;
   requestComposerFocus: () => void;
   clearDocumentPin: () => void;
   chooseDocumentScope: (documentId: string) => Promise<void>;
@@ -218,7 +223,7 @@ export const useChatStore = create<ChatState>((set, get) => {
   };
 
   const failAssistant = (id: string, content: string) => {
-    patchMessage(id, { status: 'error', content, citations: [] });
+    patchMessage(id, { status: 'error', content, citations: [], streamStatus: null });
   };
 
   const closeAnswerRequest = () => {
@@ -313,14 +318,15 @@ export const useChatStore = create<ChatState>((set, get) => {
         (citations) => {
           armStreamTimeout();
           patchMessage(assistantId, { citations });
+          const pdfCitations = citations.filter((item) => !isWebCitation(item));
           if (
             shouldFollowAnswerCitation({
               isOpen: usePdfPanelStore.getState().isOpen,
-              citationCount: citations.length,
+              citationCount: pdfCitations.length,
             })
           ) {
             const target =
-              citations.find((item) => item.documentId) || citations[0];
+              pdfCitations.find((item) => item.documentId) || pdfCitations[0];
             if (target) get().setActiveCitation(target);
           }
         },
@@ -330,9 +336,16 @@ export const useChatStore = create<ChatState>((set, get) => {
         // The server corrected the streamed draft; show the saved answer instead.
         (finalAnswer) => {
           armStreamTimeout();
-          patchMessage(assistantId, { content: finalAnswer });
+          patchMessage(assistantId, { content: finalAnswer, streamStatus: null });
+        },
+        get().webFallbackEnabled,
+        (status) => {
+          armStreamTimeout();
+          patchMessage(assistantId, { streamStatus: status || null });
         }
       );
+
+      patchMessage(assistantId, { streamStatus: null });
 
       const latest = get().messages.find((msg) => msg.id === assistantId);
       if (!latest?.content.trim()) {
@@ -385,6 +398,12 @@ export const useChatStore = create<ChatState>((set, get) => {
     if (storedMode === 'normal' || storedMode === 'super_focused') {
       set({ productMode: storedMode });
     }
+    const storedWeb = readStored(WEB_FALLBACK_KEY);
+    if (storedWeb === '1' || storedWeb === 'true') {
+      set({ webFallbackEnabled: true });
+    } else if (storedWeb === '0' || storedWeb === 'false') {
+      set({ webFallbackEnabled: false });
+    }
 
     try {
       const conversations = await conversationsApi.list();
@@ -434,18 +453,32 @@ export const useChatStore = create<ChatState>((set, get) => {
     isSwitching: false,
     conversationError: null,
     productMode: 'normal',
+    webFallbackEnabled: false,
     activeCitation: null,
     composerFocusToken: 0,
     pinnedDocumentId: null,
 
     setActiveCitation: (citation) => {
       set({ activeCitation: citation });
-      if (citation) usePdfPanelStore.getState().open();
+      if (citation && !isWebCitation(citation)) {
+        usePdfPanelStore.getState().open();
+      }
     },
 
     setProductMode: (mode) => {
       writeStored(MODE_KEY, mode);
       set({ productMode: mode });
+    },
+
+    setWebFallbackEnabled: (enabled) => {
+      writeStored(WEB_FALLBACK_KEY, enabled ? '1' : '0');
+      set({ webFallbackEnabled: enabled });
+    },
+
+    enableWebFallbackAndRetry: () => {
+      writeStored(WEB_FALLBACK_KEY, '1');
+      set({ webFallbackEnabled: true });
+      void get().retryLastAnswer();
     },
 
     requestComposerFocus: () =>

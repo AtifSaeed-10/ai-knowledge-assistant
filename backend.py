@@ -7,12 +7,12 @@ from fastapi.exception_handlers import http_exception_handler
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from citation_resolver import iter_resolved_stream
 from claim_validator import finalize_answer_citations
 from evidence_state import visible_sources
 from evidence_trace import attach_trace_dict_to_sources
-from rag import ask_question
+from rag import ask_question, complete_generation
 from llm_service import generate_response, generate_response_stream
 from grounding_verifier import verify_and_repair_refusal
 from indexer import index_pdf
@@ -46,6 +46,38 @@ from modes import (
     insufficient_context_payload,
 )
 from agent_foundation import effective_mode
+from web_fallback.coverage import (
+    passage_text_from_document,
+    passages_miss_question,
+)
+from web_fallback.decision import ACTION_WEB, decide_web_fallback
+from web_fallback.orchestrator import (
+    combine_document_and_web_answer,
+    document_chat_payload,
+    document_sources_for_gap,
+    execute_web_fallback,
+    finalize_web_answer,
+    log_web_decision,
+    merge_answer_sources,
+    mixed_chat_payload,
+    resolve_after_document_answer,
+    resolve_after_document_pass,
+    web_chat_payload,
+)
+from web_fallback.status import (
+    STATUS_CHECKING_DOCUMENTS,
+    STATUS_READING_SOURCES,
+    STATUS_SEARCHING_WEB,
+    STATUS_WRITING_DOCUMENTS,
+    STATUS_WRITING_WEB,
+    STEP_DOCUMENTS,
+    STEP_DONE,
+    STEP_READING,
+    STEP_WEB,
+    STEP_WRITING,
+    status_frame,
+)
+from web_fallback.types import WEB_SOURCES_END, WEB_SOURCES_START
 from app_platform import errors, settings as platform_settings
 from app_platform.auth.context import ACTOR_GUEST, RequestContext
 from app_platform.auth.admin import require_admin
@@ -99,9 +131,31 @@ class Source(BaseModel):
     content_type: Optional[str] = None
 
 
+class WebSource(BaseModel):
+    kind: str = "web"
+    evidence_id: str
+    title: str
+    url: str
+    domain: str = ""
+    snippet: str = ""
+    provider: str = "mock"
+    preview: bool = True
+    retrieved_at: Optional[str] = None
+    filename: Optional[str] = None
+    chunk_id: Optional[str] = None
+    document_id: Optional[str] = None
+    page: Optional[int] = None
+    relevance: Optional[int] = None
+    content_type: Optional[str] = None
+    tier: Optional[str] = None
+
+
 class ChatResponse(BaseModel):
     answer: str
     sources: List[Source]
+    answer_origin: str = "document"
+    web_sources: List[WebSource] = Field(default_factory=list)
+    offer_web_fallback: bool = False
 
 class ChatRequest(BaseModel):
     question: str
@@ -109,6 +163,7 @@ class ChatRequest(BaseModel):
     document_ids: List[str] | None = None
     mode: str = "normal"
     regenerate: bool = False
+    web_fallback_enabled: bool = False
 
 
 def _prepare_chat_history(request: ChatRequest) -> list:
@@ -160,6 +215,17 @@ def _document_pdf_path(filename: str) -> str | None:
 def _owner_fields(context: RequestContext) -> dict:
     """Owner kwargs for store writes, so new rows are bound to this actor."""
     return {"owner_type": context.actor_type, "owner_id": context.actor_id}
+
+
+def _search_question(request: ChatRequest, document_result: dict | None) -> str:
+    """Standalone query after follow-up rewrite, else the raw user turn."""
+    result = document_result or {}
+    text = str(result.get("search_query") or request.question or "").strip()
+    return text or request.question
+
+
+def _status(step: str, message: str = "") -> str:
+    return status_frame(step, message)
 
 
 def _note_generation(
@@ -331,14 +397,55 @@ def chat(
         )
         return early
 
-    # 2. Ask RAG system
+    # 2. Retrieve first. Off-topic pages skip the document LLM and go to web.
     response = ask_question(
         request.question,
         history,
         scoped_ids,
         mode=effective_mode(request.mode),
+        generate=False,
     )
+    web_question = _search_question(request, response)
+    action, reason = decide_web_fallback(
+        user_enabled=request.web_fallback_enabled,
+        document_result=response,
+        question=web_question,
+    )
+    if action == ACTION_WEB and not quotas.web_lookup_allowed(context):
+        answer = quotas.web_lookup_limit_message(context)
+        if not request.regenerate:
+            save_message(
+                request.conversation_id,
+                "user",
+                request.question,
+                **owner,
+            )
+            quotas.record_question(context)
+        if is_valid_response(answer):
+            save_message(
+                request.conversation_id,
+                "assistant",
+                answer,
+                **owner,
+            )
+        _note_generation(
+            question=request.question,
+            answer=answer,
+            context=context,
+            route="/chat",
+            used_llm=False,
+        )
+        blocked = dict(response)
+        blocked["answer"] = answer
+        blocked["sources"] = []
+        return document_chat_payload(blocked, offer_web_fallback=False)
 
+    resolved = resolve_after_document_pass(
+        question=web_question,
+        user_enabled=request.web_fallback_enabled,
+        document_result=response,
+        route="/chat",
+    )
 
     # 3. Save user message (skip on regenerate — it is already stored)
     if not request.regenerate:
@@ -347,23 +454,107 @@ def chat(
             "user",
             request.question,
             **owner,
-                )
+        )
         quotas.record_question(context)
 
+    if resolved.used_web and resolved.web_result is not None:
+        quotas.record_web_lookup(context)
+        web = resolved.web_result
+        if resolved.scope_note:
+            payload = mixed_chat_payload(resolved.scope_note, [], web)
+            citations = merge_answer_sources([], web.sources)
+        else:
+            payload = web_chat_payload(web)
+            citations = web.sources
+        answer = payload["answer"]
+        if is_valid_response(answer):
+            save_message(
+                request.conversation_id,
+                "assistant",
+                answer,
+                citations=citations,
+                **owner,
+            )
+        _note_generation(
+            question=request.question,
+            answer=answer,
+            context=context,
+            route="/chat",
+            used_llm=not web.preview,
+        )
+        return payload
 
-    # 4. Save assistant response only if valid
+    skip_repair = bool(request.web_fallback_enabled) and passages_miss_question(
+        web_question,
+        passage_text_from_document(response),
+    )
+    if response.get("prompt"):
+        response = complete_generation(
+            request.question,
+            response,
+            skip_repair=skip_repair,
+        )
 
     answer = response["answer"]
+    late_web = None
+    if quotas.web_lookup_allowed(context):
+        late_web = resolve_after_document_answer(
+            question=web_question,
+            user_enabled=request.web_fallback_enabled,
+            answer=answer,
+            document_result=response,
+            route="/chat",
+        )
+        if late_web is not None:
+            quotas.record_web_lookup(context)
+    elif request.web_fallback_enabled:
+        from web_fallback.decision import decide_web_after_answer
+
+        should, _reason = decide_web_after_answer(
+            user_enabled=True,
+            answer=answer,
+            question=web_question,
+            passages=passage_text_from_document(response),
+        )
+        if should:
+            answer = combine_document_and_web_answer(
+                answer,
+                quotas.web_lookup_limit_message(context),
+            )
+    if late_web is not None:
+        pdf_sources = document_sources_for_gap(
+            visible=response.get("sources") or [],
+            original=response.get("recall_candidates") or response.get("sources") or [],
+            answer=answer,
+        )
+        payload = mixed_chat_payload(answer, pdf_sources, late_web)
+        mixed_answer = payload["answer"]
+        mixed_citations = merge_answer_sources(pdf_sources, late_web.sources)
+        if is_valid_response(mixed_answer):
+            save_message(
+                request.conversation_id,
+                "assistant",
+                mixed_answer,
+                citations=mixed_citations,
+                **owner,
+            )
+        _note_generation(
+            question=request.question,
+            answer=mixed_answer,
+            context=context,
+            route="/chat",
+            used_llm=not late_web.preview,
+        )
+        return payload
 
     if is_valid_response(answer):
-
         save_message(
             request.conversation_id,
             "assistant",
             answer,
             citations=visible_sources(response.get("sources") or [], answer),
             **owner,
-                )
+        )
 
     _note_generation(
         question=request.question,
@@ -372,7 +563,10 @@ def chat(
         route="/chat",
     )
 
-    return response
+    return document_chat_payload(
+        response,
+        offer_web_fallback=resolved.offer_web_fallback,
+    )
  
 @app.post("/chat/stream")
 def chat_stream(
@@ -389,6 +583,11 @@ def chat_stream(
     owner = _owner_fields(context)
 
     def generate():
+        print(
+            f"Chat stream: web_toggle={request.web_fallback_enabled} "
+            f"q={request.question[:120]!r}",
+            flush=True,
+        )
 
         history = _prepare_chat_history(request)
 
@@ -416,6 +615,7 @@ def chat_stream(
             yield answer
             return
 
+        yield _status(STEP_DOCUMENTS, STATUS_CHECKING_DOCUMENTS)
 
         # Retrieve/rerank once; do not fully generate here (stream generates once).
         response = ask_question(
@@ -425,7 +625,7 @@ def chat_stream(
             generate=False,
             mode=effective_mode(request.mode),
         )
-
+        web_question = _search_question(request, response)
 
         # Match /chat: persist user message after successful retrieval prep.
         if not request.regenerate:
@@ -437,6 +637,108 @@ def chat_stream(
             )
             quotas.record_question(context)
 
+        action, reason = decide_web_fallback(
+            user_enabled=request.web_fallback_enabled,
+            document_result=response,
+            question=web_question,
+        )
+        if action == ACTION_WEB:
+            if not quotas.web_lookup_allowed(context):
+                combined = quotas.web_lookup_limit_message(context)
+                yield _status(STEP_DONE)
+                yield f"__CITATIONS__{json.dumps([])}__END_CITATIONS__"
+                yield combined
+                if is_valid_response(combined):
+                    save_message(
+                        request.conversation_id,
+                        "assistant",
+                        combined,
+                        **owner,
+                    )
+                _note_generation(
+                    question=request.question,
+                    answer=combined,
+                    context=context,
+                    route="/chat/stream",
+                    used_llm=False,
+                )
+                return
+
+            print(
+                "Web fallback: skip document generate "
+                f"reason={reason} q={web_question[:80]!r}",
+                flush=True,
+            )
+            yield _status(STEP_WEB, STATUS_SEARCHING_WEB)
+            web = execute_web_fallback(
+                web_question,
+                generate=False,
+            )
+            quotas.record_web_lookup(context)
+            log_web_decision(
+                reason=web.reason or reason,
+                action=ACTION_WEB,
+                hit_count=len(web.sources),
+                provider=web.provider,
+                route="/chat/stream",
+            )
+            yield _status(STEP_READING, STATUS_READING_SOURCES)
+            yield f"__CITATIONS__{json.dumps([])}__END_CITATIONS__"
+            yield f"{WEB_SOURCES_START}{json.dumps(web.sources)}{WEB_SOURCES_END}"
+            yield _status(STEP_WRITING, STATUS_WRITING_WEB)
+
+            streamed = ""
+            if web.prompt:
+                answer_parts: list[str] = []
+                try:
+                    for chunk in generate_response_stream(web.prompt):
+                        answer_parts.append(chunk)
+                        yield chunk
+                except Exception as exc:
+                    try:
+                        from app_platform.ops.events import record_safe
+
+                        record_safe(
+                            kind="http",
+                            route="/chat/stream",
+                            category="web_stream_failed",
+                            message=type(exc).__name__,
+                            actor_type=context.actor_type,
+                            actor_id=context.actor_id,
+                        )
+                    except Exception:
+                        pass
+                    raise
+
+                streamed = "".join(answer_parts)
+                answer = finalize_web_answer(streamed)
+            else:
+                answer = web.answer
+                yield answer
+
+            yield _status(STEP_DONE)
+            combined = answer
+            shown = streamed if web.prompt else answer
+            if combined != shown:
+                yield (
+                    f"__ANSWER_FINAL__{json.dumps(combined)}__END_ANSWER_FINAL__"
+                )
+            if is_valid_response(combined):
+                save_message(
+                    request.conversation_id,
+                    "assistant",
+                    combined,
+                    citations=web.sources,
+                    **owner,
+                )
+            _note_generation(
+                question=request.question,
+                answer=combined,
+                context=context,
+                route="/chat/stream",
+                used_llm=bool(web.prompt),
+            )
+            return
 
         sources = response.get(
             "sources",
@@ -450,6 +752,7 @@ def chat_stream(
 
 
         # Send citations first
+        yield _status(STEP_WRITING, STATUS_WRITING_DOCUMENTS)
         yield f"__CITATIONS__{json.dumps(sources)}__END_CITATIONS__"
 
 
@@ -511,15 +814,30 @@ def chat_stream(
         if completed:
 
             streamed_answer = "".join(answer_parts)
-            answer, grounding = verify_and_repair_refusal(
-                streamed_answer,
-                question=request.question,
-                prompt=prompt,
-                sources=sources,
-                recall_candidates=response.get("recall_candidates"),
-                analysis=response.get("analysis"),
-                generate_fn=generate_response,
+            # Web-on + pages that do not cover the ask: keep the model's
+            # document note and skip anti-refusal repair. Repair was turning
+            # a real gap into a related excerpt and blocking trusted-site fill.
+            passage_blob = passage_text_from_document(response)
+            skip_repair = bool(request.web_fallback_enabled) and passages_miss_question(
+                web_question,
+                passage_blob,
             )
+            if skip_repair:
+                answer = streamed_answer
+                print(
+                    "Grounding: skipped repair; document pages miss the ask",
+                    flush=True,
+                )
+            else:
+                answer, grounding = verify_and_repair_refusal(
+                    streamed_answer,
+                    question=request.question,
+                    prompt=prompt,
+                    sources=sources,
+                    recall_candidates=response.get("recall_candidates"),
+                    analysis=response.get("analysis"),
+                    generate_fn=generate_response,
+                )
             finalize_result = finalize_answer_citations(
                 answer,
                 sources,
@@ -541,6 +859,71 @@ def chat_stream(
             if trace_payload:
                 final_sources = attach_trace_dict_to_sources(final_sources, trace_payload)
 
+            late_web = None
+            try:
+                if quotas.web_lookup_allowed(context):
+                    late_web = resolve_after_document_answer(
+                        question=web_question,
+                        user_enabled=request.web_fallback_enabled,
+                        answer=answer,
+                        document_result=response,
+                        generate=True,
+                        route="/chat/stream",
+                    )
+                    if late_web is not None:
+                        quotas.record_web_lookup(context)
+                elif request.web_fallback_enabled:
+                    from web_fallback.decision import decide_web_after_answer
+
+                    should, _reason = decide_web_after_answer(
+                        user_enabled=True,
+                        answer=answer,
+                        question=web_question,
+                        passages=passage_text_from_document(response),
+                    )
+                    if should:
+                        answer = combine_document_and_web_answer(
+                            answer,
+                            quotas.web_lookup_limit_message(context),
+                        )
+            except Exception as exc:
+                print(
+                    f"Web fallback: post_llm failed {type(exc).__name__}: {exc}",
+                    flush=True,
+                )
+            if late_web is not None:
+                pdf_sources = document_sources_for_gap(
+                    visible=final_sources,
+                    original=sources,
+                    answer=answer,
+                )
+                payload = mixed_chat_payload(answer, pdf_sources, late_web)
+                mixed_answer = payload["answer"]
+                mixed_citations = merge_answer_sources(pdf_sources, late_web.sources)
+                yield _status(STEP_WEB, STATUS_SEARCHING_WEB)
+                yield f"{WEB_SOURCES_START}{json.dumps(late_web.sources)}{WEB_SOURCES_END}"
+                yield _status(STEP_DONE)
+                yield (
+                    f"__ANSWER_FINAL__{json.dumps(mixed_answer)}__END_ANSWER_FINAL__"
+                )
+                yield f"__CITATIONS_FINAL__{json.dumps(mixed_citations)}__END_CITATIONS__"
+                if is_valid_response(mixed_answer):
+                    save_message(
+                        request.conversation_id,
+                        "assistant",
+                        mixed_answer,
+                        citations=mixed_citations,
+                        **owner,
+                    )
+                _note_generation(
+                    question=request.question,
+                    answer=mixed_answer,
+                    context=context,
+                    route="/chat/stream",
+                    used_llm=not late_web.preview,
+                )
+                return
+
             if is_valid_response(answer):
 
                 save_message(
@@ -557,6 +940,8 @@ def chat_stream(
                 context=context,
                 route="/chat/stream",
             )
+
+            yield _status(STEP_DONE)
 
             # A repaired or polished answer invalidates tokens already on screen.
             if answer != streamed_answer:

@@ -61,6 +61,28 @@ class TestAdminAccess(AdminApiTestCase):
         self.assertFalse(self.other.get("/me/usage").json()["admin"])
         self.assertTrue(self.admin.get("/me/usage").json()["admin"])
 
+    def test_operator_has_unlimited_questions(self):
+        from app_platform.quotas import service as quotas
+        from app_platform.auth.dependency import resolve_context
+        from test_support import make_access_token
+
+        body = self.admin.get("/me/usage").json()
+        self.assertTrue(body["unlimited"])
+        self.assertEqual(body["questions_limit"], 0)
+        self.assertEqual(body["web_questions_limit"], 0)
+        self.assertEqual(body["pdfs_limit"], 0)
+
+        context = resolve_context(
+            f"Bearer {make_access_token('google-admin', ADMIN_EMAIL)}",
+            None,
+        )
+        for _ in range(25):
+            quotas.check_question_allowed(context)
+            quotas.record_question(context)
+        summary = quotas.usage_summary(context)
+        self.assertEqual(summary["questions_used"], 0)
+        self.assertTrue(summary["unlimited"])
+
 
 class TestAdminOverview(AdminApiTestCase):
     def test_operator_sees_guests_signed_in_users_uploads_and_errors(self):

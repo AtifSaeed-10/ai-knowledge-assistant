@@ -40,7 +40,7 @@ export const WORKSPACE_TOUR_STEPS: TourStep[] = [
     id: "scope",
     target: "scope",
     title: "One file, or all of them",
-    body: "All documents searches every ready PDF. Switch to One document when you want answers to stay inside the file you picked.",
+    body: "All documents searches every ready PDF. Switch to One document when you want answers to stay inside the file you picked. The Web switch is a backup: PDFs first, and only if they don’t cover the question.",
     placement: "top",
   },
   {
