@@ -34,6 +34,7 @@ frontend/
 # Evaluation fixtures and generated reports are not needed at runtime.
 evaluation/results/
 evaluation/real_pdfs/
-test_*.py
+tests/
+legacy/
 
 .DS_Store

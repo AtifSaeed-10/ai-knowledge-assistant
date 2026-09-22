@@ -7,9 +7,7 @@ came from.
 
 **Beta — free for students.** No card, no paid tier.
 
-<!-- Replace with your own links once deployed. -->
-- Live app: _add your Vercel URL_
-- API: _add your backend URL_
+- Live app: https://www.docusage.tech
 
 ---
 
@@ -259,14 +257,27 @@ Changing identity provider means replacing
 
 ---
 
+## Repository layout
+
+| Path | What it is |
+| --- | --- |
+| `frontend/` | Next.js app (Vercel) |
+| `backend.py` | FastAPI entrypoint (Azure VM) |
+| `app_platform/` | Auth, quotas, operator dashboard |
+| `web_fallback/` | Optional live-web backup |
+| `database/` | SQLite stores |
+| `tests/` | API unit tests |
+| `evaluation/` | Quality suites and reports |
+| `docs/` | Product handbook |
+| `legacy/` | Old Streamlit UI and experiments |
+
+---
+
 ## Tests
 
 ```bash
-# Platform layer: identity, quotas, isolation, guest migration
-python -m unittest test_platform_quotas test_platform_api
-
-# Retrieval, citation, and evidence suites
-python -m unittest test_claim_validator test_evidence_mapping test_super_focused
+# From the repo root
+python -m unittest discover -s tests -p "test_*.py"
 
 # Frontend
 cd frontend && npm test

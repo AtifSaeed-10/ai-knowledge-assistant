@@ -34,5 +34,8 @@ node_modules/
 frontend/public/pdf.worker.min.mjs
 
 # Held-out eval isolate (generated PDF + private chroma/sqlite)
-evaluation/results/held_out/
+evaluation/results/
 evaluation/real_pdfs/*.pdf
+
+# Local one-off diagnostics
+scripts/_diag_tmp*.py
