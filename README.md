@@ -1,525 +1,295 @@
-# 🤖 AI Knowledge Assistant
+# DocuSage
 
-A production-style **Retrieval-Augmented Generation (RAG)** application that allows users to upload PDF documents and ask questions about their content using semantic search and Large Language Models.
+An evidence-grounded PDF research assistant. Ask a question about your
+documents and every important claim in the answer carries a citation you can
+click — which opens the source PDF and highlights the exact sentence the claim
+came from.
 
-The system combines document processing, vector databases, FastAPI backend services, Streamlit frontend, Docker containerization, and configurable LLM providers with automatic failover between local and cloud inference.
+**Beta — free for students.** No card, no paid tier.
 
----
-
-# 🚀 Live Demo
-
-Try the application here:
-
-🔗 **Streamlit App:**
-https://ai-knowledge-assistant-6969.streamlit.app/
-
-Backend API:
-
-https://ai-knowledge-assistant-voy8.onrender.com
+- Live app: https://www.docusage.tech
 
 ---
 
-# 📌 Overview
+## Why this exists
 
-Large Language Models are powerful, but they do not automatically have access to private or user-specific documents.
+Most document chatbots answer confidently and cite loosely: you get a page
+number, or a chunk of text that vaguely relates to what was said. Verifying the
+answer means reading the source yourself, which defeats the purpose.
 
-This project demonstrates how **Retrieval-Augmented Generation (RAG)** solves this limitation by combining:
-
-* Document ingestion
-* Text chunking
-* Vector embeddings
-* Semantic retrieval
-* Context augmentation
-* LLM-based answer generation
-
-Instead of relying only on the model's existing knowledge, responses are generated using information retrieved directly from user-provided documents.
+DocuSage treats verification as the product. The retrieval stack finds
+candidate passages, the model must quote verbatim from them, and a separate
+validation pass checks each quote against the retrieved chunk before the
+citation is shown. A citation that cannot be traced to real text on a real page
+is dropped rather than displayed.
 
 ---
 
-# ✨ Features
+## What it does
 
-## 📄 Intelligent Document Question Answering
-
-Users can:
-
-* Upload PDF documents
-* Automatically extract document text
-* Split documents into meaningful chunks
-* Generate semantic embeddings
-* Store embeddings in ChromaDB
-* Retrieve relevant document sections
-* Ask questions using natural language
-* Receive context-grounded answers
+- **Grounded answers.** Structured briefings (overview, key points, example)
+  rather than a wall of prose, with a citation on each substantive claim.
+- **Click-to-source highlighting.** Citations resolve to PDF coordinates and
+  render as a highlight over the page in an in-app viewer.
+- **Verified quotes only.** Quotes the model invents are detected and removed
+  before they reach the UI.
+- **Refusal instead of guessing.** When the documents do not support an answer,
+  the system says so.
+- **Free guest trial.** One PDF and 15 questions with no sign-up. Signing in
+  with Google (also free) raises the limits and saves your work.
 
 ---
 
-# 🧠 RAG Pipeline
+## Architecture
 
-Complete Retrieval-Augmented Generation workflow:
+```mermaid
+flowchart TB
+  subgraph fe [Frontend - Vercel]
+    UI[Next.js workspace]
+    Viewer[PDF.js evidence viewer]
+  end
 
+  subgraph platform [Platform layer]
+    Auth[Identity: guest session or Google JWT]
+    Quota[Quota service]
+    Guard[Ownership guards]
+  end
+
+  subgraph api [API - FastAPI]
+    Routes[backend.py]
+  end
+
+  subgraph core [RAG core]
+    Retrieve[Hybrid retrieval: BGE dense + BM25 + RRF]
+    Rerank[BGE reranker]
+    Validate[Claim validation and quote verification]
+    LLM[Groq]
+  end
+
+  subgraph data [Stores]
+    Chroma[(ChromaDB embeddings)]
+    SQLite[(SQLite: docs, chats, evidence, accounts)]
+    Files[(PDF files on disk)]
+  end
+
+  UI --> Routes
+  Viewer --> Routes
+  Routes --> Auth --> Quota --> Guard
+  Guard -->|document ids this user owns| Retrieve
+  Retrieve --> Rerank --> Validate --> LLM
+  Retrieve --> Chroma
+  Validate --> SQLite
+  Guard --> data
 ```
-PDF Document
-      |
-      v
-Text Extraction
-      |
-      v
-Chunking
-      |
-      v
-Embedding Generation
-      |
-      v
-ChromaDB Vector Storage
-      |
-      v
-Semantic Retrieval
-      |
-      v
-Context Injection
-      |
-      v
-LLM Generation
-      |
-      v
-Final Answer
-```
+
+The platform layer is a thin shell around an unchanged retrieval pipeline.
+Identity, quotas, and ownership are resolved in the API before
+`rag.ask_question` is called; user isolation works by filtering the list of
+document ids that reaches retrieval, so no isolation logic lives in the RAG
+core.
 
 ---
 
-# 🏗️ System Architecture
+## Tech stack
 
-```
-                    User
-                     |
-                     v
-              Streamlit UI
-                     |
-                     v
-              FastAPI Backend
-                     |
-                     v
-              RAG Pipeline
-                     |
-        --------------------------
-        |                        |
-        v                        v
-    ChromaDB              LLM Service
-   Vector Database              |
-                                |
-                 ---------------------------
-                 |                         |
-                 v                         v
-              Ollama                   Groq API
-          Local Inference          Cloud Inference
-```
+| Layer | Choice |
+| --- | --- |
+| Frontend | Next.js, React, Tailwind, Zustand, PDF.js |
+| API | FastAPI, Uvicorn |
+| Retrieval | ChromaDB, BAAI/bge-small-en-v1.5, BM25, RRF, BGE reranker |
+| Generation | Groq (Ollama supported for local development) |
+| Auth | Supabase (Google OAuth only) |
+| Data | SQLite for metadata, chats, evidence, and accounts |
+| Hosting | Vercel (frontend), Docker on a single VM (API) |
 
 ---
 
-# 🤖 LLM Provider Architecture
-
-The application supports multiple LLM providers through an abstraction layer.
-
-## Local Development
-
-Primary:
+## Project layout
 
 ```
-Ollama
-(Local LLM inference)
-```
+backend.py                 FastAPI routes
+rag.py                     Retrieval + generation pipeline
+hybrid_retrieval.py        Dense + BM25 + RRF
+reranker.py                Cross-encoder reranking
+indexer.py                 PDF extraction, chunking, embedding
+claim_validator.py         Verifies model quotes against retrieved chunks
+evidence_mapping.py        Maps text to PDF page coordinates
+quote_evidence.py          Resolves a quote to highlight regions
+index_hygiene.py           Keeps Chroma, BM25, and SQLite consistent
 
-Fallback:
+app_platform/              Identity, quotas, ownership guards
+  settings.py              Env-driven configuration
+  auth/                    Guest sessions and Supabase JWT verification
+  quotas/                  Per-tier limits and usage recording
+  guards/ownership.py      Row-level access control
 
-```
-Groq API
-(Cloud inference)
-```
-
-## Cloud Deployment
-
-The deployed version uses:
-
-```
-Groq API
-```
-
-because cloud environments do not run the local Ollama server.
-
-The provider architecture allows switching models/providers without changing the RAG pipeline.
-
-Example:
-
-```
-User Question
-
-        |
-        v
-
-   LLM Service Router
-
-        |
-        |
-        +------------ Ollama
-        |
-        |
-        +------------ Groq API
-
-        |
-        v
-
- Generated Response
+database/                  SQLite stores and migrations
+memory/                    Conversation history
+frontend/                  Next.js application
+evaluation/                Retrieval and citation quality suites
 ```
 
 ---
 
-# 🛠️ Tech Stack
+## Running locally
 
-## Backend
+The backend needs Python 3.12+ and the frontend needs Node 18+.
 
-* Python
-* FastAPI
-* Uvicorn
-
-## Frontend
-
-* Streamlit
-
-## AI / Machine Learning
-
-* Retrieval-Augmented Generation (RAG)
-* Semantic Search
-* Vector Embeddings
-* Large Language Models
-
-## Vector Database
-
-* ChromaDB
-
-## Embedding Model
-
-* BAAI/bge-small-en-v1.5
-
-## LLM Providers
-
-* Ollama
-* Groq API
-
-## Infrastructure
-
-* Docker
-* Render
-* Streamlit Cloud
-* Environment Variables
-
----
-
-# 🎯 Design Decisions
-
-## Why RAG?
-
-RAG allows Large Language Models to answer questions using external knowledge sources without retraining the model.
-
-The system retrieves relevant document chunks and provides them as context before generating a response.
-
----
-
-## Why ChromaDB?
-
-ChromaDB provides persistent vector storage and efficient similarity search for embedding-based retrieval.
-
----
-
-## Why FastAPI?
-
-FastAPI separates the AI pipeline from the frontend and creates a clean API layer similar to production AI applications.
-
----
-
-## Why Ollama + Groq?
-
-Ollama enables private local inference during development.
-
-Groq provides fast cloud inference for deployment environments.
-
-The fallback architecture improves reliability.
-
----
-
-## Why Environment Variables?
-
-Sensitive and configurable values are separated from application code:
-
-* API keys
-* Model selection
-* LLM providers
-* Database paths
-* Runtime configuration
-
-This improves security and deployment flexibility.
-
----
-
-# 📂 Project Structure
-
-```
-ai-knowledge-assistant/
-
-│
-├── backend.py              # FastAPI API endpoints
-├── streamlit_app.py        # Streamlit user interface
-│
-├── rag.py                  # Retrieval-Augmented Generation pipeline
-├── indexer.py              # PDF processing and indexing
-│
-├── llm_service.py          # LLM routing and fallback logic
-├── ollama_service.py       # Ollama integration
-├── groq_service.py         # Groq API integration
-│
-├── config.py               # Application configuration
-├── utils.py                # Helper functions
-│
-├── chroma_db/              # Persistent vector database
-├── data/                   # Uploaded documents
-│
-├── Dockerfile
-├── requirements.txt
-├── render.yaml
-├── .env.example
-└── README.md
-```
-
----
-
-# ⚙️ Local Installation
-
-Clone repository:
+**1. Backend**
 
 ```bash
-git clone https://github.com/yourusername/ai-knowledge-assistant.git
-```
-
-Move into project:
-
-```bash
-cd ai-knowledge-assistant
-```
-
-Create virtual environment:
-
-```bash
-python -m venv venv
-```
-
-Activate:
-
-Windows:
-
-```bash
-venv\Scripts\activate
-```
-
-Install dependencies:
-
-```bash
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
-```
-
----
-
-# 🔐 Environment Variables
-
-Create a `.env` file:
-
-```
-LLM_MODEL=qwen2.5:3b
-
-OLLAMA_HOST=http://localhost:11434
-
-PRIMARY_LLM=ollama
-
-FALLBACK_LLM=groq
-
-GROQ_API_KEY=your_api_key_here
-
-CHROMA_DB_PATH=./chroma_db
-
-COLLECTION_NAME=ml_notes
-
-TOP_K=3
-
-SIMILARITY_THRESHOLD=1.3
-```
-
----
-
-# ▶️ Running Locally
-
-## Start Ollama
-
-```bash
-ollama serve
-```
-
-Check models:
-
-```bash
-ollama list
-```
-
----
-
-## Start Backend
-
-```bash
+copy .env.example .env
 uvicorn backend:app --reload
 ```
 
-Backend:
+The first request downloads the embedding and reranker models, which takes a
+few minutes.
 
-```
-http://127.0.0.1:8000
-```
-
-API documentation:
-
-```
-http://127.0.0.1:8000/docs
-```
-
----
-
-## Start Frontend
-
-Open another terminal:
+**2. Frontend**
 
 ```bash
-streamlit run streamlit_app.py
+cd frontend
+npm install
+copy .env.example .env.local
+npm run dev
 ```
 
-Frontend:
-
-```
-http://localhost:8501
-```
+Open http://localhost:3000. Sign-in is optional: with no Supabase credentials
+the app runs as a guest trial.
 
 ---
 
-# 🐳 Docker Support
+## Configuration
 
-Build image:
+All deployment settings are environment variables, so the same image runs
+locally and in production. See [.env.example](.env.example) for the full list.
+
+**Generation and retrieval**
+
+| Variable | Purpose |
+| --- | --- |
+| `PRIMARY_LLM`, `FALLBACK_LLM` | Provider order (`groq` or `ollama`) |
+| `GROQ_API_KEY` | Groq credentials |
+| `CHROMA_DB_PATH`, `COLLECTION_NAME` | Vector store location |
+| `TOP_K`, `SIMILARITY_THRESHOLD` | Retrieval tuning |
+
+**Platform**
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | `sqlite:///./data/documents.db` | Relational store |
+| `CORS_ORIGINS` | `http://localhost:3000` | Allowed browser origins |
+| `AUTH_PROVIDER` | `none` | `supabase` enables Google sign-in |
+| `SUPABASE_JWT_SECRET` | — | Verifies access tokens |
+| `GUEST_TRIAL_ENABLED` | `true` | Allow anonymous use |
+| `QUOTA_GUEST_MAX_PDFS` | `1` | Trial document limit |
+| `QUOTA_GUEST_MAX_QUESTIONS` | `15` | Trial question limit |
+| `QUOTA_USER_MAX_PDFS` | `5` | Signed-in document limit |
+| `QUOTA_USER_MAX_QUESTIONS_MONTHLY` | `100` | Signed-in monthly questions |
+| `QUOTA_MAX_PDF_MB` | `25` | Upload size limit |
+
+Limits are read at request time, so they can be re-tuned by editing `.env` and
+restarting — no code changes.
+
+---
+
+## Accounts and limits
+
+| Tier | PDFs | Questions | Storage |
+| --- | --- | --- | --- |
+| Guest | 1 | 15 for the whole trial | Session only |
+| Signed in (free) | 5 | 100 per calendar month | Saved to your account |
+
+There is no landing-page login wall: you can upload and ask immediately. The
+sign-in prompt appears only when the trial allowance runs out, and signing in
+carries the trial's PDF and chat history over to the new account. Questions
+already asked during the trial count against the first month, so signing in
+repeatedly cannot reset the counter.
+
+---
+
+## API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Liveness check (public) |
+| `GET` | `/me/usage` | Current usage and limits |
+| `POST` | `/upload` | Upload and index a PDF |
+| `GET` | `/documents` | Your document library |
+| `GET` | `/documents/{id}/file` | Original PDF for the viewer |
+| `GET` | `/documents/{id}/chunks/{chunk_id}/evidence` | Highlight regions for a quote |
+| `POST` | `/chat/stream` | Streaming grounded answer with citations |
+| `GET` | `/conversations` | Your chat history |
+| `POST` | `/auth/migrate-guest` | Claim trial work after signing in |
+
+Every route except `/health` resolves a caller identity from either an
+`X-Guest-Session` header or an `Authorization: Bearer` token. Quota rejections
+return `402` with a `QUOTA_EXCEEDED` body; cross-account access returns `403`.
+
+---
+
+## Deployment
+
+**Frontend (Vercel).** Import the repo, set the root directory to `frontend`,
+and set `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SUPABASE_URL`, and
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+
+**API (Docker on a single VM).** The compose file bind-mounts the three
+stateful directories so a rebuild or restart never loses user data.
 
 ```bash
-docker build -t ai-knowledge-assistant .
+cp .env.example .env      # fill in GROQ_API_KEY, CORS_ORIGINS, Supabase secret
+docker compose up -d --build
+curl http://localhost:8000/health
 ```
 
-Run:
+**Auth (Supabase).** Create a project, enable only the Google provider, add
+your Vercel URL as a redirect URL, then set `AUTH_PROVIDER=supabase` and
+`SUPABASE_JWT_SECRET` on the API.
+
+Moving to Postgres later means changing `DATABASE_URL` and extending
+`database/connection.py`; the migrations and product code are unchanged.
+Changing identity provider means replacing
+`app_platform/auth/supabase_jwt.py` only.
+
+---
+
+## Repository layout
+
+| Path | What it is |
+| --- | --- |
+| `frontend/` | Next.js app (Vercel) |
+| `backend.py` | FastAPI entrypoint (Azure VM) |
+| `app_platform/` | Auth, quotas, operator dashboard |
+| `web_fallback/` | Optional live-web backup |
+| `database/` | SQLite stores |
+| `tests/` | API unit tests |
+| `evaluation/` | Quality suites and reports |
+| `docs/` | Product handbook |
+| `legacy/` | Old Streamlit UI and experiments |
+
+---
+
+## Tests
 
 ```bash
-docker run \
--p 8000:8000 \
--e OLLAMA_HOST=http://host.docker.internal:11434 \
-ai-knowledge-assistant
+# From the repo root
+python -m unittest discover -s tests -p "test_*.py"
+
+# Frontend
+cd frontend && npm test
 ```
 
-Docker allows the backend to run inside a container while communicating with external LLM services.
+The `evaluation/` directory holds the larger quality suites, including
+acceptance gates and a held-out document run. See
+[evaluation/README.md](evaluation/README.md).
 
 ---
 
-# 🔌 API Endpoints
+## Author
 
-## Health Check
-
-```
-GET /health
-```
-
----
-
-## Upload PDF
-
-```
-POST /upload
-```
-
-Uploads and indexes documents into the vector database.
-
----
-
-## Ask Question
-
-```
-POST /chat
-```
-
-Example:
-
-```json
-{
-  "question": "Explain supervised learning"
-}
-```
-
----
-
-# 🔍 How It Works
-
-1. User uploads a PDF.
-2. Text is extracted.
-3. Content is split into chunks.
-4. Chunks are converted into embeddings.
-5. Embeddings are stored in ChromaDB.
-6. User submits a question.
-7. Relevant chunks are retrieved.
-8. Retrieved context is sent to the LLM.
-9. The model generates a grounded response.
-
----
-
-# 📊 Engineering Concepts Demonstrated
-
-This project demonstrates practical AI engineering skills:
-
-* RAG system design
-* Vector database implementation
-* Embedding-based retrieval
-* Semantic search
-* FastAPI backend development
-* Streamlit application development
-* LLM provider abstraction
-* Environment-based configuration
-* Error handling and fallback systems
-* Docker containerization
-* Cloud deployment
-
----
-
-# ✅ Project Status
-
-## Version: 1.0.0
-
-Completed:
-
-✅ PDF ingestion pipeline
-✅ Text chunking system
-✅ Embedding generation
-✅ ChromaDB vector storage
-✅ Semantic retrieval
-✅ FastAPI backend
-✅ Streamlit frontend
-✅ Docker containerization
-✅ Multi-provider LLM architecture
-✅ Ollama → Groq fallback
-✅ Render backend deployment
-✅ Streamlit Cloud deployment
-
----
-
-
-# 👨‍💻 Author
-
-**Atif Saeed**
-
-Computer Science student focused on AI Engineering and Large Language Model applications.
-
-Building practical AI systems using modern machine learning, retrieval systems, and generative AI technologies.
+**Atif Saeed** — Computer Science student working on AI engineering and
+retrieval systems.

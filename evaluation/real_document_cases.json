@@ -1,0 +1,362 @@
+{
+  "description": "Adjudicated real-PDF cases for held-out evaluation. Place PDFs in evaluation/real_pdfs/ or set an absolute pdf_path. Do not encode document-specific patches here; gold fields are adjudicated expectations only. The default catalog is the generated operations handbook (held_out_handbook.pdf).",
+  "schema": {
+    "case_id": "stable id",
+    "document_id": "indexed document id",
+    "pdf_path": "absolute path or filename under evaluation/real_pdfs/",
+    "question": "required for retrieval mode",
+    "claim_text": "claim sentence near the citation",
+    "answer": "gold answer containing [E1] (optional; default is claim_text [E1])",
+    "chunk_id": "optional localization hint; resolved from expected_quote_substring when omitted",
+    "expected_chunk_id": "optional retrieval-hit target",
+    "expected_page": "1-based PDF page the claim must land on",
+    "expected_pages": "optional extra accepted pages",
+    "expected_quote_substring": "substring that must appear in localized quote/spans",
+    "content_type": "native_text | figure_caption | table | scanned_or_image | scanned_ocr | low_text_layout",
+    "evidence_id": "default E1",
+    "mode": "optional per-case override: localization | retrieval | both",
+    "notes": "adjudication notes"
+  },
+  "cases": [
+    {
+      "case_id": "loc-notice",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "How many days of written notice are required to terminate employment?",
+      "claim_text": "Either party may terminate employment by providing thirty days written notice to the other party.",
+      "answer": "Either party may terminate employment by providing thirty days written notice to the other party. [E1]",
+      "expected_page": 1,
+      "expected_pages": [
+        1
+      ],
+      "expected_quote_substring": "thirty days written notice",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "localization",
+      "notes": "Native-text localization for notice (page 1)."
+    },
+    {
+      "case_id": "loc-leave",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "How many days of paid leave does full-time staff receive each year?",
+      "claim_text": "Full-time staff receive twenty-two days of paid leave in each calendar year.",
+      "answer": "Full-time staff receive twenty-two days of paid leave in each calendar year. [E1]",
+      "expected_page": 2,
+      "expected_pages": [
+        2
+      ],
+      "expected_quote_substring": "twenty-two days of paid leave",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "localization",
+      "notes": "Native-text localization for leave (page 2)."
+    },
+    {
+      "case_id": "loc-onboarding",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "How many stages are in the onboarding sequence before production credentials?",
+      "claim_text": "New hires complete a four-stage onboarding sequence before receiving production credentials.",
+      "answer": "New hires complete a four-stage onboarding sequence before receiving production credentials. [E1]",
+      "expected_page": 3,
+      "expected_pages": [
+        3
+      ],
+      "expected_quote_substring": "four-stage onboarding sequence",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "localization",
+      "notes": "Native-text localization for onboarding (page 3)."
+    },
+    {
+      "case_id": "loc-remote",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "When is remote-work eligibility reviewed?",
+      "claim_text": "Remote-work eligibility is reviewed each March.",
+      "answer": "Remote-work eligibility is reviewed each March. [E1]",
+      "expected_page": 4,
+      "expected_pages": [
+        4
+      ],
+      "expected_quote_substring": "remote-work eligibility is reviewed each March",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "localization",
+      "notes": "Native-text localization for remote (page 4)."
+    },
+    {
+      "case_id": "loc-review",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "In which month does the performance-review cycle take place?",
+      "claim_text": "The January performance-review cycle uses output quality, peer feedback, and customer outcomes.",
+      "answer": "The January performance-review cycle uses output quality, peer feedback, and customer outcomes. [E1]",
+      "expected_page": 5,
+      "expected_pages": [
+        5
+      ],
+      "expected_quote_substring": "January performance-review cycle",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "localization",
+      "notes": "Native-text localization for review (page 5)."
+    },
+    {
+      "case_id": "loc-pantry",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "What does the office pantry restock include?",
+      "claim_text": "The office pantry restock includes tea, coffee, and oat biscuits.",
+      "answer": "The office pantry restock includes tea, coffee, and oat biscuits. [E1]",
+      "expected_page": 6,
+      "expected_pages": [
+        6
+      ],
+      "expected_quote_substring": "tea, coffee, and oat biscuits",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "localization",
+      "notes": "Native-text localization for pantry (page 6)."
+    },
+    {
+      "case_id": "loc-expense",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "Above what amount do expense approvals require dual control?",
+      "claim_text": "Purchases require dual-control expense approvals above five thousand.",
+      "answer": "Purchases require dual-control expense approvals above five thousand. [E1]",
+      "expected_page": 7,
+      "expected_pages": [
+        7
+      ],
+      "expected_quote_substring": "dual-control expense approvals above five thousand",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "localization",
+      "notes": "Native-text localization for expense (page 7)."
+    },
+    {
+      "case_id": "loc-retention",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "How long is the data-retention window in Article 12?",
+      "claim_text": "Article 12 of this handbook sets an eighteen-month data-retention window.",
+      "answer": "Article 12 of this handbook sets an eighteen-month data-retention window. [E1]",
+      "expected_page": 8,
+      "expected_pages": [
+        8
+      ],
+      "expected_quote_substring": "eighteen-month data-retention window",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "localization",
+      "notes": "Native-text localization for retention (page 8)."
+    },
+    {
+      "case_id": "loc-incident",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "How quickly must staff file incident reports?",
+      "claim_text": "Staff must file incident reports within twenty-four hours.",
+      "answer": "Staff must file incident reports within twenty-four hours. [E1]",
+      "expected_page": 9,
+      "expected_pages": [
+        9
+      ],
+      "expected_quote_substring": "incident reports within twenty-four hours",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "localization",
+      "notes": "Native-text localization for incident (page 9)."
+    },
+    {
+      "case_id": "loc-password",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "How often must production passwords be rotated?",
+      "claim_text": "Production passwords follow password rotation every ninety days.",
+      "answer": "Production passwords follow password rotation every ninety days. [E1]",
+      "expected_page": 10,
+      "expected_pages": [
+        10
+      ],
+      "expected_quote_substring": "password rotation every ninety days",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "localization",
+      "notes": "Native-text localization for password (page 10)."
+    },
+    {
+      "case_id": "ret-notice",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "How many days of written notice are required to terminate employment?",
+      "claim_text": "Either party may terminate employment by providing thirty days written notice to the other party.",
+      "answer": "Either party may terminate employment by providing thirty days written notice to the other party. [E1]",
+      "expected_page": 1,
+      "expected_pages": [
+        1
+      ],
+      "expected_quote_substring": "thirty days written notice",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "retrieval",
+      "notes": "Retrieval recall-pool hit for notice (page 1)."
+    },
+    {
+      "case_id": "ret-leave",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "How many days of paid leave does full-time staff receive each year?",
+      "claim_text": "Full-time staff receive twenty-two days of paid leave in each calendar year.",
+      "answer": "Full-time staff receive twenty-two days of paid leave in each calendar year. [E1]",
+      "expected_page": 2,
+      "expected_pages": [
+        2
+      ],
+      "expected_quote_substring": "twenty-two days of paid leave",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "retrieval",
+      "notes": "Retrieval recall-pool hit for leave (page 2)."
+    },
+    {
+      "case_id": "ret-onboarding",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "How many stages are in the onboarding sequence before production credentials?",
+      "claim_text": "New hires complete a four-stage onboarding sequence before receiving production credentials.",
+      "answer": "New hires complete a four-stage onboarding sequence before receiving production credentials. [E1]",
+      "expected_page": 3,
+      "expected_pages": [
+        3
+      ],
+      "expected_quote_substring": "four-stage onboarding sequence",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "retrieval",
+      "notes": "Retrieval recall-pool hit for onboarding (page 3)."
+    },
+    {
+      "case_id": "ret-remote",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "When is remote-work eligibility reviewed?",
+      "claim_text": "Remote-work eligibility is reviewed each March.",
+      "answer": "Remote-work eligibility is reviewed each March. [E1]",
+      "expected_page": 4,
+      "expected_pages": [
+        4
+      ],
+      "expected_quote_substring": "remote-work eligibility is reviewed each March",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "retrieval",
+      "notes": "Retrieval recall-pool hit for remote (page 4)."
+    },
+    {
+      "case_id": "ret-review",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "In which month does the performance-review cycle take place?",
+      "claim_text": "The January performance-review cycle uses output quality, peer feedback, and customer outcomes.",
+      "answer": "The January performance-review cycle uses output quality, peer feedback, and customer outcomes. [E1]",
+      "expected_page": 5,
+      "expected_pages": [
+        5
+      ],
+      "expected_quote_substring": "January performance-review cycle",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "retrieval",
+      "notes": "Retrieval recall-pool hit for review (page 5)."
+    },
+    {
+      "case_id": "ret-pantry",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "What does the office pantry restock include?",
+      "claim_text": "The office pantry restock includes tea, coffee, and oat biscuits.",
+      "answer": "The office pantry restock includes tea, coffee, and oat biscuits. [E1]",
+      "expected_page": 6,
+      "expected_pages": [
+        6
+      ],
+      "expected_quote_substring": "tea, coffee, and oat biscuits",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "retrieval",
+      "notes": "Retrieval recall-pool hit for pantry (page 6)."
+    },
+    {
+      "case_id": "ret-expense",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "Above what amount do expense approvals require dual control?",
+      "claim_text": "Purchases require dual-control expense approvals above five thousand.",
+      "answer": "Purchases require dual-control expense approvals above five thousand. [E1]",
+      "expected_page": 7,
+      "expected_pages": [
+        7
+      ],
+      "expected_quote_substring": "dual-control expense approvals above five thousand",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "retrieval",
+      "notes": "Retrieval recall-pool hit for expense (page 7)."
+    },
+    {
+      "case_id": "ret-retention",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "How long is the data-retention window in Article 12?",
+      "claim_text": "Article 12 of this handbook sets an eighteen-month data-retention window.",
+      "answer": "Article 12 of this handbook sets an eighteen-month data-retention window. [E1]",
+      "expected_page": 8,
+      "expected_pages": [
+        8
+      ],
+      "expected_quote_substring": "eighteen-month data-retention window",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "retrieval",
+      "notes": "Retrieval recall-pool hit for retention (page 8)."
+    },
+    {
+      "case_id": "ret-incident",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "How quickly must staff file incident reports?",
+      "claim_text": "Staff must file incident reports within twenty-four hours.",
+      "answer": "Staff must file incident reports within twenty-four hours. [E1]",
+      "expected_page": 9,
+      "expected_pages": [
+        9
+      ],
+      "expected_quote_substring": "incident reports within twenty-four hours",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "retrieval",
+      "notes": "Retrieval recall-pool hit for incident (page 9)."
+    },
+    {
+      "case_id": "ret-password",
+      "document_id": "held-out-handbook",
+      "pdf_path": "held_out_handbook.pdf",
+      "question": "How often must production passwords be rotated?",
+      "claim_text": "Production passwords follow password rotation every ninety days.",
+      "answer": "Production passwords follow password rotation every ninety days. [E1]",
+      "expected_page": 10,
+      "expected_pages": [
+        10
+      ],
+      "expected_quote_substring": "password rotation every ninety days",
+      "content_type": "native_text",
+      "evidence_id": "E1",
+      "mode": "retrieval",
+      "notes": "Retrieval recall-pool hit for password (page 10)."
+    }
+  ]
+}

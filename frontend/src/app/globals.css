@@ -1,0 +1,232 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* The paper palette. Tailwind reads these through rgb(var(--token)). */
+  :root {
+    /* Moss paper: light enough to read as day, never a blank white page. */
+    --color-paper: 238 242 232;
+
+    --color-surface: 249 251 245;
+    --color-surface-muted: 227 234 218;
+    --color-surface-sunken: 221 230 210;
+
+    --color-line: 210 221 198;
+    --color-line-strong: 190 205 176;
+
+    --color-ink: 28 36 31;
+    --color-ink-soft: 42 50 46;
+    --color-ink-muted: 84 98 80;
+    --color-ink-subtle: 99 112 95;
+    --color-ink-icon: 118 132 112;
+
+    --color-olive: 74 93 35;
+    --color-olive-dark: 62 78 29;
+    --color-olive-soft: 224 233 212;
+
+    --color-sage: 135 171 114;
+    --color-sage-soft: 186 205 168;
+
+    --color-danger: 180 35 24;
+    --color-danger-dark: 145 32 24;
+    --color-danger-soft: 254 243 242;
+    --color-danger-line: 246 214 210;
+
+    --color-warn: 138 109 31;
+    --color-warn-soft: 251 247 234;
+    --color-warn-line: 234 223 192;
+
+    --color-scrim: 28 36 31;
+    --canvas-glow: 176 196 150;
+
+    --focus-ring: #4a5d23;
+    --scrollbar-thumb: #c5d0b8;
+    --scrollbar-thumb-hover: #aebca0;
+    --skeleton-base: #e4ecda;
+    --skeleton-shine: #f4f7ef;
+  }
+
+  /* Night palette: the same paper design at low luminance, so contrast
+     ratios and the olive/sage accents survive the switch. */
+  .dark {
+    --color-paper: 16 19 14;
+
+    --color-surface: 24 28 21;
+    --color-surface-muted: 30 35 25;
+    --color-surface-sunken: 36 42 30;
+
+    --color-line: 46 53 39;
+    --color-line-strong: 65 74 56;
+
+    --color-ink: 236 239 231;
+    --color-ink-soft: 220 225 212;
+    --color-ink-muted: 174 183 162;
+    --color-ink-subtle: 154 164 141;
+    --color-ink-icon: 138 148 125;
+
+    /* Deep enough that white button labels stay above 4.5:1. */
+    --color-olive: 85 113 43;
+    --color-olive-dark: 97 128 47;
+    --color-olive-soft: 43 55 32;
+
+    --color-sage: 156 193 134;
+    --color-sage-soft: 71 96 58;
+
+    --color-danger: 242 133 124;
+    --color-danger-dark: 226 111 101;
+    --color-danger-soft: 44 22 20;
+    --color-danger-line: 91 40 35;
+
+    --color-warn: 227 194 106;
+    --color-warn-soft: 43 37 20;
+    --color-warn-line: 74 64 31;
+
+    --color-scrim: 5 7 4;
+    --canvas-glow: 0 0 0;
+
+    --focus-ring: #9cc186;
+    --scrollbar-thumb: #3a4231;
+    --scrollbar-thumb-hover: #4b5540;
+    --skeleton-base: #232a1d;
+    --skeleton-shine: #2e3626;
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    /* `only` stops Chrome from auto-inverting a light page when Windows is dark. */
+    color-scheme: light;
+    color-scheme: only light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+    color-scheme: only dark;
+  }
+
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  body {
+    @apply bg-paper text-ink antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Keep brand fills even when the OS forces a dark or high-contrast palette. */
+  .logo-mark {
+    forced-color-adjust: none;
+  }
+
+  ::selection {
+    @apply bg-sage/35 text-ink;
+  }
+
+  /* A single, consistent focus treatment for every interactive element.
+     Outline (not ring) so it reads correctly on white, paper and olive. */
+  :where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Scroll containers: quiet scrollbars that match the paper surface. */
+  .scroll-area {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+    overscroll-behavior: contain;
+  }
+
+  .scroll-area::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scroll-area::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scroll-area::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+
+  .scroll-area:hover::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  .skeleton {
+    background-image: linear-gradient(
+      90deg,
+      var(--skeleton-base) 0%,
+      var(--skeleton-shine) 45%,
+      var(--skeleton-base) 100%
+    );
+    background-size: 200% 100%;
+    @apply animate-shimmer rounded;
+  }
+
+  /* Chat canvas: a quiet olive wash instead of a blank field. */
+  .workspace-canvas {
+    background-color: rgb(var(--color-paper));
+    background-image: radial-gradient(
+      ellipse 90% 42% at 50% -8%,
+      rgb(var(--canvas-glow) / 0.32),
+      transparent 68%
+    );
+  }
+
+  .dark .workspace-canvas {
+    background-image: none;
+  }
+
+  /* Collapsed rail: the mark is quiet until the pointer is near it. */
+  .logo-expand {
+    background: transparent;
+    transition:
+      box-shadow 280ms ease,
+      background-color 280ms ease;
+  }
+
+  .logo-expand:hover,
+  .logo-expand:focus-visible {
+    background: rgb(var(--color-olive) / 0.12);
+    box-shadow:
+      0 0 0 1px rgb(var(--color-sage) / 0.5),
+      0 0 14px rgb(var(--color-sage) / 0.45),
+      0 0 28px rgb(var(--color-olive) / 0.28);
+  }
+}
+
+@layer utilities {
+  /* Long URLs, hashes and pasted tokens must never widen a container. */
+  .break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}
+
+/* Answer body: user-generated markdown must wrap, never overflow. */
+.answer-markdown {
+  overflow-wrap: anywhere;
+}
+
+.answer-markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

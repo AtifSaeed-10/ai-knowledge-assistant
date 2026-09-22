@@ -1,4 +1,5 @@
 venv/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
@@ -9,10 +10,13 @@ __pycache__/
 
 .env
 
-chroma/
+# Runtime state — provided by mounted volumes, never baked into the image.
 chroma_db/
-db/
-database/
+data/
+datasets/
+
+# Note: database/ is a Python package the app imports. Do not exclude it.
+# Only the SQLite files it manages are excluded, via data/.
 
 *.log
 
@@ -22,9 +26,15 @@ models/
 *.bin
 *.pt
 
-data/
-datasets/
-
 .streamlit/
+
+# The frontend deploys separately to Vercel.
+frontend/
+
+# Evaluation fixtures and generated reports are not needed at runtime.
+evaluation/results/
+evaluation/real_pdfs/
+tests/
+legacy/
 
 .DS_Store

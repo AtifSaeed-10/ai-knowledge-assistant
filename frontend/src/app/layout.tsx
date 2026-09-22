@@ -1,0 +1,42 @@
+import type { Metadata } from "next";
+import { Plus_Jakarta_Sans } from "next/font/google";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import "./globals.css";
+
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-jakarta",
+});
+
+export const metadata: Metadata = {
+  title: {
+    default: "DocuSage",
+    template: "%s",
+  },
+  description: "Ask questions about your PDFs and get answers with page-level citations.",
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover" as const,
+  /* Android keyboards otherwise cover the composer: this shrinks the layout
+     viewport (and 100dvh) instead of painting over it. */
+  interactiveWidget: "resizes-content" as const,
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${jakarta.variable} min-h-screen bg-paper font-sans text-ink`}>
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
+    </html>
+  );
+}

@@ -1,22 +1,11 @@
-from groq import Groq
+"""Compatibility wrapper. New code should use GroqProvider / llm_service."""
 
-from config import GROQ_API_KEY
+from llm.providers.groq import GroqProvider
 
 
 def generate_groq_response(prompt: str) -> str:
+    return GroqProvider().generate(prompt)
 
-    client = Groq(
-        api_key=GROQ_API_KEY
-    )
 
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    )
-
-    return response.choices[0].message.content
+def generate_groq_stream(prompt: str):
+    yield from GroqProvider().stream(prompt)
