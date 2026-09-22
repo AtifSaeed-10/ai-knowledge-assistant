@@ -3,7 +3,6 @@ import {
   displayNumberFromWebId,
   hostnameFromUrl,
   isDocumentRefusal,
-  isPreviewWebCitation,
   isWebCitation,
   listedAnswerSources,
   mergeAnswerCitations,
